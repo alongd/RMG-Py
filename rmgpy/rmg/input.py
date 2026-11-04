@@ -646,6 +646,41 @@ def _plasma_check_mobility_entry(where, entry, mobility_dimensionality):
     return dict(entry) if isinstance(entry, dict) else item
 
 
+def _plasma_geometry_dimensions(chamber_geometry):
+    """Validate named chamber dimensions once for wall and radiation operators."""
+    if not isinstance(chamber_geometry, dict):
+        raise InputError('chamberGeometry must name a shape and physical lengths')
+    geometry = dict(chamber_geometry)
+    shape = geometry.pop('shape', None)
+    if shape not in _PLASMA_CHAMBER_SHAPES:
+        raise InputError(
+            "chamberGeometry names shape {0!r}; the supported shapes are {1}. To use "
+            "a geometry not on that list, compute its characteristic diffusion length "
+            "yourself and give it as {{'diffusionLength': (value, 'm')}}.".format(
+                shape, sorted(_PLASMA_CHAMBER_SHAPES)))
+    required = _PLASMA_CHAMBER_SHAPES[shape]
+    missing = [k for k in required if k not in geometry]
+    extra = sorted(set(geometry) - set(required))
+    if missing or extra:
+        raise InputError(
+            "chamberGeometry for shape {0!r} needs exactly {1} and got {2}{3}.".format(
+                shape, list(required), sorted(geometry),
+                '' if not extra else ' (unexpected: {0})'.format(extra)))
+    dims = {}
+    for key in required:
+        q = Quantity(geometry[key])
+        if q.units not in ('m', 'cm', 'mm'):
+            raise InputError(
+                "chamberGeometry {0!r} must be a length in 'm', 'cm' or 'mm'; got "
+                "units {1!r}.".format(key, q.units))
+        if not np.isfinite(q.value_si) or q.value_si <= 0.0:
+            raise InputError(
+                "chamberGeometry {0!r} must be finite and strictly positive; got "
+                "{1!r} m.".format(key, q.value_si))
+        dims[key] = q.value_si
+    return shape, dims
+
+
 def _plasma_wall_kwargs(chamberGeometry, ionReducedMobility, mobilityReferenceDensity,
                         wallRecycling, ionisationSource, maxIonisationDegree,
                         wallSingleBathApproximation=False,
@@ -729,33 +764,7 @@ def _plasma_wall_kwargs(chamberGeometry, ionReducedMobility, mobilityReferenceDe
                     lam.units))
         shape_description = 'diffusionLength stated directly'
     else:
-        shape = geometry.pop('shape', None)
-        if shape not in _PLASMA_CHAMBER_SHAPES:
-            raise InputError(
-                "chamberGeometry names shape {0!r}; the supported shapes are {1}. To use "
-                "a geometry not on that list, compute its characteristic diffusion length "
-                "yourself and give it as {{'diffusionLength': (value, 'm')}}.".format(
-                    shape, sorted(_PLASMA_CHAMBER_SHAPES)))
-        required = _PLASMA_CHAMBER_SHAPES[shape]
-        missing = [k for k in required if k not in geometry]
-        extra = sorted(set(geometry) - set(required))
-        if missing or extra:
-            raise InputError(
-                "chamberGeometry for shape {0!r} needs exactly {1} and got {2}{3}.".format(
-                    shape, list(required), sorted(geometry),
-                    '' if not extra else ' (unexpected: {0})'.format(extra)))
-        dims = {}
-        for key in required:
-            q = Quantity(geometry[key])
-            if q.units not in ('m', 'cm', 'mm'):
-                raise InputError(
-                    "chamberGeometry {0!r} must be a length in 'm', 'cm' or 'mm'; got "
-                    "units {1!r}.".format(key, q.units))
-            if not np.isfinite(q.value_si) or q.value_si <= 0.0:
-                raise InputError(
-                    "chamberGeometry {0!r} must be finite and strictly positive; got "
-                    "{1!r} m.".format(key, q.value_si))
-            dims[key] = q.value_si
+        shape, dims = _plasma_geometry_dimensions(geometry)
         lam = Quantity((1.0 / np.sqrt(_plasma_inverse_lambda_squared(shape, dims)), 'm'))
         shape_description = '{0} with {1}'.format(
             shape, ', '.join('{0}={1!r} m'.format(k, v) for k, v in sorted(dims.items())))
@@ -1254,7 +1263,8 @@ def plasma_reactor(temperature,
                    anionReducedMobilities=None,
                    wallDiffusionComponents=None,
                    electronegativeWallQualification=None,
-                   electronKinetics=None):
+                   electronKinetics=None,
+                   resonanceRadiation=None):
     """
     Define a two-temperature plasma batch reactor (:class:`PlasmaReactor`) from an
     input file.
@@ -1838,8 +1848,15 @@ def plasma_reactor(temperature,
     # The charged-particle wall. Resolved here, at the directive, so a deck that
     # names an unknown chamber shape or half a wall is told so while its input file
     # is being read rather than minutes into a run.
+    radiation_geometry = None
+    if resonanceRadiation is not None:
+        shape, dims = _plasma_geometry_dimensions(chamberGeometry)
+        radiation_geometry = dict(shape=shape, **dims)
+    wall_geometry = chamberGeometry
+    if resonanceRadiation is not None and ionReducedMobility is None and ionReducedMobilities is None:
+        wall_geometry = None
     wall_kwargs = _plasma_wall_kwargs(
-        chamberGeometry, ionReducedMobility, mobilityReferenceDensity,
+        wall_geometry, ionReducedMobility, mobilityReferenceDensity,
         wallRecycling, ionisationSource, maxIonisationDegree,
         wallSingleBathApproximation=wallSingleBathApproximation,
         mobilityReferenceTemperature=mobilityReferenceTemperature,
@@ -1996,6 +2013,8 @@ def plasma_reactor(temperature,
         # keyword achieves is not fictitious runs there, against that set.
         charge_balance_species=chargeBalanceSpecies,
         thermo_source_assertions=thermoSourceAssertions,
+        resonance_radiation=resonanceRadiation,
+        radiation_chamber_geometry=radiation_geometry,
     )
     rmg.reaction_systems.append(system)
 
@@ -3347,8 +3366,16 @@ def _format_plasma_wall(system):
                      ''.format(dict(sorted(system.thermo_source_assertions.items()))))
     if system.quasineutral_electron:
         lines.append('    quasineutralElectron = True,\n')
+    radiation_geometry = getattr(system, 'radiation_chamber_geometry', None)
+    if getattr(system, 'resonance_radiation', None) is not None:
+        lines.append('    resonanceRadiation = {0!r},\n'.format(system.resonance_radiation))
+        geometry = {key: value if key == 'shape' else (value, 'm')
+                    for key, value in radiation_geometry.items()}
+        lines.append('    chamberGeometry = {0!r},\n'.format(geometry))
     if system.has_wall:
-        if system.wall_chamber_geometry is not None:
+        if radiation_geometry is not None:
+            pass  # The physical geometry above also supplies the wall diffusion length.
+        elif system.wall_chamber_geometry is not None:
             chamber = system.wall_chamber_geometry
             lines.append('    chamberGeometry = {{"shape": "cylinder", "radius": ({0!r}, "m"), "length": ({1!r}, "m")}},\n'.format(chamber['radius'], chamber['length']))
         else:

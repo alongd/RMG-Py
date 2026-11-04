@@ -442,6 +442,8 @@ def test_configured_reactor_has_literal_mode_and_qualification(
     assert reactor.eedf_mode == bool(eedf)
     assert reactor.diagnostic_mode == expected_mode
     expected = ['RMG diagnostic mode: ' + expected_mode, expected_qualification]
+    if energy_balance:
+        expected.append('Mechanism files exclude reactor-level operators: charged-particle wall loss.')
     assert reactor.get_diagnostic_provenance() == expected
     assert run_provenance_lines(reactor) == expected
 
@@ -450,6 +452,8 @@ def test_configured_reactor_has_literal_mode_and_qualification(
 def test_real_reactor_classifies_mode_independently_of_te(mode, disclaimer):
     reactor = _mode_reactor(mode)
     expected = ['RMG diagnostic mode: ' + mode, disclaimer]
+    if reactor.has_wall:
+        expected.append('Mechanism files exclude reactor-level operators: charged-particle wall loss.')
     assert reactor.diagnostic_mode == mode
     assert reactor.get_diagnostic_provenance() == expected
     reactor.Te.value_si *= 2
@@ -485,9 +489,11 @@ def test_inconsistent_eedf_state_refuses_provenance(mode):
 def test_mixed_modes_are_ordered_and_do_not_leak_to_next_run():
     reactors = [_mode_reactor(mode) for mode, _ in MODES]
     expected = [line for mode, disclaimer in MODES for line in ['RMG diagnostic mode: ' + mode, disclaimer]]
+    excluded = 'Mechanism files exclude reactor-level operators: charged-particle wall loss.'
+    expected.append(excluded)
     assert run_provenance_lines(reactors + reactors) == expected
     assert run_provenance_lines(_simple_reactor()) == []
-    assert run_provenance_lines(reactors[1]) == expected[2:4]
+    assert run_provenance_lines(reactors[1]) == expected[2:4] + [excluded]
 
 
 def _seed_job(tmp_path, mode):
@@ -736,3 +742,45 @@ def comparator_outputs_never_claim_production(request, tmp_path):
             from PIL import Image
             with Image.open(path) as picture:
                 assert 'EEDF energy-balance engineering intermediate' not in repr(picture.info)
+
+
+def test_mechanism_writers_name_excluded_reactor_operators(tmp_path):
+    from rmgpy.yaml_cantera1 import write_cantera
+    from rmgpy.yaml_cantera2 import save_cantera_model
+    from rmgpy.yaml_rms import write_rms
+    from rmgpy.rmg.model import ReactionModel
+    from rmgpy.transport import TransportData
+    system = _plasma_reactor()
+    # Public declarations also represent jobs with wall loss alone or trapping alone.
+    source = SimpleNamespace(diagnostic_mode=system.diagnostic_mode, has_wall=True,
+                             wall_neutral_diffusion={'Ars': {}},
+                             resonance_radiation={'model':'complete','geometryModel':'slab'})
+    ar = _species()[1]
+    ar.transport_data = TransportData(shapeIndex=0, epsilon=(100.,'K'), sigma=(3.4,'angstroms'),
+        dipoleMoment=(0.,'C*m'), polarizability=(0.,'angstroms^3'), rotrelaxcollnum=0.)
+    model = ReactionModel(species=[ar],reactions=[])
+    ck, ct1, ct2, rms = [tmp_path/name for name in ('chem.inp','ct1.yaml','ct2.yaml','chem.rms')]
+    save_chemkin_file(str(ck), [ar], [], provenance=comment_block(source,'!',ascii_only=True))
+    write_cantera([ar], [], model.get_elements(), path=str(ct1), provenance_source=source)
+    save_cantera_model(model, str(ct2), provenance_source=source)
+    write_rms([ar], [], path=str(rms), provenance_source=source)
+    for path in (ck,ct1,ct2,rms):
+        text = path.read_text()
+        assert 'Mechanism files exclude reactor-level operators:' in text
+        assert 'charged-particle wall loss' in text
+        assert 'neutral wall diffusion' in text
+        assert 'Ar resonance radiation (complete)' in text
+    assert len(model.reactions) == 0
+
+
+def test_radiation_profile_writes_accepted_manifest(tmp_path):
+    manifest = {'accepted': {'time_s':1.,'photon_power_W':2.}, 'declaration':{'model':'holsteinWalsh'}}
+    system = SimpleNamespace(diagnostic_mode=PRESCRIBED_TE_MODE,
+        resonance_radiation=manifest['declaration'], radiation_manifest=lambda: manifest,
+        snapshots=[[1.,1.,1e-8,1.,1e-8]], radiation_history={1.:manifest['accepted']})
+    path = Path(_write_profile(tmp_path, system, _species())).with_suffix('.radiation.json')
+    saved = json.loads(path.read_text())
+    assert saved['accepted'] == manifest['accepted']
+    assert saved['trajectory'] == [manifest['accepted']]
+    assert 'run_provenance' in saved
+    assert 'trajectory' not in manifest

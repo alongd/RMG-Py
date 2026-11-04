@@ -146,14 +146,27 @@ def run_provenance_lines(obj, ascii_only=False):
     Set ``ascii_only=True`` for formats that cannot carry the U+2091 subscript.
     """
     modes = run_diagnostic_modes(obj)
-    if not modes:
-        return []
     lines = []
     for mode in modes:
         disclaimer = _MODE_DISCLAIMERS[mode]
         if ascii_only:
             disclaimer = disclaimer.replace('nₑ', 'n_e')
         lines.extend([MODE_LINE_PREFIX + mode, disclaimer])
+    excluded = []
+    for system in _reaction_systems_of(obj):
+        operators = []
+        if getattr(system, 'has_wall', False):
+            operators.append('charged-particle wall loss')
+        if getattr(system, 'wall_neutral_diffusion', None):
+            operators.append('neutral wall diffusion')
+        radiation = getattr(system, 'resonance_radiation', None)
+        if radiation is not None:
+            operators.append('Ar resonance radiation ({0})'.format(radiation['model']))
+        for operator in operators:
+            if operator not in excluded:
+                excluded.append(operator)
+    if excluded:
+        lines.append('Mechanism files exclude reactor-level operators: ' + '; '.join(excluded) + '.')
     return lines
 
 

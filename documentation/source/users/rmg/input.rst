@@ -943,6 +943,10 @@ non-electron ion, in the core or edge. Electrons remain exempt from the conventi
 Charged-Particle Wall Boundary
 ==============================
 
+Resolved Ar resonance states additionally require the explicit model described in
+:doc:`argon_resonance_radiation`. Its optical path uses the physical chamber
+dimensions, independently of wall mobility.
+
 Without the keywords in this section a ``plasmaReactor`` is zero-dimensional: it has no geometry
 and no boundary, so every ion and electron it makes stays in the gas forever and the only fate
 available to a charged particle is more chemistry.  Together they give it a wall, as a reactor-level

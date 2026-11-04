@@ -60,6 +60,7 @@ import copy
 import json
 import logging
 import math
+import os
 from pathlib import Path
 import sys
 import time
@@ -1049,6 +1050,11 @@ cdef class PlasmaReactor(ReactionSystem):
     # returns, then re-raise that exact exception before accepting any state.
     cdef bint _native_callback_active
     cdef object _native_callback_failure
+    cdef object _radiation_operator
+    cdef object _resonance_radiation
+    cdef object _radiation_chamber_geometry
+    cdef public object radiation_diagnostics
+    cdef public dict radiation_history
 
     def __init__(self, T, P, initial_mole_fractions, Te, n_sims=1, termination=None, sensitive_species=None,
                  sensitivity_threshold=1e-3, sens_conditions=None, const_spc_names=None,
@@ -1075,8 +1081,11 @@ cdef class PlasmaReactor(ReactionSystem):
                  wall_diffusion_components=None,
                  electronegative_wall_qualification=None,
                  wall_chamber_geometry=None,
-                 electron_kinetics=None):
+                 electron_kinetics=None,
+                 resonance_radiation=None,
+                 radiation_chamber_geometry=None):
         ReactionSystem.__init__(self, termination, sensitive_species, sensitivity_threshold)
+        self._configure_radiation(resonance_radiation, radiation_chamber_geometry)
 
         self._development_progress_enabled = False
         self._development_progress_interval = float('nan')
@@ -4126,6 +4135,8 @@ cdef class PlasmaReactor(ReactionSystem):
         else:
             self._refresh_electron_temperature_rates()
         self._check_plasma_rate_parameters()
+        if self._radiation_operator is not None:
+            self._radiation_evaluation(y,self.compute_volume(y))
         if self.electronegative_wall_model is None:
             return
         self._check_en_transport_parameters()
@@ -4610,6 +4621,8 @@ cdef class PlasmaReactor(ReactionSystem):
                     +(te-self.T.value_si)*(b+2.*c*lt+3.*d*lt*lt)/te)
         pd[it] = gradient
         pd += self._en_wall_linearization(y,V)[1]
+        if self._radiation_operator is not None:
+            pd[:ns] += self._radiation_evaluation(y,V,dv)[1]
         if self.quasineutral_electron:
             pd[ie] = 0.
             pd[ie,:ns] = self.charge_row_scale*self.species_charges
@@ -5235,7 +5248,9 @@ cdef class PlasmaReactor(ReactionSystem):
                  self.wall_diffusion_components,
                  self.electronegative_wall_qualification,
                  self.wall_chamber_geometry,
-                 copy.deepcopy(self.electron_kinetics)))
+                 copy.deepcopy(self.electron_kinetics),
+                 copy.deepcopy(self.resonance_radiation),
+                 copy.deepcopy(self.radiation_chamber_geometry)))
 
     cpdef initialize_model(self, list core_species, list core_reactions, list edge_species, list edge_reactions,
                           list surface_species=None, list surface_reactions=None, list pdep_networks=None,
@@ -5367,6 +5382,7 @@ cdef class PlasmaReactor(ReactionSystem):
         # by diagnostics either way) but only RAISES when a wall or the algebraic
         # electron is actually configured.
         self._resolve_wall_state(core_species)
+        self._bind_radiation(core_species, edge_species)
 
         if self.eedf_mode:
             self._initialize_eedf_provider(core_species, core_reactions, edge_reactions)
@@ -5447,6 +5463,72 @@ cdef class PlasmaReactor(ReactionSystem):
             self.energy_history = []
             self._latch_energy_budget(self.y0, 0.0)
         self._record_electronegative_wall_output(0.0)
+        self._latch_radiation(self.y0, 0.0)
+
+    property resonance_radiation:
+        def __get__(self):
+            return copy.deepcopy(self._resonance_radiation)
+
+    property radiation_chamber_geometry:
+        def __get__(self):
+            return copy.deepcopy(self._radiation_chamber_geometry)
+
+    def _configure_radiation(self, declaration, geometry):
+        from rmgpy.solver.radiation import ArgonRadiation, load_argon_lines
+        from rmgpy import settings
+        self._resonance_radiation = copy.deepcopy(declaration)
+        self._radiation_chamber_geometry = copy.deepcopy(geometry)
+        self.radiation_diagnostics = None
+        self.radiation_history = {}
+        self._radiation_operator = None
+        if declaration is not None:
+            try:
+                # Validate geometry before I/O, including the complete endpoint.
+                operator = ArgonRadiation(declaration, geometry, {})
+                data = load_argon_lines(os.path.join(settings.require_database_directory(),
+                    'eedf', 'argon_resonance_radiation.json'))
+                operator.line_data = data
+                self._radiation_operator = operator
+            except (ValueError, OSError, KeyError, TypeError) as exc:
+                raise PlasmaStateError('resonanceRadiation: '+str(exc)) from exc
+
+    def _bind_radiation(self, core_species, edge_species):
+        from rmgpy.solver.radiation import has_argon_resonance
+        self.radiation_diagnostics = None
+        self.radiation_history = {}
+        try:
+            if self._radiation_operator is None:
+                if has_argon_resonance(core_species+edge_species):
+                    raise ValueError('resolved Ar(1s4)/Ar(1s2) requires explicit resonanceRadiation')
+            else:
+                self._radiation_operator.bind(core_species,edge_species)
+        except ValueError as exc:
+            raise PlasmaStateError(str(exc)) from exc
+
+    def _radiation_evaluation(self, y, V, volume_gradient=None):
+        try:
+            return self._radiation_operator.evaluate(y,V,self.T.value_si,volume_gradient)
+        except ValueError as exc:
+            raise PlasmaStateError(str(exc)) from exc
+
+    def _latch_radiation(self, y, t):
+        if self._radiation_operator is None:
+            return
+        rate, jac, record = self._radiation_evaluation(y,self.compute_volume(y))
+        record['time_s'] = float(t)
+        record['model'] = self.resonance_radiation['model']
+        record['geometryModel'] = self.resonance_radiation['geometryModel']
+        record['geometry'] = copy.deepcopy(self.radiation_chamber_geometry)
+        self.radiation_diagnostics = record
+        self.radiation_history[float(t)] = copy.deepcopy(record)
+
+    def radiation_manifest(self):
+        """Return only accepted-state photon loss and the explicit closure declaration."""
+        return dict(declaration=copy.deepcopy(self.resonance_radiation),
+                    geometry=copy.deepcopy(self.radiation_chamber_geometry),
+                    accepted=copy.deepcopy(self.radiation_diagnostics),
+                    source=None if self._radiation_operator is None else
+                        copy.deepcopy(self._radiation_operator.line_data))
 
     def _check_charged_species_thermo_provenance(self, core_species, edge_species):
         """Check resolved library thermo and core/edge ion-convention provenance."""
@@ -8134,11 +8216,14 @@ cdef class PlasmaReactor(ReactionSystem):
         cdef double V, scale = 0.0, acc = 0.0, term
         cdef Py_ssize_t j
         self._check_accepted_plasma_domain(self.y)
-        if not self.has_wall:
+        if not self.has_wall and self._radiation_operator is None:
             return 0.0
         V = self.compute_volume(self.y)
         res = np.zeros(self.num_core_species, float)
-        self._apply_wall_terms(self.y, V, res)
+        if self.has_wall:
+            self._apply_wall_terms(self.y, V, res)
+        if self._radiation_operator is not None:
+            res += self._radiation_evaluation(self.y,V)[0]
         # Scale-robust L2 norm. ``sqrt(sum(res*res))`` squares each term, so a small but
         # REPRESENTABLE flux (a weak ionisation source delivers res ~ S/Na per species)
         # underflows to exactly zero once res < sqrt(DBL_MIN) ~ 1.5e-154, and the reactor
@@ -8382,6 +8467,7 @@ cdef class PlasmaReactor(ReactionSystem):
                 self._latch_energy_budget(self.y, self.t)
                 self._update_terminal_state(self.y, self.t)
             self._record_electronegative_wall_output(self.t)
+            self._latch_radiation(self.y, self.t)
             return result
 
         # DASx.advance may accept several internal states before returning. A
@@ -8435,6 +8521,7 @@ cdef class PlasmaReactor(ReactionSystem):
             self._latch_energy_budget(self.y, self.t)
             self._update_terminal_state(self.y, self.t)
         self._record_electronegative_wall_output(self.t)
+        self._latch_radiation(self.y, self.t)
         return result
 
     cpdef double compute_volume(self, np.ndarray y) except -1:
@@ -8846,6 +8933,8 @@ cdef class PlasmaReactor(ReactionSystem):
         # cancellation is exact in floating point too, not merely to one ulp.
         if self.has_wall:
             self._apply_wall_terms(y, V, res)
+        if self._radiation_operator is not None:
+            res += self._radiation_evaluation(y,V)[0]
 
         if self.energy_balance:
             delta = np.empty(self.neq, float)
@@ -9207,6 +9296,8 @@ cdef class PlasmaReactor(ReactionSystem):
             else:
                 self._apply_wall_jacobian(y, V, dVdy, pd)
 
+        if self._radiation_operator is not None:
+            pd += self._radiation_evaluation(y,V,dVdy)[1]
         self.jacobian_matrix = pd + cj * np.identity(num_core_species, float)
 
         # The quasineutrality row is purely algebraic: d delta[e] / d dydt[e] = 0,

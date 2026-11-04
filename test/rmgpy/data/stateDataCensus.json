@@ -9929,11 +9929,11 @@
     },
     "rmgpy/diagnostic_mode.py:run_provenance_lines": {
       "verdict": "not-reachable-for-resolved",
-      "reason": "Run-mode metadata, comment parsing or scalar-claim refusal only; no scientific data acquisition or molecular identity conversion.",
+      "reason": "Run-mode metadata, comment parsing or scalar-claim refusal only; no scientific data acquisition or molecular identity conversion. Radiation review: explicit model/geometry and state identities are retained; own-state reactor loss and accepted diagnostics introduce no ground-data fallback.",
       "evidence": [
         "test/rmgpy/diagnosticModeTest.py"
       ],
-      "source_sha256": "d6b63261376cb60ec69551ae418d518a9e4b14276212bbe79fcf2e2bd2b4982e"
+      "source_sha256": "94593eb5aff68faa4e0d29cb9d52392c064256c89f39999a1135e1bb4107e0ba"
     },
     "rmgpy/display.py:display": {
       "verdict": "not-reachable-for-resolved",
@@ -22652,12 +22652,13 @@
     },
     "rmgpy/rmg/input.py:_format_plasma_wall": {
       "verdict": "carried",
-      "reason": "Serializes the exact normalized EEDF and operating-branch declarations for input roundtrip; it carries paths and identities without obtaining species data or inventing defaults.",
+      "reason": "Serializes the exact normalized EEDF and operating-branch declarations for input roundtrip; it carries paths and identities without obtaining species data or inventing defaults. Radiation review: explicit model/geometry and state identities are retained; own-state reactor loss and accepted diagnostics introduce no ground-data fallback.",
       "evidence": [
         "rmgpy/rmg/input.py",
-        "test/rmgpy/rmg/electronegativeWallInputTest.py"
+        "test/rmgpy/rmg/electronegativeWallInputTest.py",
+        "test/rmgpy/rmg/inputTest.py"
       ],
-      "source_sha256": "fb0fa41d1ed9f24f6eb711e946d4462aacf6ecfc02cc6ccdf607963746f2a951",
+      "source_sha256": "ce006c06e9056fa2059964b7f1cfb2e4004c2e3c219d2c4b8735f174185719ec",
       "file": "rmgpy/rmg/input.py",
       "line": 3329
     },
@@ -22743,11 +22744,11 @@
     },
     "rmgpy/rmg/input.py:_plasma_wall_kwargs": {
       "verdict": "carried",
-      "reason": "Model/configuration administration retains explicit species/reaction objects. Scientific acquisition delegates to original-species thermo/transport/statmech, opted-in family/exact library and refusing QM/ML/default-transfer boundaries.",
+      "reason": "Model/configuration administration retains explicit species/reaction objects. Scientific acquisition delegates to original-species thermo/transport/statmech, opted-in family/exact library and refusing QM/ML/default-transfer boundaries. Radiation review: explicit model/geometry and state identities are retained; own-state reactor loss and accepted diagnostics introduce no ground-data fallback.",
       "evidence": [
         "test/rmgpy/rmg/inputTest.py"
       ],
-      "source_sha256": "65f53aa0c87414dd7bcbe2a70df5ac37a7eb1ed0623556e732db5cfd7aa61a3d",
+      "source_sha256": "d41cfbe134fbf60ee451a40a60d39f0cce6b1cddef39b4f74919c0afe4e91dce",
       "file": "rmgpy/rmg/input.py",
       "line": 649
     },
@@ -23004,13 +23005,14 @@
     },
     "rmgpy/rmg/input.py:plasma_reactor": {
       "verdict": "carried",
-      "reason": "Resolves deck labels to their existing species_dict objects, validates explicit composition/electron and wall declarations, and passes them to PlasmaReactor. It does not strip electronic state or assign thermo/transport from a ground database record.",
+      "reason": "Resolves deck labels to their existing species_dict objects, validates explicit composition/electron and wall declarations, and passes them to PlasmaReactor. It does not strip electronic state or assign thermo/transport from a ground database record. Radiation review: explicit model/geometry and state identities are retained; own-state reactor loss and accepted diagnostics introduce no ground-data fallback.",
       "evidence": [
         "rmgpy/rmg/input.py",
         "test/rmgpy/rmg/electronegativeWallInputTest.py",
-        "test/rmgpy/diagnosticModeTest.py"
+        "test/rmgpy/diagnosticModeTest.py",
+        "test/rmgpy/rmg/inputTest.py"
       ],
-      "source_sha256": "97f46b49023b95de90b8e5804cf3cd750bdf0a94a532e3799a9d3b0cc7c5b5d7",
+      "source_sha256": "4038fecf41d7beb01453e8da1d3d33ca49966880d5c20ccba05997fc366a10a7",
       "file": "rmgpy/rmg/input.py",
       "line": 1224
     },
@@ -23276,13 +23278,13 @@
     },
     "rmgpy/rmg/listener.py:SimulationProfileWriter.update": {
       "verdict": "carried",
-      "reason": "Writes the supplied core labels, snapshots and accepted per-time wall history/manifest to output. The writer carries the recorded values and has no species matching or data acquisition route.",
+      "reason": "Writes the supplied core labels, snapshots and accepted per-time wall history/manifest to output. The writer carries the recorded values and has no species matching or data acquisition route. Radiation review: explicit model/geometry and state identities are retained; own-state reactor loss and accepted diagnostics introduce no ground-data fallback.",
       "evidence": [
         "rmgpy/rmg/listener.py",
         "test/rmgpy/solver/plasmaElectronegativeRework2Test.py",
         "test/rmgpy/diagnosticModeTest.py"
       ],
-      "source_sha256": "c5ad51a4b7607eebbdde9232747286a3eba98328fe712c368f3153c360b628c2"
+      "source_sha256": "32d5d7dc3357dc939a836bf1d834c0c4a3e11d07e69b23ac149c11171c532dfe"
     },
     "rmgpy/rmg/listener.py:_minimum_confinement": {
       "verdict": "carried",
@@ -26932,23 +26934,25 @@
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.__init__": {
       "verdict": "carried",
-      "reason": "Stores the explicitly supplied temperatures, composition and reactor options, then configures the declared wall and energy models. The added empty development-diagnostic state records no scientific data and performs no independent thermo or ground-state lookup.",
+      "reason": "Stores the explicitly supplied temperatures, composition and reactor options, then configures the declared wall and energy models. The added empty development-diagnostic state records no scientific data and performs no independent thermo or ground-state lookup. Radiation review: explicit model/geometry and state identities are retained; own-state reactor loss and accepted diagnostics introduce no ground-data fallback.",
       "evidence": [
         "rmgpy/solver/plasma.pyx",
-        "test/rmgpy/solver/plasmaElectronegativeWallTest.py"
+        "test/rmgpy/solver/plasmaElectronegativeWallTest.py",
+        "test/rmgpy/solver/plasmaRadiationTest.py"
       ],
-      "source_sha256": "35b39d32f28f3d19bc051e244671fac742bee9998b554378f2bc5c43ad194ae9",
+      "source_sha256": "9254d37a6149c73ed448f560ac9e4567fadedbb3369b1ca4e5ee5ea0fe1854ec",
       "file": "rmgpy/solver/plasma.pyx",
       "line": 1046
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.__reduce__": {
       "verdict": "carried",
-      "reason": "Enumerates every constructor declaration for reconstruction, including original composition, initial Te, explicit mobility maps and EN qualification. Pickling preserves supplied identities/configuration rather than filling omitted models with ground values.",
+      "reason": "Enumerates every constructor declaration for reconstruction, including original composition, initial Te, explicit mobility maps and EN qualification. Pickling preserves supplied identities/configuration rather than filling omitted models with ground values. Radiation review: explicit model/geometry and state identities are retained; own-state reactor loss and accepted diagnostics introduce no ground-data fallback.",
       "evidence": [
         "rmgpy/solver/plasma.pyx",
-        "test/rmgpy/solver/plasmaElectronegativeWallTest.py"
+        "test/rmgpy/solver/plasmaElectronegativeWallTest.py",
+        "test/rmgpy/solver/plasmaRadiationTest.py"
       ],
-      "source_sha256": "3dea0685a3d8e46ea8333c11ab27f82a14a09e98f9ab3f073394e05f9dd51cb0",
+      "source_sha256": "c65ae2f85e0435cc018bde21384e3a7286827d064910324541a1b0e60b6d5b03",
       "file": "rmgpy/solver/plasma.pyx",
       "line": 5003
     },
@@ -27006,12 +27010,13 @@
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._check_accepted_plasma_domain": {
       "verdict": "carried",
-      "reason": "Checks live assigned rate, energy and transport parameters together with the original indexed state, EOS and any explicitly evaluated law/rate. Failure stops publication; it cannot repair a resolved model with ground data.",
+      "reason": "Checks live assigned rate, energy and transport parameters together with the original indexed state, EOS and any explicitly evaluated law/rate. Failure stops publication; it cannot repair a resolved model with ground data. Radiation review: explicit model/geometry and state identities are retained; own-state reactor loss and accepted diagnostics introduce no ground-data fallback.",
       "evidence": [
         "rmgpy/solver/plasma.pyx",
-        "test/rmgpy/solver/plasmaElectronegativeRework8Test.py"
+        "test/rmgpy/solver/plasmaElectronegativeRework8Test.py",
+        "test/rmgpy/solver/plasmaRadiationTest.py"
       ],
-      "source_sha256": "07810bde68722a94916fe417822ea026ab53ad0f20274dc5ead965825e4702f9",
+      "source_sha256": "3fffaa07bd2791ec5760d73663a23d554157a992598b212deeefbc8a63c7322a",
       "file": "rmgpy/solver/plasma.pyx",
       "line": 3970
     },
@@ -27493,12 +27498,13 @@
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._en_energy_jacobian": {
       "verdict": "carried",
-      "reason": "Differentiates the current mass-action, declared energy/elastic terms and wall/source operators analytically on the same model arrays. Original reaction laws, masses and partner indices remain associated with their species.",
+      "reason": "Differentiates the current mass-action, declared energy/elastic terms and wall/source operators analytically on the same model arrays. Original reaction laws, masses and partner indices remain associated with their species. Radiation review: explicit model/geometry and state identities are retained; own-state reactor loss and accepted diagnostics introduce no ground-data fallback.",
       "evidence": [
         "rmgpy/solver/plasma.pyx",
-        "test/rmgpy/solver/plasmaElectronegativeRework6Test.py"
+        "test/rmgpy/solver/plasmaElectronegativeRework6Test.py",
+        "test/rmgpy/solver/plasmaRadiationTest.py"
       ],
-      "source_sha256": "5680c0f6f877e4ad306018ba4c54506e4528db452785c46ba56cc7093a73163e",
+      "source_sha256": "559581d84f498564c56dca5ded434da46e6f9707f53ed8aa56070630d6c3e71e",
       "file": "rmgpy/solver/plasma.pyx",
       "line": 4348
     },
@@ -27663,12 +27669,13 @@
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._initialize_model": {
       "verdict": "carried",
-      "reason": "Checks original charged-species thermo provenance, resolves only declared electron placements, validates and packs those species/reactions, then initializes declared transport/energy. Canonical reactions are restored in the public index; no new ground-data acquisition bypass is introduced.",
+      "reason": "Checks original charged-species thermo provenance, resolves only declared electron placements, validates and packs those species/reactions, then initializes declared transport/energy. Canonical reactions are restored in the public index; no new ground-data acquisition bypass is introduced. Radiation review: explicit model/geometry and state identities are retained; own-state reactor loss and accepted diagnostics introduce no ground-data fallback.",
       "evidence": [
         "rmgpy/solver/plasma.pyx",
-        "test/rmgpy/solver/plasmaElectronegativeWallTest.py"
+        "test/rmgpy/solver/plasmaElectronegativeWallTest.py",
+        "test/rmgpy/solver/plasmaRadiationTest.py"
       ],
-      "source_sha256": "3c6c650e0a5ba679e19631a964f8d08c28552829a0b20eaa7cd842a70dca9b7c",
+      "source_sha256": "92c34581088a0d877d0cdf0e7b46e76e42adc27559a5b1fd403a6242700a60eb",
       "file": "rmgpy/solver/plasma.pyx",
       "line": 5088
     },
@@ -28046,12 +28053,13 @@
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.advance": {
       "verdict": "carried",
-      "reason": "Advances the existing solver through accepted internal states, applying the common domain gate and required wall/energy monitoring before publishing the endpoint. It changes populations/time only, with no independent scientific assignment.",
+      "reason": "Advances the existing solver through accepted internal states, applying the common domain gate and required wall/energy monitoring before publishing the endpoint. It changes populations/time only, with no independent scientific assignment. Radiation review: explicit model/geometry and state identities are retained; own-state reactor loss and accepted diagnostics introduce no ground-data fallback.",
       "evidence": [
         "rmgpy/solver/plasma.pyx",
-        "test/rmgpy/solver/plasmaElectronegativeRework8Test.py"
+        "test/rmgpy/solver/plasmaElectronegativeRework8Test.py",
+        "test/rmgpy/solver/plasmaRadiationTest.py"
       ],
-      "source_sha256": "592040e6677c22a992ef56289350b413b4fa56a1875fb8585560f068b266f47f",
+      "source_sha256": "e0838eb867c262a4c73a7895e0288651328bbd3301595c83ea4e0f2bfa8f7f5a",
       "file": "rmgpy/solver/plasma.pyx",
       "line": 8182
     },
@@ -28336,12 +28344,13 @@
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.get_non_chemical_char_rate": {
       "verdict": "carried",
-      "reason": "Evaluates the same declared wall/source population operator at the accepted state and returns its scale-safe L2 norm. It measures existing rates without obtaining reaction templates or species values.",
+      "reason": "Evaluates the same declared wall/source population operator at the accepted state and returns its scale-safe L2 norm. It measures existing rates without obtaining reaction templates or species values. Radiation review: explicit model/geometry and state identities are retained; own-state reactor loss and accepted diagnostics introduce no ground-data fallback.",
       "evidence": [
         "rmgpy/solver/plasma.pyx",
-        "test/rmgpy/solver/plasmaElectronegativeWallTest.py"
+        "test/rmgpy/solver/plasmaElectronegativeWallTest.py",
+        "test/rmgpy/solver/plasmaRadiationTest.py"
       ],
-      "source_sha256": "0531dcd246d3f1da4b35dc7f7e2c60f0307236675c21bdde9cfab9a4076b3bc6",
+      "source_sha256": "b56252f588af6d0d55235e1753f790cc1c036c05b03f2bd9b6f644d40045ab77",
       "file": "rmgpy/solver/plasma.pyx",
       "line": 7941
     },
@@ -28449,12 +28458,13 @@
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.step": {
       "verdict": "carried",
-      "reason": "Takes one solver step, checks the accepted state, then latches the configured wall, energy and EN output. All scientific inputs remain on their original model indices through publication.",
+      "reason": "Takes one solver step, checks the accepted state, then latches the configured wall, energy and EN output. All scientific inputs remain on their original model indices through publication. Radiation review: explicit model/geometry and state identities are retained; own-state reactor loss and accepted diagnostics introduce no ground-data fallback.",
       "evidence": [
         "rmgpy/solver/plasma.pyx",
-        "test/rmgpy/solver/plasmaElectronegativeWallTest.py"
+        "test/rmgpy/solver/plasmaElectronegativeWallTest.py",
+        "test/rmgpy/solver/plasmaRadiationTest.py"
       ],
-      "source_sha256": "81d2c1e4716c880003d85d3af58ea46ca9f8025deb782e3a0087332c80584d7d",
+      "source_sha256": "13c7d877c56918af484fce1e55e6ddd02d6436d5781d1627e723a1aba917e4e8",
       "file": "rmgpy/solver/plasma.pyx",
       "line": 8242
     },
@@ -38048,6 +38058,150 @@
         "test/rmgpy/diagnosticModeTest.py"
       ],
       "source_sha256": "c8ab70b5acb94b1d3b2dd1ec44f4fe3dc3fde57eeb36db139eab88f9b48d7a20"
+    },
+    "rmgpy/rmg/input.py:_plasma_geometry_dimensions": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Validates scalar physical chamber dimensions shared by wall and radiation closures; no molecular data lookup.",
+      "evidence": [
+        "test/rmgpy/rmg/inputTest.py"
+      ],
+      "source_sha256": "52d257970c095d5c0ee0ca1a6c85bb37df58d6c109ad8c58dff2dec231ee0f5a"
+    },
+    "rmgpy/solver/plasma.pyx:PlasmaReactor.resonance_radiation.__get__": {
+      "verdict": "carried",
+      "reason": "Configures or exposes the explicit reactor radiation operator with copied declarations, binds original molecular electronic states, and carries accepted own-state loss plus sourced line data; no inferred ground-state property.",
+      "evidence": [
+        "test/rmgpy/solver/plasmaRadiationTest.py"
+      ],
+      "source_sha256": "48ef0e515d32937a10ffc8b0b2e9c5ddacbb90b07af5d2300f06719b7b69ec8f"
+    },
+    "rmgpy/solver/plasma.pyx:PlasmaReactor.radiation_chamber_geometry.__get__": {
+      "verdict": "carried",
+      "reason": "Configures or exposes the explicit reactor radiation operator with copied declarations, binds original molecular electronic states, and carries accepted own-state loss plus sourced line data; no inferred ground-state property.",
+      "evidence": [
+        "test/rmgpy/solver/plasmaRadiationTest.py"
+      ],
+      "source_sha256": "e938014fbe3266fcdf43b83cf114d46b5b84be00f9959a42403778882edeee5e"
+    },
+    "rmgpy/solver/plasma.pyx:PlasmaReactor._configure_radiation": {
+      "verdict": "carried",
+      "reason": "Configures or exposes the explicit reactor radiation operator with copied declarations, binds original molecular electronic states, and carries accepted own-state loss plus sourced line data; no inferred ground-state property.",
+      "evidence": [
+        "test/rmgpy/solver/plasmaRadiationTest.py"
+      ],
+      "source_sha256": "e972514eedc643d1f5c7c80eef3bd613f08658d6d83dcbf8bb390531173eb642"
+    },
+    "rmgpy/solver/plasma.pyx:PlasmaReactor._bind_radiation": {
+      "verdict": "carried",
+      "reason": "Configures or exposes the explicit reactor radiation operator with copied declarations, binds original molecular electronic states, and carries accepted own-state loss plus sourced line data; no inferred ground-state property.",
+      "evidence": [
+        "test/rmgpy/solver/plasmaRadiationTest.py"
+      ],
+      "source_sha256": "cbc5965a2aec0cb0e87073086f5a00783f3fb97785c61c76abc8339c2d4a375e"
+    },
+    "rmgpy/solver/plasma.pyx:PlasmaReactor._radiation_evaluation": {
+      "verdict": "carried",
+      "reason": "Configures or exposes the explicit reactor radiation operator with copied declarations, binds original molecular electronic states, and carries accepted own-state loss plus sourced line data; no inferred ground-state property.",
+      "evidence": [
+        "test/rmgpy/solver/plasmaRadiationTest.py"
+      ],
+      "source_sha256": "e25fbc63d196424c95863128f74b11625a872852cd0361fb276c8d1e0f9cceb7"
+    },
+    "rmgpy/solver/plasma.pyx:PlasmaReactor._latch_radiation": {
+      "verdict": "carried",
+      "reason": "Configures or exposes the explicit reactor radiation operator with copied declarations, binds original molecular electronic states, and carries accepted own-state loss plus sourced line data; no inferred ground-state property.",
+      "evidence": [
+        "test/rmgpy/solver/plasmaRadiationTest.py"
+      ],
+      "source_sha256": "371ce5e67ac8acd16680461b76cb9569ec0a2f552b1ba9b14b6e2400aedf41ff"
+    },
+    "rmgpy/solver/plasma.pyx:PlasmaReactor.radiation_manifest": {
+      "verdict": "carried",
+      "reason": "Configures or exposes the explicit reactor radiation operator with copied declarations, binds original molecular electronic states, and carries accepted own-state loss plus sourced line data; no inferred ground-state property.",
+      "evidence": [
+        "test/rmgpy/solver/plasmaRadiationTest.py"
+      ],
+      "source_sha256": "35e8f74fca9f15516966f5fbeaf70a97c6543154f2e2baf127363c8733fa5fbf"
+    },
+    "rmgpy/solver/radiation.py:walsh_escape_factor": {
+      "verdict": "carried",
+      "reason": "Evaluates the declared optically thick Walsh closure from explicit line parameters and ground-Ar partial density; refuses outside the published-asymptotic engineering domain, without molecular substitution.",
+      "evidence": [
+        "test/rmgpy/solver/radiationTest.py"
+      ],
+      "source_sha256": "7c2c928010df96d218876d5fdfe36655e39bf77733f8eb56b3b19b39737b083e"
+    },
+    "rmgpy/solver/radiation.py:_walsh_terms": {
+      "verdict": "carried",
+      "reason": "Evaluates the declared optically thick Walsh closure from explicit line parameters and ground-Ar partial density; refuses outside the published-asymptotic engineering domain, without molecular substitution.",
+      "evidence": [
+        "test/rmgpy/solver/radiationTest.py"
+      ],
+      "source_sha256": "d0c10bc0dbfc4a33637439a85c29505d59c83c6c96406dffbee951e61ceaee50"
+    },
+    "rmgpy/solver/radiation.py:walsh_escape_derivatives": {
+      "verdict": "carried",
+      "reason": "Evaluates the declared optically thick Walsh closure from explicit line parameters and ground-Ar partial density; refuses outside the published-asymptotic engineering domain, without molecular substitution.",
+      "evidence": [
+        "test/rmgpy/solver/radiationTest.py"
+      ],
+      "source_sha256": "b493382cc306d6ed19c8c4eae8ec497f63dba3aa22098f33059fe0158f50918d"
+    },
+    "rmgpy/solver/radiation.py:load_argon_lines": {
+      "verdict": "carried",
+      "reason": "Loads only explicitly keyed 3P1/1P1 NIST vacuum lines, validates the lower ground identity and degeneracy, and retains query provenance separately from cascades.",
+      "evidence": [
+        "test/rmgpy/solver/radiationTest.py"
+      ],
+      "source_sha256": "08886ecb78c6c8b66ebf3cd5fc60541749d4e185052ee41ef1045b52cfb8482d"
+    },
+    "rmgpy/solver/radiation.py:argon_escape": {
+      "verdict": "carried",
+      "reason": "Evaluates the declared optically thick Walsh closure from explicit line parameters and ground-Ar partial density; refuses outside the published-asymptotic engineering domain, without molecular substitution.",
+      "evidence": [
+        "test/rmgpy/solver/radiationTest.py"
+      ],
+      "source_sha256": "f1e09af58159f77e9d351bd44cf290d3c66ba6196d8eb55f4fa97ed1f4b2cfc2"
+    },
+    "rmgpy/solver/radiation.py:_argon_state": {
+      "verdict": "carried",
+      "reason": "Carries original neutral atomic Ar electronic identities and explicit closure/geometry. Only 3P1/1P1 decay to uniquely bound ground Ar; metastables remain unmodified and mixed baths use ground partial density.",
+      "evidence": [
+        "test/rmgpy/solver/plasmaRadiationTest.py"
+      ],
+      "source_sha256": "eaf469ccc3ebef64be0edbe6ab812120cae4c72b5f54336618d230e478426f39"
+    },
+    "rmgpy/solver/radiation.py:ArgonRadiation.__init__": {
+      "verdict": "carried",
+      "reason": "Carries original neutral atomic Ar electronic identities and explicit closure/geometry. Only 3P1/1P1 decay to uniquely bound ground Ar; metastables remain unmodified and mixed baths use ground partial density.",
+      "evidence": [
+        "test/rmgpy/solver/plasmaRadiationTest.py"
+      ],
+      "source_sha256": "2e567324268da67f2df9df37868631f52c6d8a47c5efd0181f7c3a88c5afea3e"
+    },
+    "rmgpy/solver/radiation.py:ArgonRadiation.bind": {
+      "verdict": "carried",
+      "reason": "Carries original neutral atomic Ar electronic identities and explicit closure/geometry. Only 3P1/1P1 decay to uniquely bound ground Ar; metastables remain unmodified and mixed baths use ground partial density.",
+      "evidence": [
+        "test/rmgpy/solver/plasmaRadiationTest.py"
+      ],
+      "source_sha256": "0df29734f6275fdf495607cd80b914a12c547d069b0193f0f95419554715761a"
+    },
+    "rmgpy/solver/radiation.py:ArgonRadiation.evaluate": {
+      "verdict": "carried",
+      "reason": "Carries original neutral atomic Ar electronic identities and explicit closure/geometry. Only 3P1/1P1 decay to uniquely bound ground Ar; metastables remain unmodified and mixed baths use ground partial density.",
+      "evidence": [
+        "test/rmgpy/solver/plasmaRadiationTest.py"
+      ],
+      "source_sha256": "5365a92c75ef14193304d9e23d8b273cf3360bc49866ab8deff3042fe5d27447"
+    },
+    "rmgpy/solver/radiation.py:has_argon_resonance": {
+      "verdict": "carried",
+      "reason": "Carries original neutral atomic Ar electronic identities and explicit closure/geometry. Only 3P1/1P1 decay to uniquely bound ground Ar; metastables remain unmodified and mixed baths use ground partial density.",
+      "evidence": [
+        "test/rmgpy/solver/plasmaRadiationTest.py"
+      ],
+      "source_sha256": "ef01f827b46240fb9e40a222548b42215607f6a0dd32826ebf2e660d465ab858"
     }
   }
 }

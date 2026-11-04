@@ -120,6 +120,15 @@ class SimulationProfileWriter(object):
                 json.dump(manifest, stream, indent=2, allow_nan=False)
                 stream.write('\n')
 
+        if getattr(reaction_system, 'resonance_radiation', None) is not None:
+            manifest = dict(reaction_system.radiation_manifest())
+            manifest['trajectory'] = [reaction_system.radiation_history[row[0]]
+                                      for row in reaction_system.snapshots]
+            manifest['run_provenance'] = provenance
+            with open(filename[:-4] + '.radiation.json', 'w') as stream:
+                json.dump(manifest, stream, indent=2, sort_keys=True, allow_nan=False)
+                stream.write('\n')
+
         if getattr(reaction_system, 'eedf_mode', False):
             manifest = dict(reaction_system.eedf_run_manifest())
             if provenance:

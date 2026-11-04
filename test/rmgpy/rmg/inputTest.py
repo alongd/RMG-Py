@@ -1891,3 +1891,34 @@ def test_translation_option_rejects_non_boolean(value, monkeypatch):
     monkeypatch.setattr(inp, 'rmg', job)
     with pytest.raises(InputError, match='generateCanteraFromChemkin must be True or False'):
         inp.options(generateCanteraFromChemkin=value)
+
+
+class TestPlasmaRadiationInput:
+    @pytest.mark.parametrize('wall', [False, True])
+    @pytest.mark.parametrize('geometry,mode', [
+        ({'shape':'cylinder','radius':(5,'cm'),'length':(30,'cm')}, 'infiniteCylinder'),
+        ({'shape':'slab','gap':(5,'cm')}, 'slab'),
+    ])
+    def test_radiation_geometry_round_trip(self, tmp_path, wall, geometry, mode):
+        reader = TestInputPlasmaReactor()
+        declaration = {'model':'complete','geometryModel':mode}
+        extra = '    resonanceRadiation={0!r},\n    chamberGeometry={1!r},\n'.format(declaration, geometry)
+        if wall:
+            extra += "    ionReducedMobility=(1e-4,'m^2/(V*s)'),\n"
+        body = reader._preamble() + reader._plasma_block(extra, mole_fractions="{'Ar': 1., 'e-': 1e-9}")
+        system = reader._read(tmp_path, body).reaction_systems[0]
+        assert system.resonance_radiation == declaration
+        assert system.has_wall == wall
+        saved = inp._format_plasma_wall(system)
+        assert saved.count('chamberGeometry') == 1
+        assert 'diffusionLength' not in saved
+        replay = reader._read(tmp_path, reader._preamble()+reader._plasma_block(saved, mole_fractions="{'Ar': 1., 'e-': 1e-9}")).reaction_systems[0]
+        assert replay.radiation_chamber_geometry == system.radiation_chamber_geometry
+        assert replay.resonance_radiation == declaration
+
+    @pytest.mark.parametrize('geometry', [None, {'diffusionLength':(5,'cm')}, {'shape':'slab','gap':(5,'s')}])
+    def test_radiation_rejects_missing_or_nonoptical_geometry(self, tmp_path, geometry):
+        reader = TestInputPlasmaReactor()
+        extra = "    resonanceRadiation={{'model':'complete','geometryModel':'slab'}},\n    chamberGeometry={0!r},\n".format(geometry)
+        with pytest.raises((InputError, PlasmaStateError), match='geometry|Geometry|length'):
+            reader._read(tmp_path, reader._preamble()+reader._plasma_block(extra, mole_fractions="{'Ar':1.,'e-':1e-9}"))

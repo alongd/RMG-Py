@@ -95,6 +95,8 @@ def cascade_model(tmp_path, branch_fixture, *, placement='core', mutate=None, ze
     initial.update({electron: 1e-6, ion: 1e-6, ground: .999998})
     reactor = PlasmaReactor(
         (TGAS, 'K'), (PRESSURE, 'Pa'), initial, (TGAS, 'K'), termination=[],
+        resonance_radiation={'model':'complete','geometryModel':'infiniteCylinder'},
+        radiation_chamber_geometry={'shape':'cylinder','radius':.05,'length':.30},
         diffusion_length=(LAMBDA, 'm'), ion_reduced_mobility=(MU0, 'm^2/(V*s)'),
         wall_single_bath_approximation=True,
         wall_neutralization_products={'Ar+': 'Ar'}, thermo_source_assertions={'Ar+': 'ion'},
@@ -187,7 +189,8 @@ def test_reactor_refuses_bad_branch_deck(tmp_path, branch_fixture, problem):
             kin = reactions[0].kinetics
             reactions[0].kinetics = EEDFChannel(process=kin.process, collision_set=kin.collision_set)
     error = NonEquilibriumReverseRateError if problem == 'reversible' else PlasmaStateError
-    with pytest.raises(error, match='cascade|EEDF|irreversible'):
+    message = 'duplicate resolved resonance state' if problem == 'product' else 'cascade|EEDF|irreversible'
+    with pytest.raises(error, match=message):
         cascade_model(tmp_path, branch_fixture, mutate=mutate)
 
 

@@ -32,6 +32,7 @@ rmg_dev@mit.edu.
     thermo
     kinetics
     eedf
+    argon_resonance_radiation
     liquids
     surfaces
     faq
