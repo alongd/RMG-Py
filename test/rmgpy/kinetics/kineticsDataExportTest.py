@@ -188,3 +188,27 @@ def test_duplicate_merge_preserves_agreed_flux_pairs_and_refuses_conflicts(confl
         assert leaves[0].pairs == pairs
         assert isinstance(leaves[0].kinetics, MultiArrhenius)
         assert len(leaves[0].kinetics.arrhenius) == 3
+
+
+def test_default_translation_retains_resolved_state_refusal(tmp_path, admitted_export_reaction):
+    from rmgpy.exceptions import MechanismWriterError, SpeciesIdentityError
+    from rmgpy.rmg.main import RMG
+    from rmgpy.rmg.model import CoreEdgeReactionModel, ReactionModel
+    from rmgpy.rmg.settings import WriterConfig
+
+    _, reaction, species_list = admitted_export_reaction
+    job = RMG(output_directory=str(tmp_path))
+    assert job.generate_cantera_from_chemkin is True
+    job.chemkin_writer_config = WriterConfig(save_interval=1)
+    job.reaction_model = CoreEdgeReactionModel()
+    job.reaction_model.core = ReactionModel(species=species_list, reactions=[reaction])
+    job.generate_end_of_run_cantera_files()
+    assert len(job.export_failures) == 1
+    step, error = job.export_failures[0]
+    assert step == 'Chemkin-to-Cantera translation (cantera_from_ck/)'
+    assert type(error) is SpeciesIdentityError
+    assert str(error).startswith(
+        'Resolved electronic or vibrational states are not supported by '
+        'rmgpy/rmg/main.py:RMG.generate_cantera_files_from_chemkin:')
+    with pytest.raises(MechanismWriterError, match='Chemkin-to-Cantera translation'):
+        job.report_export_failures()

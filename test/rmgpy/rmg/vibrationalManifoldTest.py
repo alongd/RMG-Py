@@ -182,13 +182,17 @@ def test_declared_model_accepts_later_level_and_refuses_second_level_zero(databa
         job.reaction_model.make_new_species(zero, generate_thermo=False)
 
 
-def test_saved_input_preserves_declaration(database, tmp_path, monkeypatch):
+@pytest.mark.parametrize('translate', [True, False])
+def test_saved_input_preserves_declaration(database, tmp_path, monkeypatch, translate):
     job = load_deck(tmp_path, monkeypatch, level=False)
+    job.generate_cantera_from_chemkin = translate
     saved = tmp_path / 'saved.py'
     inp.save_input_file(str(saved), job)
     assert "vibrationalManifold(species='N2')" in saved.read_text()
     reloaded = RMG()
     reloaded.load_input(str(saved))
+    assert reloaded.generate_cantera_from_chemkin is translate
+    assert ('generateCanteraFromChemkin = False' in saved.read_text()) is (not translate)
     install_database(monkeypatch, database)
     reloaded.reaction_model.generate_thermo(reloaded.initial_species[0])
     assert reloaded.initial_species[0].thermo.label == 'N2v0'
