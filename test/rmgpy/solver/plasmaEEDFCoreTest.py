@@ -722,7 +722,10 @@ def test_u_state_atol_restart_and_mapped_rate(tmp_path):
     assert reactor.atol_array[reactor.te_index] == 1.e-8
     assert reactor.kf[0] == pytest.approx(constants.Na * reactor.eedf_row.k_ine[0])
     args = reactor.__reduce__()[1]
-    assert args[-1] == reactor.electron_kinetics
+    # electron_kinetics is followed by the two radiation arguments in the constructor.
+    assert args[-3] == reactor.electron_kinetics
+    assert args[-2] == reactor.resonance_radiation
+    assert args[-1] == reactor.radiation_chamber_geometry
     assert copy.deepcopy(reactor).electron_kinetics == reactor.electron_kinetics
     manifest = reactor.eedf_run_manifest()
     assert manifest['wall_sheath_basis'] == 'Maxwellian form at epsilon_k'
