@@ -3653,9 +3653,10 @@
       "verdict": "carried",
       "reason": "Reads/writes explicit mechanism species and kinetic/thermo/transport records. Molecular dictionary identity is kept; this import/export boundary is not an estimator matching ground groups.",
       "evidence": [
-        "test/rmgpy/chemkinTest.py"
+        "test/rmgpy/chemkinTest.py",
+        "test/rmgpy/kinetics/kineticsDataExportTest.py"
       ],
-      "source_sha256": "adeb78def14680d260d0f7573b78b7f4122ec0368807f3574d24884529e72909"
+      "source_sha256": "7a314a6b281730055ef5773e40dfaf9a86729062c8141b60eeb050a2fdacc22f"
     },
     "rmgpy/chemkin.pyx:_read_kinetics_line": {
       "verdict": "carried",
@@ -32566,9 +32567,10 @@
         "test/rmgpy/data/excitedThermoSourceTest.py",
         "test/rmgpy/yaml_writer/vibrationalManifoldExportTest.py",
         "test/rmgpy/data/kinetics/superelasticCensusTest.py",
-        "test/rmgpy/data/kinetics/superelasticRework3Test.py"
+        "test/rmgpy/data/kinetics/superelasticRework3Test.py",
+        "test/rmgpy/kinetics/kineticsDataExportTest.py"
       ],
-      "source_sha256": "13d74bc1bc7263fc0e108acbd77dcbb606e6ff173224bc69ba656fe33b6b89ea"
+      "source_sha256": "136c1d80a4daaab095682750cd5f3a5a09f8de6ee8c06f83901451a7e5e214c6"
     },
     "rmgpy/yaml_rms.py:write_rms": {
       "verdict": "carried",
