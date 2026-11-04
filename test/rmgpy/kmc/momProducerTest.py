@@ -14,6 +14,7 @@ exported quantity equals the kMC observation of the same deck.
 import csv
 import hashlib
 import json
+import math
 import re
 
 import numpy as np
@@ -2646,3 +2647,367 @@ def test_a_recorded_structure_that_cannot_be_read_is_refused_by_name(setup, stru
     with pytest.raises(mp.ProducerError, match=r"dgt\(4\).*cannot be read"):
         produce(setup, out, mode="convert")
 
+
+
+# --------------------------------------------------------------------------
+# I-171: comparison rows that need no classification, and the wrong-number paths
+# --------------------------------------------------------------------------
+from rmgpy.polymer_mass import moments_from_observables   # noqa: E402
+
+SMALL = "toylinearp_mod"                 # a second pool of the same repeat unit and caps
+
+
+def free_rows(out):
+    """Per time, the producer's classification-free rows (mom_diagnostics.json)."""
+    return [d["comparison_rows"] for d in json.loads((out / "mom_diagnostics.json").read_text())]
+
+
+def kmc_observation(spec, smiles, xs=4):
+    """kMC's observation of a melt of the given molecules (one representative
+    each; PE: every carbon has backbone origin), and its amount per molecule."""
+    from rmgpy.kmc import melt_state as ms
+    from rmgpy.kmc import rmg_moves as rr
+    nodes, origin, k = {}, {}, 0
+    for j, smi in enumerate(smiles):
+        mol = Molecule(smiles=smi)
+        for i, atom in enumerate(mol.atoms):
+            atom.id = k + i
+        for i, (el, iso, charge, radical, lone, edges) in rr.molecule_rows(mol).items():
+            nodes[i] = ms.Node(el, iso, charge, radical, lone, dict(edges))
+            origin[i] = ms.Origin("chain", j, "unit 1", str(i), el == "C")
+        k += len(mol.atoms)
+    obs = mo.MeltObserver(spec, xs=xs).observe(ms.MeltState(nodes, origin))
+    return obs, obs["scale_factor"] / obs["avogadro"]
+
+
+def _ve_row(units, src, dst):
+    proxy = proxy_of()
+    return {"family": "toy_homolysis", "admitted": True, "reactants": [proxy], "products": [proxy, "X0"],
+            "reversible": True, "archetype": "volatile_ejection/1",
+            "extra": {"params": {"eject_units": units}, "src_pool": src, "dst_pool": dst}}
+
+
+METHANE_GAS = ("CH4(4)", Molecule(smiles="C").to_adjacency_list())
+
+
+def _half_dp_run(tmp_path, units, src, dst):
+    """Declared methane; at t the main pool has handed x t chains to a DP-0.5
+    pool (H-CH2-H: methane's mass), so the chain count and the end-group
+    ledger stay put, and x t mol of methane is in the gas column; the
+    volatile ejection row of ``units`` from ``src`` into ``dst`` is the
+    mechanism."""
+    s = make_setup(tmp_path, BASE, small={"methane": _declared_graph("C")})
+    out = tmp_path / "out"
+    produce(s, out)
+    mu = declared(s["spec"])
+    a, _e = masses()
+    x, m_ch4 = 1e-3, mw("C")
+
+    def main(t):
+        return mu[0] - x * t, mu[1] - 0.5 * x * t - m_ch4 * x * t / a, mu[2]
+
+    def half(t):
+        return x * t, 0.5 * x * t, 0.25 * x * t
+    write_run(out, times=PROFILE_T, pools=[(LABEL, main, 0.0), (SMALL, half, 0.0)],
+              gas=ZERO_GAS + [METHANE_GAS + ((lambda t: x * t),)], rows=[_ve_row(units, src, dst)])
+    produce(s, out, mode="convert")
+    return s, out, x
+
+
+def test_a_reverse_written_ejection_makes_its_source_pool_light(tmp_path):
+    """A volatile ejection written in reverse (eject_units -0.5, the DP-0.5
+    pool its source): its reverse leg sheds half a unit into the source, so
+    the source may hold chains below one unit's backbone (kMC: light).  The
+    DP-0.5 pool's chains were counted as polymer."""
+    _s, out, _x = _half_dp_run(tmp_path, -0.5, SMALL, LABEL)
+    entries, diagnostics = mom_entries(out), json.loads((out / "mom_diagnostics.json").read_text())
+    for entry, diag in list(zip(entries, diagnostics))[1:]:
+        for key in ("polymer_derived_molecules_mol", *WHOLE):
+            assert key not in entry["quantities"], (entry["time_s"], key)
+        assert "light" in diag["polymer_withheld"]
+
+
+@pytest.mark.parametrize("units,src,dst", [(0.5, LABEL, SMALL), (-0.5, SMALL, LABEL)],
+                         ids=["forward", "reverse_written"])
+def test_a_species_a_fractional_dp_pool_may_hold_is_not_exported_partial(tmp_path, units, src, dst):
+    """The DP-0.5 pool holds methane-mass chains: the methane column alone
+    (half of kMC's methane) is no species row."""
+    _s, out, x = _half_dp_run(tmp_path, units, src, dst)
+    entries = mom_entries(out)
+    assert entries[0]["quantities"]["species_mol"]["methane"] == 0.0
+    for entry in entries[1:]:
+        assert "methane" not in entry["quantities"]["species_mol"], entry["time_s"]
+    for d, rows in list(zip(json.loads((out / "mom_diagnostics.json").read_text()), free_rows(out)))[1:]:
+        assert d["end_group_ledger_g"] == pytest.approx(0.0, abs=1e-12)       # the reach decides, not the ledger
+        r = rows["certified_species_mol.methane"]
+        assert r["kind"] == "withheld" and f"pool {SMALL} may hold" in r["reason"] and "volatile ejection" in r["reason"]
+        assert "volatile ejection" in d["species_withheld"]["methane"]
+
+
+def _dp3_rows(a, e):
+    """Monodisperse DP-3 pools initialized from (mass, Mn = Mw) by
+    moments_from_observables, over a range of masses."""
+    mn = 3 * a + e
+    return [moments_from_observables(1.0e4 * (1 + k * 1e-3), mn, mn, a, e) for k in range(200)]
+
+
+def test_a_monodisperse_pool_from_observables_is_not_corrupt_by_roundoff():
+    """r-I171 item 3: mu0 mu2 - mu1^2 of a DP-3 pool rebuilt from its mass,
+    Mn and Mw is a roundoff below zero; MoM's census tolerance alone (no
+    roundoff allowance) calls some of these corrupt."""
+    a, e = masses()
+    pools, columns = [{"label": "p"}], {"p": [0, 1, 2]}
+    states = _dp3_rows(a, e)
+    f = mp.MOM_MOMENT_FLOOR
+    beyond = [m for m in states
+              if m[0] * m[2] - m[1] ** 2 < -(f * (abs(m[2]) + abs(m[0]) + 2 * abs(m[1])) + 2 * f * f)]
+    assert beyond, "the fixture must reach states MoM's floor tolerance alone calls corrupt"
+    for m in beyond:
+        _pm, corrupt = mp.pool_state(list(m), pools, columns)
+        assert corrupt == [], (m, corrupt)
+    # a variance a part per million below zero is still corruption
+    m = states[0]
+    _pm, corrupt = mp.pool_state([m[0], m[1], m[2] * (1 - 1e-6)], pools, columns)
+    assert corrupt and "variance" in corrupt[0]
+
+
+def test_a_proxy_column_named_by_its_formula_is_bookkeeping(setup):
+    """A pool's bookkeeping species named by its long label(5) while the
+    profile names the column C2H2(5) (RMG's 16-character identifier): the
+    same species by index, so not a system species."""
+    out = setup["tmp"] / "out"
+    produce(setup, out)
+    long = "verylongproxylabel_toylinearp(5)"
+    constant_run(out, setup["spec"], extra_columns=["C2H2(5)"],
+                 bookkeeping={LABEL: [mp.moment_column(f"{LABEL}_mu{k}") for k in range(3)] + [proxy_of(), long]},
+                 gas_reactions=[{"reactants": [long, "H(1)"], "products": [long, "H(1)"], "reversible": False,
+                                 "A": 0.0}])
+    manifest = produce(setup, out, mode="convert")
+    assert "C2H2(5)" not in manifest["read"]["species_classes"]
+
+
+def _ledger_run(tmp_path):
+    """Deck DP 10 + DP 20 (u each).  At 10 s the DP-20 chain is cut in two
+    DP-10 end radicals held by a second pool (chains minted: the end-group
+    ledger books -e u) and the DP-10 chain has lost H2 to the gas.  kMC's
+    molecules: C20H40, two C20H41 radicals and H2, u each (DP n is C2n)."""
+    s = make_setup(tmp_path, BASE)
+    out = tmp_path / "out"
+    produce(s, out, end=10.0, snapshots=2)
+    mu = declared(s["spec"])
+    u = mu[0] / 2
+    a, _e = masses()
+    m_h2 = mw("[H][H]")
+    write_run(out, times=[0.0, 10.0],
+              pools=[(LABEL, lambda t: mu if t == 0.0 else (u, 10 * u - m_h2 * u / a, 100 * u), 0.0),
+                     (DAUGHTER, lambda t: (0.0, 0.0, 0.0) if t == 0.0 else (2 * u, 20 * u, 200 * u), 0.0)],
+              gas=[("H(1)", ADJ["H"], lambda t: 0.0), ("H2(2)", ADJ["H2"], lambda t: u * t / 10.0)])
+    produce(s, out, end=10.0, snapshots=2, mode="convert")
+    return s, out, u
+
+
+def test_the_inventory_is_kmcs_total_mass_with_the_orphan_end_ledger(tmp_path):
+    """inventory_mass_g: every species column + every pool's booked chain
+    mass + MoM's orphan-end ledger, against kMC's every molecule."""
+    s, out, u = _ledger_run(tmp_path)
+    diagnostics = json.loads((out / "mom_diagnostics.json").read_text())
+    assert diagnostics[-1]["end_group_ledger_g"] != pytest.approx(0.0, abs=1e-6)     # a real ledger
+    obs, per = kmc_observation(s["spec"], ["C=C" + "C" * 18, "[CH2]" + "C" * 19, "[CH2]" + "C" * 19, "[H][H]"])
+    kmc = obs["tier1"]["total_mass_g"] / per * u
+    rows = free_rows(out)
+    assert rows[-1]["inventory_mass_g"]["kind"] == "exact"
+    assert rows[-1]["inventory_mass_g"]["value"] == pytest.approx(kmc, rel=1e-12)
+    obs0, per0 = kmc_observation(s["spec"], [_alkane(10), _alkane(20)])
+    assert rows[0]["inventory_mass_g"]["value"] == pytest.approx(obs0["tier1"]["total_mass_g"] / per0 * u,
+                                                                 rel=1e-12)
+
+
+def _species_run(tmp_path):
+    """Declared methane and ethane; the pool loses H2 (its chain count and
+    the ledger stay put) and the gas gains it and some methane."""
+    s = make_setup(tmp_path, BASE, small={"methane": _declared_graph("C"), "ethane": _declared_graph("CC")})
+    out = tmp_path / "out"
+    produce(s, out)
+    mu = declared(s["spec"])
+    a, _e = masses()
+    x, m_h2, m_ch4 = 1e-4, mw("[H][H]"), mw("C")
+    write_run(out, times=PROFILE_T, pools=[(LABEL, lambda t: (mu[0], mu[1] - (m_h2 + m_ch4) * x * t / a, mu[2]),
+                                            0.0)],
+              gas=[("H(1)", ADJ["H"], lambda t: 0.0), ("H2(2)", ADJ["H2"], lambda t: x * t),
+                   METHANE_GAS + ((lambda t: x * t),),
+                   ("C2H6(5)", Molecule(smiles="CC").to_adjacency_list(), lambda t: 0.0)])
+    produce(s, out, mode="convert")
+    return s, out, x
+
+
+def test_a_species_no_pool_can_reach_is_certified(tmp_path):
+    """A PE pool of whole DPs >= 1 (no ejection, a zero ledger) cannot hold
+    H (DP < 0), H2 (DP 0) or methane (DP 1/2): certified, the column's
+    amount.  Ethane is a DP-1 chain of it: withheld after t = 0, certified at
+    t = 0 (the declared ensemble is DP 10 and 20)."""
+    _s, out, x = _species_run(tmp_path)
+    entries = mom_entries(out)
+    for entry, rows in zip(entries, free_rows(out)):
+        t = entry["time_s"]
+        for name, value in (("H", 0.0), ("H2", x * t), ("methane", x * t)):
+            r = rows[f"certified_species_mol.{name}"]
+            assert r["kind"] == "exact" and r["value"] == pytest.approx(value, rel=1e-12, abs=1e-300), (t, name)
+        r = rows["certified_species_mol.ethane"]
+        if t == 0.0:
+            assert r["kind"] == "exact" and r["value"] == 0.0
+        else:
+            assert r["kind"] == "withheld" and LABEL in r["reason"] and "ethane" in r["reason"], (t, r)
+        outside = rows["mass_outside_certified_g"]
+        certified = sorted(n for n in ("H", "H2", "methane", "ethane")
+                           if rows[f"certified_species_mol.{n}"]["kind"] == "exact")
+        assert outside["certified"] == certified and all(n in outside["note"] for n in certified)
+        masses_ = {"H": mw("[H]"), "H2": mw("[H][H]"), "methane": mw("C"), "ethane": mw("CC")}
+        expected = rows["inventory_mass_g"]["value"] - math.fsum(rows[f"certified_species_mol.{n}"]["value"]
+                                                                 * masses_[n] for n in certified)
+        assert outside["kind"] == "exact" and outside["value"] == pytest.approx(expected, rel=1e-12)
+
+
+def test_a_species_a_reverse_ejection_can_reach_is_not_certified(tmp_path):
+    """The DP-0.5 pool is the source of a reverse-written ejection: its
+    chains may be methane, whichever direction the row is written."""
+    _s, out, _x = _half_dp_run(tmp_path, -0.5, SMALL, LABEL)
+    for rows in free_rows(out)[1:]:
+        r = rows["certified_species_mol.methane"]
+        assert r["kind"] == "withheld" and "volatile ejection" in r["reason"]
+        assert rows["certified_species_mol.H"]["kind"] == "exact"         # DP -0.04 is off the half-unit lattice
+
+
+def _melt_run(tmp_path, at_10, *, small=None):
+    """Deck DP 1 x2, 3, 5, 12; declared butane (the cut: DP 2); at 10 s the
+    pool's moments are ``at_10`` (a function of u), the chain count kept."""
+    s = make_setup(tmp_path, {1: 2, 3: 1, 5: 1, 12: 1}, small=small or {"butane": S.BUTANE})
+    out = tmp_path / "out"
+    produce(s, out, end=10.0, snapshots=2)
+    mu = declared(s["spec"])
+    u = mu[0] / 5
+    write_run(out, times=[0.0, 10.0], pools=[(LABEL, lambda t: mu if t == 0.0 else at_10(u), 0.0)],
+              gas=TRACE + BUTANE_GAS)
+    produce(s, out, end=10.0, snapshots=2, mode="convert")
+    return s, out, u
+
+
+def _alkane(n):
+    return "C" * (2 * n)
+
+
+def test_the_low_dp_bounds_contain_the_kmc_value_of_a_hand_built_melt(tmp_path):
+    """At 10 s the pool is the melt DP 1, 2 x2, 5, 12: its moments bound the
+    mass at DP <= 2 (butane's DP) by Cantelli's inequality; kMC's value (every
+    molecule at most butane's molar mass) lies in the interval."""
+    melt = {1: 1, 2: 2, 5: 1, 12: 1}
+    moments = [sum(k * n ** j for n, k in melt.items()) for j in range(3)]
+    s, out, u = _melt_run(tmp_path, lambda u: tuple(u * m for m in moments))
+    obs, per = kmc_observation(s["spec"], [_alkane(n) for n, k in melt.items() for _ in range(k)])
+    kmc = obs["tier2"]["low_dp_mass_g"] / per * u
+    assert kmc == pytest.approx(u * (mw("CC") + 2 * mw("CCCC")), rel=1e-12)       # ethane and two butanes
+    r = free_rows(out)[-1][f"low_dp_mass_bounds_g.{LABEL}"]
+    assert r["kind"] == "interval" and r["lower"] <= kmc <= r["upper"] and r["lower"] < r["upper"]
+    a, e = masses()
+    m, v = moments[1] / moments[0], moments[2] / moments[0] - (moments[1] / moments[0]) ** 2
+    c = (mw("CCCC") * (1 + mo.LOW_DP_RELATIVE) - e) / a                # the cut, DP 2, inclusive as kMC's
+    cantelli = 5 * u * (c * a + e) * v / (v + (m - c) ** 2)          # mean 4.4 above it
+    assert r["lower"] == 0.0 and r["upper"] == pytest.approx(cantelli, rel=1e-12)
+    total = free_rows(out)[-1]["low_dp_mass_bounds_g"]
+    trace = 1e-5 * 10.0 * mw("[H]")                                     # the H of TRACE
+    assert total["lower"] == pytest.approx(r["lower"] + trace, rel=1e-12)
+    assert total["upper"] == pytest.approx(r["upper"] + trace, rel=1e-12)
+
+
+@pytest.mark.parametrize("dp,inside", [(1, True), (10, False)], ids=["dp1_below_the_cut", "dp10_above"])
+def test_the_low_dp_bounds_of_a_monodisperse_pool_are_tight(tmp_path, dp, inside):
+    """A pool pinned at one DP: its mass at DP <= 2 is all of it or none."""
+    s, out, u = _melt_run(tmp_path, lambda u: (5 * u, 5 * dp * u, 5 * dp * dp * u))
+    r = free_rows(out)[-1][f"low_dp_mass_bounds_g.{LABEL}"]
+    a, e = masses()
+    exact = 5 * u * (dp * a + e) if inside else 0.0
+    assert r["lower"] == r["upper"] == pytest.approx(exact, rel=1e-12, abs=0.0), r
+
+
+def test_the_low_dp_bounds_at_t0_are_the_declared_ensembles(tmp_path):
+    """At t = 0 the pool is the declared ensemble: the two DP-1 chains are
+    below the cut, the DP 3, 5 and 12 above it, exactly."""
+    _s, out, u = _melt_run(tmp_path, lambda u: (5 * u, 22 * u, 178 * u))
+    r = free_rows(out)[0][f"low_dp_mass_bounds_g.{LABEL}"]
+    a, e = masses()
+    assert r["lower"] == pytest.approx(r["upper"], rel=1e-12)
+    assert r["lower"] == pytest.approx(u * 2 * (a + e), rel=1e-12)
+
+
+def _survivors(out):
+    rows = free_rows(out)
+    names = sorted({n for r in rows for n in r})
+    return [n for n in names if all(n in r and r[n]["kind"] in ("exact", "interval") for r in rows)]
+
+
+def test_a_realistic_pe_declaration_keeps_the_inventory_rows(tmp_path):
+    """PE with H2, CH4, ethane and ethylene declared, a pool losing mass and
+    chains to a daughter (ledger nonzero): inventory and mass outside the
+    certified species at every time."""
+    s = make_setup(tmp_path, BASE, small={"methane": _declared_graph("C"), "ethane": _declared_graph("CC")},
+                   monomer=S.ETHYLENE_GRAPH)
+    out = tmp_path / "out"
+    produce(s, out)
+    mu = declared(s["spec"])
+    a, _e = masses()
+    m_h2 = mw("[H][H]")
+    d, h = 1e-3, 2e-3
+    r = 5 * d + m_h2 * h / a
+    write_run(out, times=PROFILE_T,
+              pools=[(LABEL, lambda t: (mu[0] * (1 + 1e-3 * t * t), mu[1] - r * t * t, mu[2] * (1 + 1e-3 * t * t)),
+                      0.0),
+                     (DAUGHTER, lambda t: (d * t * t, 5 * d * t * t, 40 * d * t * t), 0.0)],
+              gas=[("H(1)", ADJ["H"], lambda t: 0.0), ("H2(2)", ADJ["H2"], lambda t: h * t * t),
+                   METHANE_GAS + ((lambda t: 0.0),),
+                   ("C2H6(5)", Molecule(smiles="CC").to_adjacency_list(), lambda t: 0.0),
+                   ("C2H4(6)", Molecule(smiles="C=C").to_adjacency_list(), lambda t: 0.0)])
+    produce(s, out, mode="convert")
+    survivors = _survivors(out)
+    print("PE survivors at every time:", survivors)
+    assert {"inventory_mass_g", "mass_outside_certified_g"} <= set(survivors)
+
+
+def test_a_realistic_ps_declaration_keeps_the_inventory_rows(tmp_path):
+    """PS with H2, styrene and toluene declared, toluene released: inventory
+    and mass outside the certified species at every time."""
+    from meltStateTest import ps_mapping
+    mapping = ps_mapping({10: 1, 20: 1}, mobile={})
+    mapping["small_species"]["toluene"] = _declared_graph("Cc1ccccc1")       # beside the mapping's styrene
+    assert "styrene" in mapping["small_species"]
+    mapping["transport_model"] = {"met": S.ps_met()}
+    deck = write_deck(tmp_path / "ps_deck.py", mapping)
+    spec = LinearHomopolymerSpec.from_mapping(mapping)
+    s = {"deck": deck, "catalog": pe_catalog_file(tmp_path), "db": str(tmp_path / "db"), "tmp": tmp_path,
+         "spec": spec}
+    (tmp_path / "db" / "input" / "kinetics" / "families").mkdir(parents=True, exist_ok=True)
+    out = tmp_path / "out"
+    produce(s, out)
+    a = spec.repeat_unit.composition.molar_mass_g_mol()
+    mu = declared(spec)
+    m7, x = mw("Cc1ccccc1"), 1e-4
+    gas = ZERO_GAS + [("C7H8(4)", Molecule(smiles="Cc1ccccc1").to_adjacency_list(), lambda t: x * t),
+                      ("C8H8(5)", Molecule(smiles="C=Cc1ccccc1").to_adjacency_list(), lambda t: 0.0)]
+    write_run(out, times=PROFILE_T, label="PS", pools=[("PS", lambda t: (mu[0], mu[1] - m7 * x * t / a, mu[2]),
+                                                        0.0)],
+              mass_override=a, gas=gas)
+    produce(s, out, mode="convert")
+    survivors = _survivors(out)
+    print("PS survivors at every time:", survivors)
+    assert {"inventory_mass_g", "mass_outside_certified_g"} <= set(survivors)
+
+
+def test_the_polymer_classified_rows_are_marked_classification_dependent(setup):
+    out = setup["tmp"] / "out"
+    produce(setup, out)
+    doc = json.loads((out / "conventions.json").read_text())
+    dependent = doc["classification_dependent"]
+    assert {"polymer_condensed_mass_g", "polymer_conversion", "polymer_derived_molecules_mol", "species_mol",
+            *WHOLE} <= set(dependent)
+    assert all(isinstance(v, str) and v for v in dependent.values())
+    free = doc["classification_free_rows"]
+    assert {"inventory_mass_g", "certified_species_mol.<s>", "mass_outside_certified_g",
+            "low_dp_mass_bounds_g.<pool>", "low_dp_mass_bounds_g"} <= set(free)

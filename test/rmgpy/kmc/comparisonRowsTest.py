@@ -356,6 +356,47 @@ def test_a_row_withheld_on_either_side_is_never_differenced(kmc):
     assert same["status"] == "compared" and same["difference"] == 0.0
 
 
+def test_the_kmc_rows_carry_the_classification_free_rows(kmc):
+    """I-171: inventory_mass_g is every molecule's mass, certified_species_mol
+    every declared species' amount (kMC knows every molecule's identity), and
+    low_dp_mass_bounds_g the exact mass of the molecules at most the cut's
+    molar mass (melt_observables.low_dp_cut_g_mol)."""
+    doc = cr.kmc_rows(kmc)
+    rows = by_name(doc)
+    for t in TIMES:
+        inventory = rows[(t, "inventory_mass_g")]
+        assert inventory["kind"] == "exact" and inventory["value"] == rows[(t, "total_mass_g")]["value"]
+        for name in ("H", "H2"):
+            r = rows[(t, f"certified_species_mol.{name}")]
+            assert r["kind"] == "exact" and r["value"] == rows[(t, f"species_mol.{name}")]["value"]
+        low = rows[(t, "low_dp_mass_bounds_g")]
+        assert low["kind"] == "exact" and low["value"] >= 0.0
+    # the H made by homolysis sits below the cut: the row moved
+    assert rows[(TIMES[-1], "low_dp_mass_bounds_g")]["value"] > rows[(TIMES[0], "low_dp_mass_bounds_g")]["value"]
+
+
+def test_the_join_compares_the_classification_free_rows(mom):
+    """The MoM side's rows from its mom_diagnostics.json: the inventory is
+    compared, the low-DP interval holds kMC's exact value at t = 0, and the
+    mass outside MoM's certified set is derived on the kMC side for that set."""
+    setup, path, run = mom
+    a = json.loads((run / "rows.json").read_text())
+    b = cr.mom_rows(path, setup["deck"])
+    b["binding"]["pass"] = a["binding"]["pass"]
+    rows = {(r["time_s"], r["row"]): r for r in cr.join(a, b)}
+    t0 = a["binding"]["times_s"][0]
+    inventory = rows[(t0, "inventory_mass_g")]
+    assert inventory["status"] == "compared" and abs(inventory["difference"]) <= 1e-9 * inventory["a"]
+    low = rows[(t0, "low_dp_mass_bounds_g")]
+    assert low["status"] == "interval" and low["inside"] is True
+    outside = rows[(t0, "mass_outside_certified_g")]
+    assert outside["status"] == "compared" and abs(outside["difference"]) <= 1e-9 * outside["a"]
+    assert "certified" in (outside["reason"] or "")
+    for t in a["binding"]["times_s"]:
+        assert rows[(t, "inventory_mass_g")]["status"] == "compared"
+        assert rows[(t, "mass_outside_certified_g")]["status"] == "compared"
+
+
 @pytest.mark.parametrize("field,value,word", [("deck_sha256", "0" * 64, "deck"),
                                               ("temperature_K", 800.0, "temperature"),
                                               ("times_s", [0.0, 1.0, 3.0], "time grid"),
