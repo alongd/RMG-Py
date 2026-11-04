@@ -23,18 +23,27 @@ Implementation invariants (any law):
 6. a far pair's excess over the two-molecule rate does not grow with distance.
 
 Physical assumptions (marked ``law(...)`` with the options of design §3 that
-make them; with ``I297_LAW`` set to the chosen option the others skip):
+make them, or ``phi_closure(...)`` with the escape-factor closures of design
+§2; with ``I297_LAW`` / ``I297_PHI`` set to the chosen option the others
+skip):
 
 * the far pair fires at the two-molecule rate (a background term: A, C, D);
 * replicating the box leaves the per-molecule rate unchanged (A, C, D);
 * Kolmogorov's criterion on a closed reaction cycle (A, B_R);
-* the pair rate is the option's own formula (one parameter per option).
+* the pair rate is the option's own formula (one parameter per option);
+* the no-split reverse's escape factor is the chosen closure's (self, seg).
 
-They are skipped until the law is implemented (set ``I297_RUN_RED=1`` to run
-them red against the engine as it is: each must then fail on its contract
-assertion, not on its setup).  ``declare_law`` (a declaration field, if the
-chosen law needs one) and ``exact_total`` (if the law fires by thinning) are
-the hooks the implementation edits."""
+The contract tests (``contract``) are skipped until the law is implemented
+(set ``I297_RUN_RED=1`` to run them red against the engine as it is: each
+must then fail on its contract assertion, not on its setup).  An unknown or
+empty ``I297_LAW`` or ``I297_PHI`` is a collection error, never a silent
+skip of every option.  ``declare_law`` (a declaration field, if the chosen
+law needs one), ``declared_law`` (reads it back), ``exact_total`` (if the
+law fires by thinning) and ``class_rate`` (a class's physical rate) are the
+hooks the implementation edits.
+
+The groundwork tests (I-301: the encounter group, the one escape-factor
+evaluator, the phi_self mapping) assert today's engine and always run."""
 
 import heapq
 import math
@@ -50,14 +59,28 @@ from network_support import network_spec, no_filler
 from rmgpy import constants
 from rmgpy.kmc import melt_engine as me
 
-pytestmark = pytest.mark.skipif(
+contract = pytest.mark.skipif(
     os.environ.get("I297_RUN_RED") != "1",
     reason="I-297 same-molecule law: design only (/home/alon/runs/pk-i297/design.md); these contract tests "
            "turn on with the owner's chosen law")
 
-# the options of design §3 (revision 2); the implementation sets the chosen one
+# the options of design §3 (revision 2) and the phi closures of §2; the implementation sets the chosen ones
 LAWS = ("A", "B_sp", "B_R", "C_sp", "C_R", "C_img", "D")
-CHOSEN_LAW = os.environ.get("I297_LAW")
+PHI_CLOSURES = ("self", "seg")
+
+
+def _selection(variable, options):
+    """The option ``variable`` selects (None: unset, every option's tests
+    run).  Set to anything not in ``options``, the empty string included, it
+    is refused here, at collection: a typo must not skip every option."""
+    value = os.environ.get(variable)
+    if value is not None and value not in options:
+        raise pytest.UsageError(f"{variable}={value!r} is not one of {options} (unset it to run every option)")
+    return value
+
+
+CHOSEN_LAW = _selection("I297_LAW", LAWS)
+CHOSEN_PHI = _selection("I297_PHI", PHI_CLOSURES)
 
 
 def law(*options):
@@ -68,10 +91,24 @@ def law(*options):
                               reason=f"a physical assumption of options {options}, not of {CHOSEN_LAW}")
 
 
+def phi_closure(*options):
+    """As ``law``, for the escape-factor closure of a same-molecule MET pair."""
+    assert set(options) <= set(PHI_CLOSURES), options
+    return pytest.mark.skipif(CHOSEN_PHI is not None and CHOSEN_PHI not in options,
+                              reason=f"a phi closure of {options}, not of {CHOSEN_PHI}")
+
+
 def declare_law(mapping):
     """The owner's chosen same-molecule law, as the implementation declares it
     on the network (no-op while the law is a design)."""
     return mapping
+
+
+def declared_law(engine):
+    """(law, phi closure) the engine fires, read from its declaration; (None,
+    None) while no law is declared.  The implementation points this at the
+    declaration field ``declare_law`` writes."""
+    return None, None
 
 
 def exact_total(engine):
@@ -80,6 +117,25 @@ def exact_total(engine):
     envelope in ``propensities()``; it points this hook at its exact
     evaluation."""
     return engine.propensities().total
+
+
+def class_rate(engine, name):
+    """The physical rate (1/s) of class ``name``'s fired transitions in the
+    current state: its unimolecular and two-molecule channels, a thinned
+    reverse class's times its exact mean escape factor (``_fallback_phi``,
+    exhaustive below ``PHI_FALLBACK_LIMIT``), a MET class's share of every
+    component pair's allowed rate.  Same-molecule pairs are leak today (0
+    here); the implementation adds their fired rate."""
+    ci = [t.name for t in engine.templates].index(name)
+    cls = engine.classes[ci]
+    rate = math.fsum(a for key, a in engine.propensities().channels if key[0] != "met" and key[1] == ci)
+    if cls.met_reverse and rate:
+        phi, sampled = engine._fallback_phi(ci)
+        assert not sampled, "the class's mean phi is exact"
+        rate *= phi
+    rate += math.fsum(r.phi * engine._row_weight(row) * row[1] / engine.nav
+                      for r in engine.pairs.values() for row in r.classes if row[0] == ci)
+    return rate
 
 
 def law_spec(*mutations, d_ref=1.0e-17):
@@ -315,6 +371,7 @@ def _far_pair(rings, copies=1, reverse=False, seed=3):
     return engine, engine.weights[ci] * 2 / (engine.classes[ci].divisor * engine.nav)
 
 
+@contract
 @law("A", "C_sp", "C_R", "C_img", "D")
 @pytest.mark.parametrize("rings", [6, 24])
 def test_a_far_pair_on_one_molecule_fires_at_the_two_molecule_rate(rings):
@@ -332,6 +389,7 @@ def test_a_far_pair_on_one_molecule_fires_at_the_two_molecule_rate(rings):
         assert ratio < 1.10
 
 
+@contract
 def test_the_far_pair_excess_over_the_two_molecule_rate_does_not_grow_with_distance():
     """Invariant: every option's effective concentration is non-increasing in strand length."""
     (near, e_near), (far, e_far) = _far_pair(6), _far_pair(24)
@@ -340,6 +398,7 @@ def test_the_far_pair_excess_over_the_two_molecule_rate_does_not_grow_with_dista
     assert r_far - 1.0 <= r_near - 1.0 + 1.0e-12
 
 
+@contract
 def test_the_pair_rate_is_a_graph_invariant():
     """Invariant: numbering the units from the other end (other atom ids, the
     same graph) leaves the pair's propensity unchanged."""
@@ -350,6 +409,7 @@ def test_the_pair_rate_is_a_graph_invariant():
     assert b == pytest.approx(a, rel=1.0e-12, abs=0.0)
 
 
+@contract
 def test_the_first_event_waits_one_over_the_reported_propensity():
     """Invariant (a waiting-time oracle): with the far pair the only channel,
     the mean first-event time over 100 seeds is 1/P within 4 standard
@@ -368,6 +428,7 @@ def test_the_first_event_waits_one_over_the_reported_propensity():
     assert abs(np.mean(times) * rates[0] - 1.0) < 4.0 / math.sqrt(len(times))
 
 
+@contract
 @pytest.mark.parametrize("option", [pytest.param(o, marks=law(o)) for o in LAWS])
 def test_the_pair_rate_is_the_options_formula(option):
     """A quantitative oracle per option (a constant background passes the
@@ -383,6 +444,7 @@ def test_the_pair_rate_is_the_options_formula(option):
     assert exact_total(engine) == pytest.approx(want, rel=1.0e-9)
 
 
+@contract
 @law("A", "C_sp", "C_R", "D")
 def test_replicating_the_box_leaves_the_per_molecule_rate_unchanged():
     """k copies of the far chain in k times the volume: one copy's own pair
@@ -419,6 +481,7 @@ def _cut_fixture(spec, cuts=2):
     return state, out
 
 
+@contract
 def test_a_gel_holding_radicals_evolves():
     """Without a law the run stalls after one recombination with both remaining
     radicals on the gel (pk-i243 §9); with it a same-molecule pair fires (on
@@ -451,6 +514,7 @@ def _melt(*strip):
     return spec, state, atom
 
 
+@contract
 def test_no_same_molecule_pair_is_left_as_same_molecule_leak():
     """The bridge radical and Ph0's aryl radical of one molecule (an 8-bond
     cycle: the declared minimum) are a channel, not leak."""
@@ -469,6 +533,7 @@ def test_no_same_molecule_pair_is_left_as_same_molecule_leak():
     assert math.fsum(engine.leak_by_class.values()) == pytest.approx(engine.leak_num)
 
 
+@contract
 def test_a_same_molecule_pair_closing_a_short_cycle_is_short_cycle_leak_and_never_fires():
     """Ph2's para radical closing on the bridge radical M3 of the same
     molecule: a 4-bond cycle, below the declared 8.  It is short_cycle leak,
@@ -489,6 +554,7 @@ def test_a_same_molecule_pair_closing_a_short_cycle_is_short_cycle_leak_and_neve
     assert fired_short == 0
 
 
+@contract
 def test_a_unimolecular_closure_owns_the_pair_it_duplicates():
     """R3: a loaded unimolecular template that closes the same 8-bond ring
     (its window covers the strand) makes exactly the product of the
@@ -543,39 +609,209 @@ def _opened_ring(d_ref):
     return spec, cut, m, r
 
 
-def test_the_no_split_reverse_is_accepted_at_the_forward_pairs_escape_factor():
-    """Every methylene-ring homolysis of the ring leaves both radicals on one
-    molecule (no split).  Until the first event every proposal is that
-    transition (the four bonds are equivalent), so the mean acceptance
-    ``phi_sum / thinned_proposals`` is its own acceptance factor.  It must
-    equal the escape factor of the same-molecule pair it makes, read from
-    the forward pair's propensity at the tiny declared segment diffusivity
-    over its propensity at a 1e12 times larger one (phi -> 1 there; c_eff
-    does not depend on D0)."""
+_NO_SPLIT_D_REF = 1.0e-17   # declared D0 (m2/s) at 700 K (S.pe_met: Arrhenius, Ea 0, T_ref 700 K)
+_NO_SPLIT_W = 5.0e-2        # the recombination's weight: k_act = w (one ordered site pair, divisor 1)
+
+
+def _analytic_k_d(closure, transport, met_length):
+    """k_D (m3/mol/s) of a same-molecule MET pair under ``closure``, from the
+    declared MET block alone (design §2; no engine rate is read):
+    ``self``, ``k_diffusion(T, L, L)`` written out (Rouse D(L) = D0/L, radius
+    max(sigma, 2 Rg(L)), Rg^2 = <R^2>/M * M0 * L / 6); ``seg``, the segment
+    closure with design §2's recommended radius: D(1) = D0, radius sigma."""
+    d0 = _NO_SPLIT_D_REF
+    sigma, spin = transport.contact_radius_m, transport.spin_factor
+    if closure == "self":
+        rg = math.sqrt(transport.r2_per_molar_mass * transport.repeat_unit_molar_mass_g_mol * met_length / 6.0)
+        return 4.0 * math.pi * constants.Na * spin * (2.0 * d0 / met_length) * max(sigma, 2.0 * rg)
+    return 4.0 * math.pi * constants.Na * spin * (2.0 * d0) * sigma
+
+
+@contract
+@pytest.mark.parametrize("closure", [pytest.param(c, marks=phi_closure(c)) for c in PHI_CLOSURES])
+def test_the_no_split_reverse_is_accepted_at_the_same_molecule_pairs_escape_factor(closure):
+    """R2: every methylene-ring homolysis of the ring leaves both radicals on
+    one molecule (no split), and the four are equivalent (one product species),
+    so every proposal before the first event has one acceptance factor and
+    ``phi_sum / thinned_proposals`` is it.  It must be the escape factor of
+    the same-molecule pair the homolysis makes, k_D / (k_D + k_act), from an
+    analytic oracle: k_act = w (the methylene radical as participant 0, the
+    aryl radical as participant 1: one ordered site pair, divisor 1) and k_D
+    the chosen closure's (``_analytic_k_d``).  The declared D0 and w put phi
+    at 0.5-0.6 under either closure, so the run needs a few proposals."""
     from rmgpy.kmc import melt_branched as mb
-    phi_fwd = []
-    for d_ref in (1.0e-24, 1.0e-12):
-        spec, cut, m, r = _opened_ring(d_ref)
-        engine = _engine(spec, cut, [_recombination(cut, m, r, "close", 1.0e6)])
-        assert len(cut.components.ids()) == 1
-        phi_fwd.append(exact_total(engine))
-    assert phi_fwd[1] > 0.0, "the opened ring's same-molecule pair is a channel"
-    phi = phi_fwd[0] / phi_fwd[1]
-    assert 0.0 < phi < 0.5, "setup: diffusion limited at the tiny D0"
-    spec, cut, m, r = _opened_ring(1.0e-24)
+    spec, cut, m, r = _opened_ring(_NO_SPLIT_D_REF)
     state = mb.build_molecules(spec, _RING)
-    engine = _engine(spec, state, [_homolysis(state, m, r, "open", 1.0), _recombination(cut, m, r, "close", 1.0e6)])
-    assert len(state.components.ids()) == 1
+    engine = _engine(spec, state, [_homolysis(state, m, r, "open", 1.0),
+                                   _recombination(cut, m, r, "close", _NO_SPLIT_W)])
+    (entry,) = engine.entries.values()
+    close = [t.name for t in engine.templates].index("close")
+    assert engine.classes[close].divisor == 1, "setup: one ordered site pair is one pair"
+    k_d = _analytic_k_d(closure, engine.transport, entry.met_length)
+    phi = k_d / (k_d + _NO_SPLIT_W)
+    assert 0.2 < phi < 0.8, f"setup: moderate acceptance ({phi})"
     engine.run(max_events=1)
     assert engine.template_counts.get("open", 0) == 1 and engine.events_fired == 1
     assert engine.thinned_proposals >= 1
+    assert engine.phi_sum / engine.thinned_proposals == pytest.approx(phi, rel=1.0e-12)
     assert engine.met_counts.get("reverse_no_pair", 0) == 0
-    assert engine.phi_sum / engine.thinned_proposals == pytest.approx(phi, rel=1.0e-6)
 
 
 # --------------------------------------------------------------------------
-# 4. Kolmogorov's criterion on a closed reaction cycle
+# 4. Kolmogorov's criterion on closed reaction cycles (one catalog, finite phi)
 # --------------------------------------------------------------------------
+def _wide_homolysis(state, a, b, closed, name, weight):
+    """As ``_homolysis``, the window closing ``closed`` as well (a bond told
+    from the equivalent bonds of the molecule)."""
+    from rmgpy.kmc.window_matcher import AtomEdit, BondEdit, Template
+    atoms, bonds, index = _closed_window(state, [a, b] + list(closed), 0)
+    return Template(name, "toy_homolysis", atoms, bonds,
+                    [BondEdit(index[a], index[b], 0), AtomEdit(index[a], radical=1),
+                     AtomEdit(index[b], radical=1)], weight=weight)
+
+
+def _move_h(state, donor, acceptor):
+    """An H of ``donor`` to the radical ``acceptor``: the radical moves."""
+    from rmgpy.kmc.melt_state import SetBond, SetRadical
+    h = min(b for b in state.atoms[donor].edges if state.atoms[b].element == "H")
+    state.apply([SetBond(donor, h, 1.0, 0.0), SetBond(acceptor, h, 0.0, 1.0),
+                 SetRadical(donor, 0, 1), SetRadical(acceptor, 1, 0)])
+
+
+_H_SQUARE = [(["Ph", "M", "Ph", "M", "M", "Ph", "M", "Ph"],
+              [(1, "a", 0, "o2"), (1, "b", 2, "o2"), (3, "a", 2, "o6"), (3, "b", 0, "o6"),
+               (4, "a", 2, "p4"), (4, "b", 5, "o2"), (6, "a", 5, "o6"), (6, "b", 7, "o2")])]
+
+
+def _h_square():
+    """A ring Ph0-M1-Ph2-M3 (8 bonds) with a tail M4-Ph5-M6-Ph7 on Ph2's para
+    site and an aryl radical X at Ph7's para site.  Four states: the ring
+    closed or opened at M1-Ph0 (``1``/``0`` first), X's radical in place or
+    moved by an H transfer from M4 to X (``0``/``1`` second).  One catalog:
+    the ring closure (methylene + aryl radical, MET) and its homolysis; a
+    competing MET closure of the methylene radical on X (its row is in the
+    opened ring's encounter group only while X is a radical, so phi differs
+    between the two opened states); X abstracting an H of M4 and the benzylic
+    M4 radical abstracting it back from Ph7 (non-MET, both one molecule).
+    The ring is mirror-symmetric (M1 <-> M3), so the homolysis has two
+    equivalent bonds in each closed state, and M4 two equivalent H: the cycle
+    is on the lumped (species) states, each multiplicity on both sides."""
+    from rmgpy.kmc import melt_branched as mb
+    from rmgpy.kmc.melt_state import SetBond, SetRadical
+    spec = law_spec(d_ref=_NO_SPLIT_D_REF)
+    states, at = {}, None
+    for key in ("00", "10", "01", "11"):
+        state = mb.build_molecules(spec, _H_SQUARE)
+        atom = mb.residue_atoms(state)
+        at = {"m": atom[(0, 1)]["m"], "r": atom[(0, 0)]["r2"], "x": atom[(0, 7)]["r4"], "d": atom[(0, 4)]["m"],
+              "r1": atom[(0, 0)]["r1"], "r3": atom[(0, 0)]["r3"], "p2": atom[(0, 2)]["r2"],
+              "p4": atom[(0, 2)]["r4"], "x3": atom[(0, 7)]["r3"], "x5": atom[(0, 7)]["r5"]}
+        S.strip_h(state, at["x"])
+        if key[0] == "0":
+            state.apply([SetBond(at["m"], at["r"], 1.0, 0.0), SetRadical(at["m"], 0, 1),
+                         SetRadical(at["r"], 0, 1)])
+        if key[1] == "1":
+            _move_h(state, at["d"], at["x"])
+        states[key] = (spec, state)
+    s00, s10, s01 = states["00"][1], states["10"][1], states["01"][1]
+    templates = [
+        _recombination(s00, at["m"], at["r"], "close", _NO_SPLIT_W),
+        _recombination(s00, at["m"], at["x"], "close_x", 2.0 * _NO_SPLIT_W),
+        _wide_homolysis(s10, at["m"], at["r"], [at["r1"], at["r3"], at["p2"]], "open", 1.0),
+        _abstraction(s00, at["x"], [at["d"], at["p4"]], at["d"], "h_fwd", 1.0e-2),
+        _abstraction(s01, at["d"], [at["x"], at["x3"], at["x5"]], at["x"], "h_rev", 1.0e-2),
+    ]
+    counts = {"00": {"close": 1, "close_x": 1, "h_fwd": 2}, "10": {"open": 2, "h_fwd": 2},
+              "01": {"close": 1, "h_rev": 1}, "11": {"open": 2, "h_rev": 1}}
+    cycle = [("00", "close", "10", "open"), ("10", "h_fwd", "11", "h_rev"),
+             ("11", "open", "01", "close"), ("01", "h_rev", "00", "h_fwd")]
+    return states, templates, counts, cycle
+
+
+def _transition_counts(engine):
+    """Class name -> its transitions in the engine's state: a unimolecular
+    class's allowed transitions, a bimolecular class's ordered site pairs on
+    one component (the measured same-molecule count, over the divisor) and
+    across components."""
+    names = [t.name for t in engine.templates]
+    out = {}
+    for ci, cls in enumerate(engine.classes):
+        if cls.bimolecular:
+            n = sum(v for (cj, _k0, _k1), v in engine.same.items() if cj == ci) // cls.divisor
+            n += sum(round(row[1] + row[2]) for r in engine.pairs.values() for row in r.classes if row[0] == ci)
+        else:
+            n = sum(len(e.shape.uni.get(ci, ((), 0))[0]) for e in engine.entries.values())
+        if n:
+            out[names[ci]] = n
+    return out
+
+
+def _state_graph(state):
+    import networkx as nx
+    g = nx.Graph()
+    for a, n in state.atoms.items():
+        g.add_node(a, element=n.element, radical=n.radical)
+    g.add_edges_from((a, b, {"order": o}) for a, n in state.atoms.items() for b, o in n.edges.items() if a < b)
+    return g
+
+
+def _isomorphic_states(g, h):
+    import networkx as nx
+    return nx.is_isomorphic(g, h, node_match=lambda x, y: x == y, edge_match=lambda x, y: x == y)
+
+
+def _uni_products(engine, name):
+    """The state graph each transition of unimolecular class ``name`` makes
+    (applied tentatively, rolled back)."""
+    ci = [t.name for t in engine.templates].index(name)
+    out = []
+    for cid in sorted(engine.entries):
+        entry = engine.entries[cid]
+        for k in range(len(entry.shape.uni.get(ci, ((), 0))[0])):
+            tr = entry.uni_at(ci, k)
+            tx, _products = engine._begin_apply(tr, me._LocalView(engine.state, list(tr.components)))
+            try:
+                out.append(_state_graph(engine.state))
+            finally:
+                tx.rollback()
+    return out
+
+
+@contract
+@law("A", "B_R")
+def test_the_closed_reaction_cycle_satisfies_kolmogorovs_criterion():
+    """``_h_square``: one catalog holds every forward and reverse class of the
+    cycle (closure and its homolysis, H transfer and its reverse), at a finite
+    escape factor (declared D0 1e-17 m2/s).  Setup checks that each state has
+    exactly the transitions ``counts`` lists and that every unimolecular
+    transition of an edge makes the edge's other state (graph isomorphism),
+    so a window that matches elsewhere fails setup, not the criterion.  The
+    product of the physical rates (``class_rate``: a thinned reverse at its
+    escape factor) along the cycle equals the product against it.  The
+    competing closure's row is in one opened state's encounter group and not
+    the other's, so this holds only when a reverse is thinned by the group the
+    forward reads (thinned by an inverse-only group instead, the ratio is
+    phi_00/phi_01 = 0.459 under phi_self: probe_square_oracle); c_eff here is a state function under every
+    option (the H transfer is off the ring's strand), so the c_eff half is
+    ``test_the_nested_closure_rates_are_path_independent``."""
+    states, templates, counts, cycle = _h_square()
+    engines = {key: _engine(spec, state, templates) for key, (spec, state) in states.items()}
+    for key, engine in engines.items():
+        assert _transition_counts(engine) == counts[key], f"setup: the transitions of state {key}"
+    graphs = {key: _state_graph(state) for key, (_spec, state) in states.items()}
+    for src, name, dst, rev in cycle:
+        for at, cls, target in ((src, name, dst), (dst, rev, src)):
+            engine = engines[at]
+            if not engine.classes[[t.name for t in engine.templates].index(cls)].bimolecular:
+                assert all(_isomorphic_states(g, graphs[target]) for g in _uni_products(engine, cls)), \
+                    f"setup: every {cls} transition of state {at} makes state {target}"
+    # each edge (src, class, dst, reverse class): along the cycle src -> dst, against it dst -> src
+    forward = [class_rate(engines[src], name) for src, name, _dst, _rev in cycle]
+    backward = [class_rate(engines[dst], rev) for _src, _name, dst, rev in cycle]
+    assert all(r > 0.0 for r in forward + backward), "every edge of the cycle is a fired channel"
+    assert math.prod(forward) == pytest.approx(math.prod(backward), rel=1.0e-9)
+
+
 def _chords(closed, radicals):
     """Ph0-M1-Ph2-M3-Ph4-M5-Ph6 (o6 -> o2) with chord A (MA: Ph0 o2 -> Ph6 o6)
     and chord B (MB: Ph2 p4 -> Ph6 p4); the chords not in ``closed`` are
@@ -608,13 +844,19 @@ def _chords(closed, radicals):
     return _engine(spec, state, [template])
 
 
+@contract
 @law("A", "B_R")
-def test_the_closed_reaction_cycle_satisfies_kolmogorovs_criterion(monkeypatch):
-    """G0 -A-> GA -B-> G2 and G0 -B-> GB -A-> G2: with the reverse homolyses
-    state-independent unimolecular rates and phi -> 1 (D0 large), detailed
-    balance needs P_A(G0) P_B(GA) = P_B(G0) P_A(GB).  Options A and B_R hold
-    it (design §3: tau(G+e) = tau(G)(1 + R/w_e)); B_sp, C_sp, C_R and C_img
-    miss it by 0.641, 0.807, 1.063 and 0.816 on this cycle
+def test_the_nested_closure_rates_are_path_independent(monkeypatch):
+    """The c_eff half of Kolmogorov's criterion, forward rates only (the
+    reversible one-catalog check at finite phi is
+    ``test_the_closed_reaction_cycle_satisfies_kolmogorovs_criterion``; this
+    fixture's homolyses cannot be told apart by a window in every state, so
+    each forward rate is read with its own one-template catalog at phi -> 1).
+    G0 -A-> GA -B-> G2 and G0 -B-> GB -A-> G2: were the reverse homolyses
+    state-independent unimolecular rates, detailed balance would need
+    P_A(G0) P_B(GA) = P_B(G0) P_A(GB), i.e. c_eff a state function.  Options
+    A and B_R hold it (design §3: tau(G+e) = tau(G)(1 + R/w_e)); B_sp, C_sp,
+    C_R and C_img miss it by 0.641, 0.807, 1.063 and 0.816 on this cycle
     (probe_cycle_nested)."""
     from rmgpy.kmc import window_matcher as wm
     # benzylic radicals on a 4-ring chain exceed the matcher's 64 resonance forms
@@ -627,3 +869,161 @@ def test_the_closed_reaction_cycle_satisfies_kolmogorovs_criterion(monkeypatch):
         assert exact_total(engine) > 0.0, f"{key}: the pair is a channel"
         rate[key] = exact_total(engine)
     assert rate["A|G0"] * rate["B|GA"] == pytest.approx(rate["B|G0"] * rate["A|GB"], rel=1.0e-9)
+
+
+@contract
+def test_the_selected_options_are_the_engines_declared_law():
+    """The selection is validated against the declaration, not only against
+    the option names: with ``I297_LAW`` / ``I297_PHI`` set, the engine fires
+    that law and that closure (``declared_law``)."""
+    if CHOSEN_LAW is None and CHOSEN_PHI is None:
+        pytest.skip("no option selected (I297_LAW / I297_PHI unset)")
+    engine, _e = _far_pair(6)
+    law_, phi_ = declared_law(engine)
+    if CHOSEN_LAW is not None:
+        assert law_ == CHOSEN_LAW
+    if CHOSEN_PHI is not None:
+        assert phi_ == CHOSEN_PHI
+
+
+# --------------------------------------------------------------------------
+# groundwork (I-301): today's engine, always run
+# --------------------------------------------------------------------------
+def _chain_links(rings):
+    return [x for k in range(rings - 1) for x in ((2 * k + 1, "a", 2 * k, "o6"), (2 * k + 1, "b", 2 * k + 2, "o2"))]
+
+
+def _competing(bonded, excluded=()):
+    """X = Ph-M-Ph with an aryl radical A (Ph0's para site); Y =
+    Ph-M-Ph-M-Ph with an aryl radical C (Ph0's para site) and a benzylic
+    radical B (M3).  Two MET classes pair X with Y and make different
+    products: ``ab`` (B + A, weight 1) and ``ac`` (A + C, weight 9; a role
+    swap: its two ordered site pairs over divisor 2).  ``bonded``: A-B already
+    bonded (one molecule XY with C left) and the homolysis ``open`` of that
+    bond loaded, whose products are X and Y again."""
+    from rmgpy.kmc import melt_branched as mb
+    from rmgpy.kmc.melt_state import SetBond, SetRadical
+    spec = law_spec()
+    state = mb.build_molecules(spec, [(["Ph", "M", "Ph"], _chain_links(2)),
+                                      (["Ph", "M", "Ph", "M", "Ph"], _chain_links(3))])
+    atom = mb.residue_atoms(state)
+    a, c, b = atom[(0, 0)]["r4"], atom[(1, 0)]["r4"], atom[(1, 3)]["m"]
+    for x in (a, c, b):
+        S.strip_h(state, x)
+    templates = [_recombination(state, b, a, "ab", 1.0), _recombination(state, a, c, "ac", 9.0)]
+    if bonded:
+        state.apply([SetBond(a, b, 0.0, 1.0), SetRadical(a, 1, 0), SetRadical(b, 1, 0)])
+        templates.append(_homolysis(state, b, a, "open", 1.0))
+    return me.MeltEngine(spec, S.ToyCatalog(builder=lambda _t: list(templates)), 700.0,
+                         np.random.default_rng(0), state=state, excluded=excluded)
+
+
+def _unit_k_d(monkeypatch):
+    monkeypatch.setattr(me.TransportLaw, "k_diffusion", lambda self, t, n1, n2: 1.0)
+    monkeypatch.setattr(me.TransportLaw, "k_diffusion_still", lambda self, t, n1, n2: 1.0)
+
+
+@pytest.mark.parametrize("excluded, phi", [((), 1.0 / 11.0), (("ac",), 1.0 / 2.0)])
+def test_competing_channels_share_one_escape_factor_forward_and_in_the_reverse_thinning(monkeypatch, excluded, phi):
+    """The encounter group (``encounter_group``) is the component pair's, not
+    the inverse's: with k_D = 1 and activations 1 (``ab``) and 9 (``ac``, a
+    channel to other products), the pair's forward phi is 1/11, and the
+    homolysis of the A-B bond (the inverse of ``ab`` alone) is thinned at
+    1/11 too (an inverse-only group would give 1/2), in the fired proposal and
+    in the open-segment mean (``_fallback_phi``).  An excluded class leaves
+    the group in both directions (1/2).  Today's engine already does this for
+    two-molecule pairs (I-301: green before the refactor, kept green)."""
+    _unit_k_d(monkeypatch)
+    forward = _competing(False, excluded)
+    (rate,) = forward.pairs.values()
+    names = [t.name for t in forward.templates]
+    activation = {names[row[0]]: forward._row_weight(row) * (row[1] + row[2]) for row in rate.classes}
+    assert activation == {k: v for k, v in {"ab": 1.0, "ac": 9.0}.items() if k not in excluded}
+    assert rate.k_d == 1.0
+    assert rate.phi == pytest.approx(phi, rel=1.0e-15)
+    reverse = _competing(True, excluded)
+    ci = [t.name for t in reverse.templates].index("open")
+    assert sum(len(e.shape.uni.get(ci, ((), 0))[0]) for e in reverse.entries.values()) == 1
+    mean, sampled = reverse._fallback_phi(ci)
+    assert not sampled and mean == pytest.approx(phi, rel=1.0e-15)
+    reverse.run(max_events=1)
+    assert reverse.template_counts["open"] == 1 and reverse.met_counts["reverse_accepted"] == 1
+    assert reverse.phi_sum / reverse.thinned_proposals == pytest.approx(phi, rel=1.0e-15)
+
+
+def test_both_thinning_paths_take_the_escape_factor_from_one_evaluator(monkeypatch):
+    """``_fire``'s reverse thinning and ``_fallback_phi`` read phi from
+    ``_reverse_phi`` and nowhere else: replaced by a constant 0.25, both
+    report 0.25 (a path computing its own phi would report 1/11 here)."""
+    _unit_k_d(monkeypatch)
+    engine = _competing(True)
+    calls = []
+
+    def constant(self, tr, products):
+        calls.append(len(products))
+        return 0.25, False
+    monkeypatch.setattr(me.MeltEngine, "_reverse_phi", constant)
+    ci = [t.name for t in engine.templates].index("open")
+    assert engine._fallback_phi(ci) == (0.25, False)
+    engine.run(max_events=1)
+    assert engine.template_counts["open"] == 1
+    assert engine.phi_sum == pytest.approx(0.25 * engine.thinned_proposals, rel=1.0e-15)
+    assert set(calls) == {2} and len(calls) >= 1 + engine.thinned_proposals
+
+
+def _two_aryl_chain():
+    """Ph0-M1-Ph2-M3-Ph4 with an aryl radical at both end rings' para sites
+    (one window up to a mirror: an aryl-aryl recombination is a role swap)."""
+    from rmgpy.kmc import melt_branched as mb
+    spec = law_spec(d_ref=_NO_SPLIT_D_REF)
+    state = mb.build_molecules(spec, [(["Ph", "M", "Ph", "M", "Ph"], _chain_links(3))])
+    atom = mb.residue_atoms(state)
+    a, c = atom[(0, 0)]["r4"], atom[(0, 4)]["r4"]
+    for x in (a, c):
+        S.strip_h(state, x)
+    return spec, state, a, c
+
+
+def test_the_self_pair_rows_count_each_ordered_site_pair_once():
+    """phi_self's mapping (``self_pair_rows``): each ordered site pair of one
+    molecule, sharing no atom, is one pair of its class's row over the
+    class's divisor; ``pair_rate(entry, entry)`` counts every ordered pair
+    twice (both role assignments are the one molecule) and keeps the pairs
+    that share an atom.  Opened ring (methylene + aryl radical, divisor 1):
+    k_act 0.01 against pair_rate's 0.02 (round 58 item 3).  Two aryl radicals
+    on one chain (role swap, divisor 2): ordered pairs (A, C) and (C, A) over
+    2 is one pair, k_act w; pair_rate(e, e) gives 4 w ((A, C), (C, A), (A, A),
+    (C, C), twice, over 2).  The rows also price the measured same_molecule
+    leak (same count, same weights).  phi_self = k_D(L, L) / (k_D + k_act)
+    with k_D written out (``_analytic_k_d``)."""
+    spec, cut, m, r = _opened_ring(_NO_SPLIT_D_REF)
+    engine = _engine(spec, cut, [_recombination(cut, m, r, "close", 1.0e-2)])
+    (entry,) = engine.entries.values()
+    rows = engine.self_pair_rows(entry)
+    assert rows.classes == ((0, 1.0, 0.0),)
+    assert rows.k_act == rows.k_act_allowed == pytest.approx(1.0e-2, rel=1.0e-15)
+    assert engine.pair_rate(entry, entry).k_act == pytest.approx(2.0e-2, rel=1.0e-15)
+    k_d = _analytic_k_d("self", engine.transport, entry.met_length)
+    assert rows.k_d_self == pytest.approx(k_d, rel=1.0e-12)
+    assert rows.phi_self == pytest.approx(k_d / (k_d + 1.0e-2), rel=1.0e-12)
+    assert _classes(engine)["same_molecule"] == pytest.approx(rows.k_act / engine.nav, rel=1.0e-12)
+
+    spec, state, a, c = _two_aryl_chain()
+    engine = _engine(spec, state, [_recombination(state, a, c, "aa", 3.0e-2)])
+    assert engine.classes[0].divisor == 2, "setup: the aryl-aryl recombination is a role swap"
+    (entry,) = [e for e in engine.entries.values() if e.species is None]
+    rows = engine.self_pair_rows(entry)
+    assert sum(r[1] + r[2] for r in rows.classes) == 1.0
+    assert rows.k_act == pytest.approx(3.0e-2, rel=1.0e-15)
+    assert engine.pair_rate(entry, entry).k_act == pytest.approx(4 * 3.0e-2, rel=1.0e-15)
+    assert _classes(engine)["same_molecule"] == pytest.approx(rows.k_act / engine.nav, rel=1.0e-12)
+
+
+def test_the_self_pair_rows_leave_excluded_classes_out():
+    """An excluded class is no row of the same-molecule group either (as in
+    ``encounter_group``); with only it loaded there are no rows."""
+    spec, cut, m, r = _opened_ring(_NO_SPLIT_D_REF)
+    engine = me.MeltEngine(spec, S.ToyCatalog(builder=lambda _t: [_recombination(cut, m, r, "close", 1.0e-2)]),
+                           700.0, np.random.default_rng(0), state=cut, excluded=["close"])
+    (entry,) = engine.entries.values()
+    assert engine.self_pair_rows(entry) is None
