@@ -13,6 +13,8 @@ streaming, in artifact order, and writes each shard's input.
   shard's, for every shard count, with certification refusing records so
   that ids are republished and refusals propagate across shard boundaries;
   with ``--family`` and ``--limit`` too; and from an index written once;
+- prepare certifies in the whole-artifact shard's order, the artifact's, also
+  when that is not id order;
 - a prepared input of other artifact bytes, another roster or shard count,
   or a truncated one, is refused by name.
 
@@ -236,6 +238,30 @@ def test_prepared_rows_are_the_whole_artifact_rows(tmp_path, artifact, roster_an
     everything = sorted(r["event_id"] for r in records)
     assert [sorted(c.seen) for c in stubbed.certifiers] == \
         [everything] * n + [everything] + [[]] * n
+
+
+def test_prepare_certifies_in_the_whole_artifact_order(tmp_path, roster_and_doc, stubbed):
+    """Certificate bytes depend on what was certified before (tree-group atom
+    order), so prepare must certify in the order the whole-artifact shard does:
+    the artifact's.  An artifact's records are not always in id order (the
+    compiler appends ortho-junction records after the others), so the
+    fixture's records are reversed here."""
+    roster, doc = roster_and_doc
+    doc = json.loads(json.dumps(doc))
+    doc["records"].reverse()
+    for index, record in enumerate(doc["records"]):
+        record["canonical_index"] = index
+    raw = json.dumps(doc, sort_keys=True, separators=(",", ":")).encode()
+    artifact = tmp_path / "art" / f"{hashlib.sha256(raw).hexdigest()}.json"
+    artifact.parent.mkdir()
+    artifact.write_bytes(raw)
+    order = [r["event_id"] for r in doc["records"]]
+    assert order != sorted(order)
+    whole = _shards(artifact, roster, tmp_path, 2, "whole")
+    assert _prepared_shards(artifact, roster, tmp_path, 2) == whole
+    whole_shard, prepare = stubbed.certifiers[0], stubbed.certifiers[2]
+    assert whole_shard.seen == order
+    assert prepare.seen == whole_shard.seen
 
 
 @pytest.mark.parametrize("flags", [("--family", "R_Recombination"), ("--limit", "2"),
