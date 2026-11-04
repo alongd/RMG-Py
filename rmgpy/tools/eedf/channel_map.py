@@ -33,7 +33,9 @@ import argparse
 from collections import Counter, defaultdict
 import copy
 import hashlib
+import itertools
 import json
+import math
 from pathlib import Path
 import re
 import sys
@@ -541,9 +543,140 @@ def prepare_spec(base_spec, frozen_map, frozen_digest, database, collision_set, 
     return spec, converted, report
 
 
+def _build_declared_mixture_spec(spec, ladder, gas_maps, composition, tv_axis, tv_values):
+    """Build declared gas fractions and ground-state properties from frozen maps."""
+    bath = composition.get('bath') if isinstance(composition, dict) else None
+    fractions = composition.get('fractions') if isinstance(composition, dict) else None
+    if isinstance(gas_maps, (list, tuple)):
+        normalized = {}
+        for item in gas_maps:
+            if not isinstance(item, dict) or set(item) != {'gas', 'map'}:
+                raise SpecError('mixture gas map collection is invalid')
+            gas = item['gas']
+            if not isinstance(gas, str) or not gas:
+                raise SpecError('mixture gas map identity is invalid')
+            if gas in normalized:
+                raise SpecError('duplicate gas map identity: ' + gas)
+            normalized[gas] = item['map']
+        gas_maps = normalized
+    if (not isinstance(gas_maps, dict) or len(gas_maps) < 2 or 'N2' not in gas_maps or
+            not all(isinstance(gas, str) and gas and isinstance(frozen, dict)
+                    for gas, frozen in gas_maps.items())):
+        raise SpecError('mixture requires at least two gas maps, including the N2 ladder gas')
+    if not isinstance(bath, str) or not bath or bath not in gas_maps:
+        raise SpecError('mixture bath must name a gas with a map')
+    if isinstance(fractions, dict) and set(fractions) - set(gas_maps):
+        raise SpecError('mixture fraction gas has no map')
+    if not isinstance(fractions, dict) or set(fractions) != set(gas_maps) - {bath}:
+        raise SpecError('mixture fractions must declare every non-bath gas exactly once')
+    if (not isinstance(tv_axis, str) or not re.fullmatch(r'[A-Za-z_][A-Za-z_0-9]*', tv_axis)
+            or tv_axis == 'u' or not isinstance(tv_values, (list, tuple)) or not tv_values
+            or any(type(value) not in (int, float) or not math.isfinite(value) or value <= 0
+                   for value in tv_values)
+            or sorted(set(tv_values)) != list(tv_values)):
+        raise SpecError('mixture Tv axis requires ordered physical values')
+
+    axis_values, fraction_expressions, fixed = {}, {}, {}
+    for gas, declaration in fractions.items():
+        if isinstance(declaration, dict) and set(declaration) == {'axis', 'values'}:
+            axis, values = declaration['axis'], declaration['values']
+            if (not isinstance(axis, str) or not re.fullmatch(r'[A-Za-z_][A-Za-z_0-9]*', axis)
+                    or axis in ('u', tv_axis) or axis in axis_values
+                    or not isinstance(values, (list, tuple)) or not values
+                    or any(type(value) not in (int, float) or not math.isfinite(value)
+                           for value in values)
+                    or sorted(set(values)) != list(values)):
+                raise SpecError('invalid mixture fraction axis')
+            axis_values[axis] = list(values)
+            fraction_expressions[gas] = '{' + axis + '}'
+        elif type(declaration) in (int, float) and math.isfinite(declaration):
+            fixed[gas] = float(declaration)
+            fraction_expressions[gas] = repr(float(declaration))
+        else:
+            raise SpecError('mixture fraction requires an axis and values or a fixed number')
+    points = itertools.product(*(axis_values[axis] for axis in axis_values)) if axis_values else [()]
+    for point in points:
+        at_point = dict(zip(axis_values, point))
+        values = dict(fixed)
+        for gas, declaration in fractions.items():
+            if isinstance(declaration, dict):
+                values[gas] = at_point[declaration['axis']]
+        total = sum(values.values())
+        bath_value = 1.0 - total
+        if (not math.isfinite(total) or any(value < 0 or value > 1 for value in values.values())
+                or bath_value < 0 or bath_value > 1 or not math.isclose(
+                    total + bath_value, 1.0, rel_tol=0., abs_tol=1e-12)):
+            raise SpecError('mixture fractions must stay in [0,1] and sum to one at every grid point')
+
+    states = {}
+    for gas, frozen in gas_maps.items():
+        gas_states = frozen.get('states')
+        if not gas_states and gas == 'N2':
+            # Existing N2 map predates state metadata; the sourced v=0 ladder row
+            # carries the corresponding ground energy and statistical weight.
+            level = next((row for row in ladder['levels'] if row['v'] == 0), None)
+            if level is not None:
+                gas_states = {ladder['parent']: {
+                    'paschen': 'ground', 'g': level['statistical_weight'],
+                    'excitation_eV': level['energy_eV'], 'rmg_species': 'N2'}}
+        if not isinstance(gas_states, dict):
+            raise SpecError('missing ground state declaration for gas ' + gas)
+        grounds = [(name, row) for name, row in gas_states.items()
+                   if isinstance(row, dict) and row.get('paschen') == 'ground']
+        if len(grounds) != 1:
+            raise SpecError('missing or ambiguous ground state declaration for gas ' + gas)
+        name, row = grounds[0]
+        weight, energy, species = row.get('g'), row.get('excitation_eV'), row.get('rmg_species')
+        if (not isinstance(name, str) or not name.startswith(gas + '(')
+                or type(weight) not in (int, float) or not math.isfinite(weight) or weight <= 0
+                or type(energy) not in (int, float) or not math.isfinite(energy) or energy < 0
+                or not isinstance(species, str) or not species):
+            raise SpecError('invalid ground state declaration for gas ' + gas)
+        states[gas] = (name, energy, weight)
+
+    spec['axes'] = {**spec['axes'], **axis_values, tv_axis: list(tv_values)}
+    ordered_gases = list(gas_maps)
+    remainder = '-'.join(fraction_expressions[gas] for gas in ordered_gases if gas != bath)
+    spec['gas_properties'] = copy.deepcopy(spec['gas_properties'])
+    spec['gas_properties']['fraction'] = [
+        f'{gas} = 1-{remainder}' if gas == bath else f'{gas} = {fraction_expressions[gas]}'
+        for gas in ordered_gases]
+    spec['state_properties'] = copy.deepcopy(spec['state_properties'])
+    declared_names = {record[0] for record in states.values()}
+    for field in ('population', 'energy', 'statisticalWeight'):
+        spec['state_properties'][field] = [
+            entry for entry in spec['state_properties'].get(field, [])
+            if entry.split(' = ', 1)[0] not in declared_names]
+    spec['state_properties']['population'].extend(
+        f'{name} = 1' for name, _, _ in states.values())
+    spec['state_properties']['energy'].extend(
+        f'{name} = {energy}' for name, energy, _ in states.values())
+    spec['state_properties']['statisticalWeight'].extend(
+        f'{name} = {weight}' for name, _, weight in states.values())
+    for level in ladder['levels']:
+        expression = (f'boltzmann:{tv_axis}:{level["v"]}'
+                      if level['v'] <= ladder['K'] else '0')
+        if level['v'] <= ladder['K']:
+            spec['state_properties']['population'].append(
+                f'{level["loki_state"]} = {expression}')
+        else:
+            ladder.setdefault('zero_population_tail', {})[level['loki_state']] = 0.0
+    child_prefix = ladder['parent'][:-1] + ',v='
+    for field, source_field in (('energy', 'energy_eV'),
+                                ('statisticalWeight', 'statistical_weight')):
+        entries = [entry for entry in spec['state_properties'].get(field, [])
+                   if not entry.split(' = ', 1)[0].startswith(child_prefix)]
+        entries.extend(f'{level["loki_state"]} = {level[source_field]}'
+                       for level in ladder['levels'] if level['v'] <= ladder['K'])
+        spec['state_properties'][field] = entries
+    spec['vibrational_ladders'] = [ladder]
+    return spec
+
+
 def build_mixture_spec(base_spec, ladder_manifest, bindings, *,
                        composition_axis='x_N2', tv_axis='Tv_K',
-                       composition_values=(0., .5, 1.), tv_values=(1000., 2000.)):
+                       composition_values=(0., .5, 1.), tv_values=(1000., 2000.),
+                       gas_maps=None, composition=None):
     """Add explicit Ar/N2 composition and a coupled N2(X,v) Tv ladder."""
     from rmgpy.tools.eedf.vibrational import ladder_coupling
     spec = copy.deepcopy(base_spec)
@@ -563,6 +696,8 @@ def build_mixture_spec(base_spec, ladder_manifest, bindings, *,
     domain = ladder.get('source_domain')
     if domain != {'initial_levels': list(range(30)), 'final_v': 58}:
         raise SpecError('N2 ladder must retain source domain initial v=0..29, final v=0..58')
+    if composition is not None:
+        return _build_declared_mixture_spec(spec, ladder, gas_maps, composition, tv_axis, tv_values)
     spec['axes'] = {**spec['axes'], composition_axis: list(composition_values), tv_axis: list(tv_values)}
     spec['gas_properties'] = copy.deepcopy(spec['gas_properties'])
     spec['gas_properties']['fraction'] = [f'Ar = 1-{{{composition_axis}}}',
@@ -594,6 +729,7 @@ def build_mixture_spec(base_spec, ladder_manifest, bindings, *,
 
 def prepare_mixture_spec(base_spec, gas_maps, database, collision_set,
                          ladder_source_manifest, *, cascade_yields=None,
+                         composition=None, tv_axis='Tv_K', tv_values=(1000., 2000.),
                          yield_table=None, radiative_source=None,
                          yield_table_sha256=None, source_sha256=None):
     """Prepare a multi-gas conversion from explicit (gas, map, hash, library) inputs."""
@@ -601,6 +737,8 @@ def prepare_mixture_spec(base_spec, gas_maps, database, collision_set,
     spec = load_spec(base_spec)
     if not isinstance(gas_maps, (list, tuple)) or len(gas_maps) < 2:
         raise SpecError('mixture conversion requires at least two gas maps')
+    if composition is None and len(gas_maps) > 2:
+        raise SpecError('multi-gas composition requires an explicitly named bath')
     frozen_by_gas, libraries_needed, map_hashes, library_hashes = {}, set(), {}, {}
     library_by_gas = {}
     for item in gas_maps:
@@ -624,9 +762,26 @@ def prepare_mixture_spec(base_spec, gas_maps, database, collision_set,
                   'base_channel_map': copy.deepcopy(spec['channel_map']),
                   'input_files': copy.deepcopy(spec['input_files']),
                   'collision_set': collision_set}
+    from rmgpy.tools.eedf.n2_vibrational import generate
+    generator_manifest = copy.deepcopy(ladder_source_manifest)
+    generator_manifest['D6'] = d6_policy
+    generated = generate(generator_manifest, K=10, production=False)
+    ladder_manifest = json.loads(generated['manifest.json'])
+    bindings = [{'source_sha256': row['source']['sha256'],
+                 'source_block': row['source_block'],
+                 'description': (f"e + N2(X,v={row['initial_v']}) <-> "
+                                 f"e + N2(X,v={row['final_v']}), Vibrational")}
+                for row in ladder_manifest['transition_audit']]
+    ladder_spec = None
+    conversion_source = spec
+    if composition is not None:
+        ladder_spec = build_mixture_spec(spec, ladder_manifest, bindings,
+                                         gas_maps=frozen_by_gas, composition=composition,
+                                         tv_axis=tv_axis, tv_values=tv_values)
+        conversion_source = ladder_spec
     with tempfile.TemporaryDirectory(prefix='eedf-map-') as directory:
         scratch = Path(directory)
-        snapshot = copy.deepcopy(spec)
+        snapshot = copy.deepcopy(conversion_source)
         for i, entry in enumerate(snapshot['input_files'].values()):
             data = _read_pinned_bytes(entry['path'], entry['sha256'])
             destination = scratch / (str(i) + Path(entry['path']).suffix)
@@ -657,17 +812,8 @@ def prepare_mixture_spec(base_spec, gas_maps, database, collision_set,
     provenance['library_labels'] = sorted(libraries_needed)
     provenance['library_sha256'] = library_hashes
     report['provenance'] = provenance
-    from rmgpy.tools.eedf.n2_vibrational import generate
-    generator_manifest = copy.deepcopy(ladder_source_manifest)
-    generator_manifest['D6'] = d6_policy
-    generated = generate(generator_manifest, K=10, production=False)
-    ladder_manifest = json.loads(generated['manifest.json'])
-    bindings = [{'source_sha256': row['source']['sha256'],
-                 'source_block': row['source_block'],
-                 'description': (f"e + N2(X,v={row['initial_v']}) <-> "
-                                 f"e + N2(X,v={row['final_v']}), Vibrational")}
-                for row in ladder_manifest['transition_audit']]
-    ladder_spec = build_mixture_spec(spec, ladder_manifest, bindings)
+    if ladder_spec is None:
+        ladder_spec = build_mixture_spec(spec, ladder_manifest, bindings)
     return spec, converted, report, ladder_spec
 
 

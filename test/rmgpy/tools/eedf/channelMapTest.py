@@ -183,6 +183,143 @@ def test_multigas_conversion_uses_each_configured_owner_library(conversion_input
     assert populations['N2(X,v=0)'] + populations['N2(X,v=1)'] == pytest.approx(1.)
 
 
+def _three_gas_state_maps():
+    def entry(g, rmg_species):
+        return {'paschen': 'ground', 'g': g, 'excitation_eV': 0.0,
+                'rmg_species': rmg_species}
+    return {'Ar': {'states': {'Ar(1S0)': entry(1, 'Ar')}},
+            'N2': {'states': {'N2(X)': entry(1, 'N2')}},
+            'NO': {'states': {'NO(X)': entry(4, 'NO')}}}
+
+
+def _fake_ladder(monkeypatch):
+    import rmgpy.tools.eedf.vibrational as vibrational
+    ladder = {'axis': 'Tv_K', 'parent': 'N2(X)', 'K': 1, 'levels': [
+        {'v': 0, 'loki_state': 'N2(X,v=0)', 'energy_eV': 0., 'statistical_weight': 1.},
+        {'v': 1, 'loki_state': 'N2(X,v=1)', 'energy_eV': .29, 'statistical_weight': 1.}],
+        'source_domain': {'initial_levels': list(range(30)), 'final_v': 58}}
+    monkeypatch.setattr(vibrational, 'ladder_coupling', lambda *args, **kwargs: ladder)
+
+
+def test_three_gas_mixture_declares_named_bath_fractions_and_map_states(
+        conversion_inputs, monkeypatch):
+    spec, _, _ = conversion_inputs
+    _fake_ladder(monkeypatch)
+    maps = _three_gas_state_maps()
+    maps = {gas: maps[gas] for gas in ('NO', 'N2', 'Ar')}
+    composition = {'bath': 'Ar', 'fractions': {
+        'N2': {'axis': 'x_N2', 'values': [.1]},
+        'NO': {'axis': 'x_NO', 'values': [.001, .005]}}}
+    mixture = adapter.build_mixture_spec(spec, {}, [], gas_maps=maps,
+                                         composition=composition)
+    assert mixture['gas_properties']['fraction'] == [
+        'NO = {x_NO}', 'N2 = {x_N2}', 'Ar = 1-{x_NO}-{x_N2}']
+    assert 'NO(X) = 1' in mixture['state_properties']['population']
+    assert 'NO(X) = 0.0' in mixture['state_properties']['energy']
+    assert 'NO(X) = 4' in mixture['state_properties']['statisticalWeight']
+    assert mixture['axes']['x_NO'] == [.001, .005]
+
+
+@pytest.mark.parametrize('composition,maps,error', [
+    ({'fractions': {}}, _three_gas_state_maps(), 'bath'),
+    ({'bath': 'Ne', 'fractions': {}}, _three_gas_state_maps(), 'bath'),
+    ({'bath': 'Ar', 'fractions': {
+        'N2': {'axis': 'x_N2', 'values': [.1]},
+        'NO': {'axis': 'x_NO', 'values': [.1]}}},
+     {**_three_gas_state_maps(), 'NO': {'states': {}}}, 'ground state'),
+    ({'bath': 'Ar', 'fractions': {'N2': {'axis': 'x_N2', 'values': [.6]},
+                                  'NO': {'axis': 'x_NO', 'values': [.5]}}},
+     _three_gas_state_maps(), 'fractions'),
+    ({'bath': 'Ar', 'fractions': {'N2': {'axis': 'x_N2', 'values': [.1]},
+                                  'NO': {'axis': 'x_NO', 'values': [.1]}}},
+     {'Ar': _three_gas_state_maps()['Ar'], 'N2': _three_gas_state_maps()['N2']}, 'map'),
+])
+def test_general_mixture_refuses_invalid_composition_or_missing_state_map(
+        conversion_inputs, monkeypatch, composition, maps, error):
+    spec, _, _ = conversion_inputs
+    _fake_ladder(monkeypatch)
+    with pytest.raises(SpecError, match=error):
+        adapter.build_mixture_spec(spec, {}, [], gas_maps=maps, composition=composition)
+
+
+def test_general_mixture_refuses_duplicate_gas_identity(conversion_inputs, monkeypatch):
+    spec, _, _ = conversion_inputs
+    _fake_ladder(monkeypatch)
+    with pytest.raises(SpecError, match='gas map'):
+        adapter.build_mixture_spec(
+            spec, {}, [], gas_maps=[
+                {'gas': 'Ar', 'map': _three_gas_state_maps()['Ar']},
+                {'gas': 'Ar', 'map': _three_gas_state_maps()['Ar']},
+            ],
+            composition={'bath': 'Ar', 'fractions': {
+                'N2': {'axis': 'x_N2', 'values': [.1]},
+                'NO': {'axis': 'x_NO', 'values': [.1]}}})
+
+
+def test_prepare_refuses_ungoverned_multigas_legacy_composition(
+        conversion_inputs, monkeypatch):
+    spec, _, _ = conversion_inputs
+    monkeypatch.setattr(adapter, 'load_spec', lambda _: copy.deepcopy(spec))
+    monkeypatch.setattr(adapter, '_diagnostic_d6', lambda _: None)
+    with pytest.raises(SpecError, match='explicitly named bath'):
+        adapter.prepare_mixture_spec(
+            'unused', [{'gas': gas, 'path': 'unused', 'sha256': 'unused', 'library': gas}
+                       for gas in ('Ar', 'N2', 'NO')],
+            'unused', 'mixture', {'D6': None})
+
+
+def test_prepare_three_gas_conversion_passes_declared_bath_and_states_to_map_converter(
+        conversion_inputs, tmp_path, monkeypatch):
+    spec, _, _ = conversion_inputs
+    _fake_ladder(monkeypatch)
+    monkeypatch.setattr(adapter, 'load_spec', lambda _: copy.deepcopy(spec))
+    monkeypatch.setattr(adapter, '_diagnostic_d6', lambda _: None)
+    monkeypatch.setattr(adapter, '_load_library', lambda database, scratch, label:
+                        (SimpleNamespace(entries={}), {'fixture': label}))
+    monkeypatch.setattr(adapter, '_cascade_snapshot', lambda *args, **kwargs: ({}, None))
+    import rmgpy.tools.eedf.n2_vibrational as n2_vibrational
+    monkeypatch.setattr(n2_vibrational, 'generate', lambda *args, **kwargs:
+                        {'manifest.json': json.dumps({'transition_audit': []})})
+    converted = [{'description': 'fixture collision'}]
+    report = {'outcome': 'converted', 'missing_owners': []}
+    observed = {}
+
+    def convert(spec_snapshot, maps, libraries, collision_set, yields, library_by_gas):
+        observed['fractions'] = list(spec_snapshot['gas_properties']['fraction'])
+        observed['population'] = list(spec_snapshot['state_properties']['population'])
+        observed['energy'] = list(spec_snapshot['state_properties']['energy'])
+        observed['weight'] = list(spec_snapshot['state_properties']['statisticalWeight'])
+        return copy.deepcopy(converted), copy.deepcopy(report)
+
+    monkeypatch.setattr(adapter, 'convert_channel_maps', convert)
+    gas_map_inputs = []
+    for gas, frozen, library in (
+            ('Ar', _three_gas_state_maps()['Ar'], 'PlasmaArgon'),
+            ('N2', _three_gas_state_maps()['N2'], 'PlasmaAir'),
+            ('NO', _three_gas_state_maps()['NO'], 'PlasmaNitricOxide')):
+        frozen = dict(frozen, schema='eedf-channel-map/2', set=gas,
+                      loki_files={'fixture.txt': 'fixture'},
+                      class_a_gaps={}, class_counts={'A': 0, 'B': 0, 'C': 0, 'D': 0},
+                      channels=[])
+        path = tmp_path / f'{gas}.yaml'
+        path.write_text(yaml.safe_dump(frozen))
+        gas_map_inputs.append({'gas': gas, 'path': str(path), 'sha256': _file_hash(path),
+                               'library': library})
+    composition = {'bath': 'Ar', 'fractions': {
+        'N2': {'axis': 'x_N2', 'values': [.1]},
+        'NO': {'axis': 'x_NO', 'values': [.001, .005]}}}
+    _, returned_channels, returned_report, mixture = adapter.prepare_mixture_spec(
+        'unused', gas_map_inputs, 'unused', 'test-Ar-N2-NO', {'D6': None},
+        composition=composition, tv_values=(300., 3000.))
+    assert returned_channels == converted and returned_report['outcome'] == 'converted'
+    assert observed['fractions'] == [
+        'Ar = 1-{x_N2}-{x_NO}', 'N2 = {x_N2}', 'NO = {x_NO}']
+    assert 'NO(X) = 1' in observed['population']
+    assert 'NO(X) = 0.0' in observed['energy']
+    assert 'NO(X) = 4' in observed['weight']
+    assert mixture['axes']['x_NO'] == [.001, .005]
+
+
 def test_prepare_mixture_spec_uses_real_59_level_source_manifest(
         conversion_inputs, tmp_path, monkeypatch):
     import importlib.util
