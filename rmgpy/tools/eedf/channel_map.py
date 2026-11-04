@@ -547,18 +547,6 @@ def _build_declared_mixture_spec(spec, ladder, gas_maps, composition, tv_axis, t
     """Build declared gas fractions and ground-state properties from frozen maps."""
     bath = composition.get('bath') if isinstance(composition, dict) else None
     fractions = composition.get('fractions') if isinstance(composition, dict) else None
-    if isinstance(gas_maps, (list, tuple)):
-        normalized = {}
-        for item in gas_maps:
-            if not isinstance(item, dict) or set(item) != {'gas', 'map'}:
-                raise SpecError('mixture gas map collection is invalid')
-            gas = item['gas']
-            if not isinstance(gas, str) or not gas:
-                raise SpecError('mixture gas map identity is invalid')
-            if gas in normalized:
-                raise SpecError('duplicate gas map identity: ' + gas)
-            normalized[gas] = item['map']
-        gas_maps = normalized
     if (not isinstance(gas_maps, dict) or len(gas_maps) < 2 or 'N2' not in gas_maps or
             not all(isinstance(gas, str) and gas and isinstance(frozen, dict)
                     for gas, frozen in gas_maps.items())):

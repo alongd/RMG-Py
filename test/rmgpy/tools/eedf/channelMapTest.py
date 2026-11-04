@@ -242,18 +242,19 @@ def test_general_mixture_refuses_invalid_composition_or_missing_state_map(
         adapter.build_mixture_spec(spec, {}, [], gas_maps=maps, composition=composition)
 
 
-def test_general_mixture_refuses_duplicate_gas_identity(conversion_inputs, monkeypatch):
+def test_prepare_refuses_duplicate_gas_identity(conversion_inputs, tmp_path, monkeypatch):
     spec, _, _ = conversion_inputs
-    _fake_ladder(monkeypatch)
+    monkeypatch.setattr(adapter, 'load_spec', lambda _: copy.deepcopy(spec))
+    monkeypatch.setattr(adapter, '_diagnostic_d6', lambda _: None)
+    path = tmp_path / 'argon.yaml'
+    path.write_text(yaml.safe_dump(_three_gas_state_maps()['Ar']))
+    digest = _file_hash(path)
     with pytest.raises(SpecError, match='gas map'):
-        adapter.build_mixture_spec(
-            spec, {}, [], gas_maps=[
-                {'gas': 'Ar', 'map': _three_gas_state_maps()['Ar']},
-                {'gas': 'Ar', 'map': _three_gas_state_maps()['Ar']},
-            ],
-            composition={'bath': 'Ar', 'fractions': {
-                'N2': {'axis': 'x_N2', 'values': [.1]},
-                'NO': {'axis': 'x_NO', 'values': [.1]}}})
+        adapter.prepare_mixture_spec(
+            'unused', [
+                {'gas': 'Ar', 'path': str(path), 'sha256': digest, 'library': 'PlasmaArgon'},
+                {'gas': 'Ar', 'path': 'unused', 'sha256': 'unused', 'library': 'PlasmaArgon'}],
+            'unused', 'mixture', {'D6': None})
 
 
 def test_prepare_refuses_ungoverned_multigas_legacy_composition(
