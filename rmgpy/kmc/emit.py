@@ -6,6 +6,10 @@ Two steps, both from the command line::
 
     python -m rmgpy.kmc.emit ARTIFACT ROSTER --database DB --out rows.jsonl
         [--chunk i/n] [--family F]... [--limit N] [--no-contexts] [--legacy-artifact]
+        [--prepared DIR]
+    python -m rmgpy.kmc.emit index ARTIFACT --out INDEX
+    python -m rmgpy.kmc.emit prepare ARTIFACT ROSTER --database DB --shards N --out DIR
+        [--family F]... [--index INDEX] [--legacy-artifact]
     python -m rmgpy.kmc.emit assemble ROWS... --out catalog.json [--database DB]
     python -m rmgpy.kmc.emit catalog-set CATALOG... --out SET.json
 
@@ -27,6 +31,15 @@ first line of a rows file is its header (artifact, database, code, roster and
 shard identity, and the partition: the artifact's ids and each assigned
 record's source id, from which assembly names every record no shard or two
 shards assign).
+
+**Prepared shards (I-295).** Without ``--prepared`` every shard parses the
+whole artifact and certifies every record, so its memory and time are the
+whole catalog's.  ``prepare`` (``emit_prepare``) certifies the artifact once,
+streaming, in artifact order, and writes each shard's input: its published
+records, their certificates and the records they link.  A shard run with
+``--prepared DIR`` reads only its input (the artifact's bytes are only
+hashed) and emits the same rows.  ``index`` writes the artifact's streaming
+index (``artifact_stream``) once, for ``prepare --index``.
 
 **Roster.** A JSON file ``{"schema": "kmc-reference-roster/2", "polymer":
 <LinearHomopolymerSpec mapping>, "systems": {name: [participant, ...]}}``.  A
@@ -76,6 +89,7 @@ from itertools import combinations
 from pathlib import Path
 from typing import Any, Callable, Optional
 
+from rmgpy.kmc import artifact_stream as astream
 from rmgpy.kmc import boundaries as b
 from rmgpy.kmc.catalog_set import CatalogSetError, build_catalog_set  # noqa: F401
 from rmgpy.kmc import template_emission as te
@@ -210,6 +224,15 @@ def load_roster(path) -> Roster:
 
 
 LEGACY_ARTIFACT_FLAG = "--legacy-artifact"
+
+
+class PreparedRefusal(ValueError):
+    """A prepared shard input that is not this shard's (``emit_prepare``)."""
+
+    def __init__(self, status, reason):
+        super().__init__(f"{status}: {reason}")
+        self.status = status
+        self.reason = reason
 
 
 class ArtifactBindingRefusal(ValueError):
@@ -1196,18 +1219,26 @@ class Emitter:
         self.contexts = contexts
         self.state = {}
 
-    def init(self):
+    def init(self, prepared=None):
+        """Load the database, certify and build the reference cases.  With
+        ``prepared`` (``emit_prepare.read_shard``: a shard's records already
+        certified with the whole artifact) nothing is parsed or certified."""
         from rmgpy.kmc import certificates as cm
         from rmgpy.kmc import channels as chm
         from rmgpy.kmc.reference_thermo import GasPhaseRMGReferenceThermo
         S = self.state
-        art = json.loads(self.artifact.read_text())
-        S["artifact_records"] = len(art["records"])
-        if self.only:
-            # one family's records (certified among themselves: a reversed
-            # record's rate owner is in its own family)
-            art["records"] = [r for r in art["records"] if r["family"] in self.only]
-        families = sorted({r["family"] for r in art["records"]})
+        if prepared is None:
+            art = json.loads(self.artifact.read_text())
+            S["artifact_records"] = len(art["records"])
+            if self.only:
+                # one family's records (certified among themselves: a reversed
+                # record's rate owner is in its own family)
+                art["records"] = [r for r in art["records"] if r["family"] in self.only]
+            families = sorted({r["family"] for r in art["records"]})
+        else:
+            art = prepared.head
+            S.update(artifact_records=prepared.artifact_records, artifact_sha256=prepared.sha256)
+            families = prepared.families
         t = time.time()
         db = load_database(families, self.database)
         fam = db.kinetics.families
@@ -1215,7 +1246,12 @@ class Emitter:
         certifier = make_certifier(fam, certification_rules(art, self.polymer),
                                    reference_thermo(db))
         t = time.time()
-        certified, store, replacements = certified_records(art["records"], fam, certifier)
+        if prepared is None:
+            certified, store, replacements = certified_records(art["records"], fam, certifier)
+        else:
+            certified, store, replacements = prepared.records, prepared.store, \
+                prepared.replacements
+        del art
         S.update(certify_s=round(time.time() - t, 1), records=certified, store=store,
                  replacements=replacements,
                  by_id={r["event_id"]: r for r in certified}, certifier=certifier)
@@ -1320,8 +1356,9 @@ def shard_header(emitter, roster, refusals, picked, chunk, partial, bound_by=(),
     partition = {} if artifact_ids is None else {"partition": {
         "basis": "artifact_event_ids", "artifact_ids": sorted(artifact_ids),
         "sources": source_ids(picked, S.get("replacements"))}}
+    sha = S.get("artifact_sha256") or astream.artifact_digest(artifact)[0]
     return {"kind": "header", "schema": ROWS_SCHEMA, "artifact_id": artifact.stem,
-            "artifact_sha256": hashlib.sha256(artifact.read_bytes()).hexdigest(),
+            "artifact_sha256": sha,
             "artifact_records": S["artifact_records"], "families": S["families"],
             "database_path": str(emitter.database), "database_head": git_head(emitter.database),
             "database_content_sha256": database_content_sha256(emitter.database),
@@ -1347,33 +1384,55 @@ def is_partial_selection(only, limit, artifact_records, selected_records) -> boo
 
 def run_emit(args):
     roster = load_roster(args.roster)
+    prepared_dir = getattr(args, "prepared", None)
+    prepared = None
     # the roster's declaration must be the artifact's, before anything is built
     try:
-        artifact = json.loads(Path(args.artifact).read_text())
+        if prepared_dir is None:
+            artifact = json.loads(Path(args.artifact).read_text())
+        else:
+            from rmgpy.kmc import emit_prepare
+            manifest = emit_prepare.open_manifest(prepared_dir, args.artifact, roster,
+                                                  args.database, args.chunk, args.family)
+            artifact = manifest["head"]
         bound_by = bind_artifact(artifact, roster.digests(), f"the roster {args.roster}",
                                  args.legacy_artifact)
         check_roster_for_artifact(roster, artifact)
-    except (ArtifactBindingRefusal, RosterRefusal) as error:
+        if prepared_dir is not None:
+            prepared = emit_prepare.read_shard(prepared_dir, manifest, args.chunk)
+    except (ArtifactBindingRefusal, RosterRefusal, PreparedRefusal) as error:
         print("REFUSED", error, flush=True)
         return 1
     print("BINDING", {"bound_by": list(bound_by), "legacy_artifact": not bound_by}, flush=True)
     # the partition: the artifact's own record ids (of the selected families),
     # read before anything this shard computes
-    artifact_ids = [r["event_id"] for r in artifact.get("records", [])
-                    if not args.family or r.get("family") in args.family]
+    if prepared is None:
+        artifact_ids = [r["event_id"] for r in artifact.get("records", [])
+                        if not args.family or r.get("family") in args.family]
+    else:
+        artifact_ids = prepared.artifact_ids
+    del artifact
     systems, refusals = build_reference_systems(roster)
     for refusal in refusals:
         print("ROSTER", json.dumps(refusal), flush=True)
     emitter = Emitter(args.artifact, args.database, systems, families=args.family,
                       contexts=not args.no_contexts, polymer=roster.polymer)
     t0 = time.time()
-    emitter.init()
-    picked = select_records(emitter.records, args.chunk, args.limit, artifact_ids=artifact_ids,
-                            replacements=emitter.state.get("replacements"))
+    if prepared is None:
+        emitter.init()
+        picked = select_records(emitter.records, args.chunk, args.limit,
+                                artifact_ids=artifact_ids,
+                                replacements=emitter.state.get("replacements"))
+        selected = len(emitter.records)
+    else:
+        emitter.init(prepared)
+        picked = prepared.picked[:args.limit] if args.limit else prepared.picked
+        selected = len(artifact_ids)
+        del prepared
     header = shard_header(emitter, roster, refusals, picked, args.chunk,
                           partial=is_partial_selection(args.family, args.limit,
                                                        emitter.state["artifact_records"],
-                                                       len(emitter.records)),
+                                                       selected),
                           bound_by=bound_by, artifact_ids=artifact_ids)
     print("INIT", {k: emitter.state.get(k) for k in ("load_s", "certify_s", "cases_s", "case_stats")},
           len(emitter.records), "records, selected", len(picked), flush=True)
@@ -1855,6 +1914,19 @@ def main(argv=None):
                             help="RMG-database path for the balance check (default: the "
                                  "shard headers')")
         return run_assemble(parser.parse_args(argv[1:]))
+    if argv and argv[0] == "index":
+        parser = argparse.ArgumentParser(prog="python -m rmgpy.kmc.emit index")
+        parser.add_argument("artifact")
+        parser.add_argument("--out", required=True)
+        args = parser.parse_args(argv[1:])
+        index = astream.build_index(args.artifact)
+        astream.write_index(index, args.out)
+        print("INDEX", args.out, len(index.entries), "records", index.size, "bytes",
+              index.sha256, f"rss={rss_mb()}MB", flush=True)
+        return 0
+    if argv and argv[0] == "prepare":
+        from rmgpy.kmc import emit_prepare
+        return emit_prepare.main(argv[1:])
     if argv and argv[0] == "catalog-set":
         parser = argparse.ArgumentParser(prog="python -m rmgpy.kmc.emit catalog-set")
         parser.add_argument("catalogs", nargs="+", help="one kmc-template-catalog/1 file per family")
@@ -1882,6 +1954,9 @@ def main(argv=None):
     parser.add_argument(LEGACY_ARTIFACT_FLAG, action="store_true",
                         help="emit an artifact that carries no declaration digest (a compile "
                              "without --deck) against the roster's declaration, unbound")
+    parser.add_argument("--prepared", default=None,
+                        help="the directory emit prepare wrote: read this shard's certified "
+                             "records from it instead of parsing and certifying the artifact")
     return run_emit(parser.parse_args(argv[1:] if argv and argv[0] == "run" else argv))
 
 
