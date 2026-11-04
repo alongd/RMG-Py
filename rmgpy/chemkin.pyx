@@ -1276,6 +1276,7 @@ cpdef _process_duplicate_reactions(list reaction_list):
                                 library=reaction1.library,
                                 reversible=reaction1.reversible,
                                 electrons=reaction1.electrons,
+                                pairs=list(reaction1.pairs) if reaction1.pairs else None,
                                 duplicate=False,
                             )
                             duplicate_reactions_to_add.append(reaction)
@@ -1299,6 +1300,12 @@ cpdef _process_duplicate_reactions(list reaction_list):
                         reaction.kinetics.arrhenius.append(reaction2.kinetics)
                     else:
                         raise ChemkinError('Mixed kinetics for duplicate reaction {0}.'.format(reaction))
+
+                    # Refuse conflicting metadata rather than silently losing flux pairs.
+                    if (reaction.pairs or []) != (reaction2.pairs or []):
+                        raise ChemkinError(
+                            'Conflicting flux pairs for duplicate reaction {0}; '
+                            'cannot merge DUPLICATE leaves.'.format(reaction))
 
                     duplicate_reactions_to_remove.append(reaction2)
                 elif reaction1.kinetics.is_pressure_dependent() == reaction2.kinetics.is_pressure_dependent():
