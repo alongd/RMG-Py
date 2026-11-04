@@ -3409,11 +3409,15 @@ def conventions(deck, facts: dict, *, temperature: float, family: dict, database
          "defect pool keeps no structure, so a candidate in it is never booked by mass alone; any other "
          "non-empty candidate pool withholds the polymer rows, at every row including t = 0; a species row "
          "is exported only when every pool that may hold the species is booked or provably empty (all "
-         "moments within f), never as a partial count; a pool receiving volatile ejections of positive "
-         "moment units (eject_units corrected for the pools' defects, polymer.pyx 4110-4113) may hold chains "
-         "below one unit's backbone (kMC class light): its polymer rows are withheld after t = 0; pool "
-         "moments below -f, units without chains (mu0 = 0) or a variance below MoM's census tolerance are "
-         "corruption (pool_state) and withhold mass, molecules and the whole keys"),
+         "moments within f), never as a partial count, a pool a volatile ejection reaches holding it at a "
+         "fractional DP included (ejection_reach, pool_may_hold); a pool receiving volatile ejections of "
+         "positive moment units (eject_units corrected for the pools' defects, polymer.pyx 4110-4113), or the "
+         "source of a reversible row of negative units (its reverse leg sheds them), may hold chains below one "
+         "unit's backbone (kMC class light): its polymer rows are withheld after t = 0; pool moments below -f, "
+         "units without chains (mu0 = 0) or a variance below variance_tolerance (MoM's census tolerance and a "
+         "roundoff allowance) are corruption (pool_state) and withhold mass, molecules and the whole keys; "
+         "a pool's bookkeeping species are matched to profile columns by identity (species_key: label(N) and "
+         "formula(N) are one species; moment_column for an index-less dummy)"),
         ("kmc_classes", "melt_observables.MeltObserver.category",
          "every MoM species outside the pools and the bath is put in kMC's class (declared species, "
          "polymer-derived when floor(B / b) >= 1, else light) by kMC's own classifier on its structure; "
@@ -3534,6 +3538,8 @@ def conventions(deck, facts: dict, *, temperature: float, family: dict, database
     return {"schema": CONVENTIONS_SCHEMA,
             "conventions": [{"name": n, "value": v, "statement": s} for n, v, s in rows],
             "quantity_sources": dict(QUANTITY_SOURCES), "not_produced": dict(NOT_PRODUCED),
+            "classification_dependent": dict(CLASSIFICATION_DEPENDENT),
+            "classification_free_rows": dict(CLASSIFICATION_FREE_ROWS),
             "flags": flags,
             "runner_note": "the flags travel in the --mom file's header: run.json mom.header and the "
                            "mom_flags column of comparison.csv"}
@@ -4507,14 +4513,28 @@ def ledger_threshold(row, first, pools, columns, ends) -> float:
         abs(first[columns[p["label"]][0]]) + abs(row[columns[p["label"]][0]]))) for p in pools)
 
 
+ROUNDOFF_ULPS = 64        # ulps of mu0 mu2 and mu1^2 the variance census allows for forming its difference
+
+
+def variance_tolerance(m: Sequence[float], floor: float = MOM_MOMENT_FLOOR) -> float:
+    """How far below zero mu0 mu2 - mu1^2 may sit and still be a distribution's:
+    MoM's census tolerance f |mu2| + f |mu0| + 2 f |mu1| + 2 f^2 (polymer.pyx
+    5570-5580 at b1285f08f) plus the roundoff of forming the difference of two
+    products of moments each good to a few ulps, ROUNDOFF_ULPS eps
+    (|mu0 mu2| + mu1^2) (a monodisperse DP-3 pool rebuilt by
+    moments_from_observables sits ~1e-13 relative below zero)."""
+    return (floor * (abs(m[2]) + abs(m[0]) + 2.0 * abs(m[1])) + 2.0 * floor * floor
+            + ROUNDOFF_ULPS * sys.float_info.epsilon * (abs(m[0] * m[2]) + m[1] * m[1]))
+
+
 def pool_state(row, pools, columns, floor: float = MOM_MOMENT_FLOOR) -> Tuple[Dict[str, List[float]], List[str]]:
     """Each pool's moments under MoM's accepted-state check
     (``_assert_pool_moments_accepted``): a moment below ``-f`` is corruption,
     within ``[-f, 0)`` it is clamped to 0.  After the clamp a pool is corrupt
     when it holds units without chains (mu0 = 0 exactly while mu1 or mu2 is
-    beyond ``f``) or when its variance mu0 mu2 - mu1^2 is below minus MoM's
-    variance-census tolerance f |mu2| + f |mu0| + 2 f |mu1| + 2 f^2
-    (polymer.pyx 5570-5580 at b1285f08f, all three floors f).  A trace
+    beyond ``f``) or when its variance mu0 mu2 - mu1^2 is below minus
+    ``variance_tolerance`` (MoM's census tolerance, all three floors f, plus a
+    roundoff allowance).  A trace
     population whose mu0 is under ``f`` (DP 30 at (5e-15, 1.5e-13, 4.5e-12))
     is a valid state."""
     out, corrupt = {}, []
@@ -4530,7 +4550,7 @@ def pool_state(row, pools, columns, floor: float = MOM_MOMENT_FLOOR) -> Tuple[Di
         if m[0] == 0.0 and (abs(m[1]) > floor or abs(m[2]) > floor):
             corrupt.append(f"pool {label} holds units without chains (mu0 = {m[0]!r}, mu1 = {m[1]!r}, "
                            f"mu2 = {m[2]!r} mol; corrupt)")
-        elif m[0] * m[2] - m[1] * m[1] < -(floor * (abs(m[2]) + abs(m[0]) + 2.0 * abs(m[1])) + 2.0 * floor * floor):
+        elif m[0] * m[2] - m[1] * m[1] < -variance_tolerance(m, floor):
             corrupt.append(f"pool {label} variance mu0 mu2 - mu1^2 = {m[0] * m[2] - m[1] * m[1]!r} is below MoM's "
                            f"variance-census tolerance (mu = {m!r} mol; corrupt)")
         out[label] = m
@@ -4697,8 +4717,8 @@ def realizable(whole: Sequence[float], floor: float = MOM_MOMENT_FLOOR, *, a: fl
     """Whole-ensemble moments under MoM's own accepted-state tolerances
     (rmgpy/solver/polymer.pyx ``_assert_pool_moments_accepted``): a moment
     below ``-f`` is corruption, within ``[-f, 0)`` it is clamped to 0; the
-    variance ``mu0 mu2 - mu1^2`` below ``-(f |mu2| + f |mu0| + 2 f |mu1| + 2 f^2)``
-    (the variance census tolerance) leaves the realizable set, within it
+    variance ``mu0 mu2 - mu1^2`` below ``-variance_tolerance`` (the variance census
+    tolerance and a roundoff allowance) leaves the realizable set, within it
     ``mu2`` is clamped to ``mu1^2 / mu0`` (zero variance).  Returns the
     clamped moments and None, or the moments and the reason Mn / Mw cannot
     be formed.  mu1 is neither required nor clamped non-negative (a mass DP
@@ -4717,7 +4737,7 @@ def realizable(whole: Sequence[float], floor: float = MOM_MOMENT_FLOOR, *, a: fl
             return w, f"whole moments {w} hold mass DP without molecules"
         return w, None
     variance = w[0] * w[2] - w[1] * w[1]
-    tolerance = floor * (abs(w[2]) + abs(w[0]) + 2.0 * abs(w[1])) + 2.0 * floor * floor
+    tolerance = variance_tolerance(w, floor)
     if variance < -tolerance:
         return w, (f"whole mu0 mu2 - mu1^2 = {variance!r} is below MoM's accepted-state variance tolerance "
                    f"-{tolerance!r}: no distribution has these moments")
@@ -4727,6 +4747,316 @@ def realizable(whole: Sequence[float], floor: float = MOM_MOMENT_FLOOR, *, a: fl
     if mass <= 0.0 or a * a * w[2] + 2.0 * a * e * w[1] + e * e * w[0] <= 0.0:
         return w, f"whole Mn / Mw of {w} are not positive (a mu1 + e mu0 = {mass!r})"
     return w, None
+
+
+# --------------------------------------------------------------------------
+# I-171: comparison rows that need no classification
+# --------------------------------------------------------------------------
+DP_MATCH = 1.0e-6                # a species' pool DP against a reachable DP (the candidates' tolerance)
+LATTICE_DENOMINATOR = 1000       # an ejection's units read as a fraction of at most this denominator
+CLASSIFICATION_FREE_ROWS = {
+    "inventory_mass_g": (
+        "the total non-bath chemical inventory: every species column (bath and pool bookkeeping excluded) at its "
+        "structure's molar mass, plus every pool's booked chain mass M_u,p mu1_p - defect_p mu0_p + e_p mu0_p, "
+        "plus MoM's own orphan-end ledger e_p L_p, L_p = mu0_p(0) - mu0_p (polymer.pyx end_group_ledger, H_p = 0; "
+        "kernel-mode pools book none), exported as it is (never assigned to chains); kMC: the mass of every "
+        "molecule (tier1 total_mass_g).  A conservation diagnostic; withheld where a present species has no "
+        "structure or a pool's booking leaves out mass (side_group_homolysis, explicit_dp)"),
+    "certified_species_mol.<s>": (
+        "the amount of declared species s (its profile column), exported only when every pool occupied at that "
+        "time provably cannot hold s (pool_may_hold): s's molar mass is a chain mass a_p n + e_p - defect_p at "
+        "no DP n the pool's history allows -- whole DPs >= 1 for a pool no volatile ejection reaches (in either "
+        "direction, through any row joining pools), else the lattice of whole DPs and every ejection's units "
+        "down to zero mass -- or the moments pin the pool at another DP; at t = 0 the pool holds the declared "
+        "ensemble's DPs; where the end-group ledger is nonzero or a mechanism leaves the mass-DP coordinate "
+        "(pool_coordinate_breaks) a chain's mass is not a_p n + e_p and every occupied pool may hold s; "
+        "withheld with the reason otherwise; kMC: species_mol of s (kMC knows every molecule's identity)"),
+    "mass_outside_certified_g": (
+        "inventory_mass_g minus the mass (amount x molar mass) of the species certified at that time, the set "
+        "named in the row's note and its 'certified' list (it differs per time); kMC's value is derived for "
+        "the same set by the join (comparison_rows: per seed, total mass minus those species' masses)"),
+    "low_dp_mass_bounds_g.<pool>": (
+        "the interval of the pool's chain mass at DP <= n_cut that its moments allow on its mass-DP coordinate "
+        "(chain mass h(n) = a_p n + E_p, E_p = e_p - defect_p), n_cut the pool DP of the low-DP cut "
+        "(melt_observables.LOW_DP_DEFINITION: the largest of a + e and every declared species' molar mass), "
+        "over distributions on [L, inf) with mean m = mu1/mu0 and variance v: L = 1 for a pool no ejection "
+        "reaches, else the DP of zero mass; upper = mu0 h(m) if m <= n_cut else mu0 h(n_cut) v / (v + "
+        "(m - n_cut)^2) (Cantelli, attained by atoms at n_cut and m + v / (m - n_cut)); lower = 0 if m >= n_cut "
+        "else mu0 (n_cut - m) h(x) / (n_cut - x), x = max(L, m - v / (n_cut - m)) (two atoms, at x and just "
+        "above n_cut); both sharp; a point mass (v within variance_tolerance) is exact; at t = 0 the declared "
+        "ensemble's exact value; withheld where a chain's mass is not h(n) (nonzero ledger, coordinate breaks) "
+        "or the moments are corrupt; kMC: no pools (see low_dp_mass_bounds_g)"),
+    "low_dp_mass_bounds_g": (
+        "the sum over pools of low_dp_mass_bounds_g.<pool> plus every species column at most the cut's molar "
+        "mass (exact); kMC: tier2 low_dp_mass_g, the mass of every molecule at most the cut "
+        "(melt_observables.LOW_DP_DEFINITION), exact"),
+}
+CLASSIFICATION_DEPENDENT = {
+    key: ("applies kMC's classes (declared species, polymer when floor(B / b) >= 1, else light) to MoM's species "
+          "and pools, which keep no atom ancestry and no structure: withheld wherever those classes are "
+          "ambiguous (pool_chain_classes, kmc_classes)")
+    for key in ("polymer_condensed_mass_g", "polymer_conversion", "polymer_derived_molecules_mol", "species_mol",
+                *WHOLE_KEYS)
+}
+
+
+def _exact(value, note=None) -> dict:
+    return {"kind": "exact", "value": float(value), **({"note": note} if note else {})}
+
+
+def _withheld(reason) -> dict:
+    return {"kind": "withheld", "reason": reason}
+
+
+def _proxy_pool(name: str, labels) -> Optional[str]:
+    base = name.rsplit("(", 1)[0] if name.endswith(")") else name
+    return base if base in labels else None
+
+
+def _lattice_step(units: Sequence[float]) -> Optional[float]:
+    """The step of the lattice the whole numbers and ``units`` generate (the
+    gcd of 1 and each unit as a fraction of denominator at most
+    LATTICE_DENOMINATOR), or None (dense) when a unit is no such fraction."""
+    from fractions import Fraction
+    step = Fraction(1)
+    for u in units:
+        f = Fraction(abs(float(u))).limit_denominator(LATTICE_DENOMINATOR)
+        if abs(float(f) - abs(float(u))) > DP_MATCH * max(1.0, abs(float(u))):
+            return None
+        if f:
+            step = Fraction(math.gcd(step.numerator * f.denominator, f.numerator * step.denominator),
+                            step.denominator * f.denominator)
+    return float(step)
+
+
+def ejection_units(r: dict, by_label: dict) -> Optional[float]:
+    """The moment units an admitted volatile_ejection/1 row sheds per event,
+    or None for another row: MoM moves eject_units corrected for the pools'
+    defects between source and destination (polymer.pyx 4110-4113 at
+    b1285f08f: a_mom = a_mass - (defect_dst - defect_src) / mw_src, zero
+    within 1e-9 max(1, |a_mass|)); a pool the table does not resolve keeps
+    the raw units."""
+    units = (r.get("params") or {}).get("eject_units")
+    if (r.get("refused") or r.get("archetype") != "volatile_ejection/1" or isinstance(units, bool)
+            or not isinstance(units, (int, float))):
+        return None
+    a_mom = float(units)
+    src, dst = by_label.get(r.get("src_pool")), by_label.get(r.get("dst_pool"))
+    if src is not None and dst is not None and src is not dst and (src.get("monomer_mw_g_mol") or 0.0) > 0.0:
+        a_mom = units - (float(dst.get("chain_mass_defect_g_mol") or 0.0)
+                         - float(src.get("chain_mass_defect_g_mol") or 0.0)) / src["monomer_mw_g_mol"]
+        if abs(a_mom) <= 1.0e-9 * max(1.0, abs(units)):
+            a_mom = 0.0
+    return a_mom
+
+
+def ejection_reach(doc: dict, by_label: dict) -> Dict[str, Tuple[str, Optional[float]]]:
+    """Per pool a volatile ejection reaches (why, lattice step or None when
+    dense): an admitted volatile_ejection/1 row moving nonzero units marks its
+    source and destination (MoM sheds eject_units, corrected for the pools'
+    defects, polymer.pyx 4110-4113, from a chain on the forward leg and adds
+    them on the reverse, so a negative unit written in reverse sheds them on
+    the reverse leg), and the mark spreads to every pool joined to a marked
+    one by any admitted row (its source, destination or a proxy of it among
+    the reactants or products): their chains may sit at fractional DPs and
+    below one unit."""
+    labels = set(by_label)
+    parent = {label: label for label in labels}
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+    seeds = []
+    for r in doc.get("reactions") or ():
+        if r.get("refused"):
+            continue
+        named = {r.get("src_pool"), r.get("dst_pool")} & labels
+        named |= {p for p in (_proxy_pool(x, labels) for x in list(r.get("proxy_reactants") or ())
+                              + list(r.get("proxy_products") or ())) if p}
+        named = sorted(named)
+        for x in named[1:]:
+            parent[find(x)] = find(named[0])
+        a_mom = ejection_units(r, by_label)
+        if a_mom:
+            seeds.append((named, a_mom, f"volatile ejection row {r.get('id')} moves {a_mom!r} units"))
+    out = {}
+    for label in labels:
+        hit = [(a_mom, why) for named, a_mom, why in seeds if named and find(named[0]) == find(label)]
+        if hit:
+            out[label] = ("; ".join(why for _a, why in hit), _lattice_step([a_mom for a_mom, _w in hit]))
+    return out
+
+
+def _point_mass(m: Sequence[float]) -> bool:
+    return abs(m[0] * m[2] - m[1] * m[1]) <= variance_tolerance(m)
+
+
+def pool_may_hold(label: str, m: Sequence[float], molar: float, *, a_p: float, end_p: float,
+                  reach: Optional[Tuple[str, Optional[float]]], declared_dps: Optional[Sequence[int]] = None
+                  ) -> Optional[str]:
+    """Why pool ``label`` (moments ``m``, chains of mass a_p n + end_p) may hold
+    molecules of molar mass ``molar``, or None when it provably cannot:
+    ``declared_dps`` its whole support (t = 0: the declared ensemble); else
+    whole DPs >= 1, or with ``reach`` (ejection_reach) the lattice of its step
+    (dense when None) down to zero mass; a pool the moments pin at one DP
+    holds that DP only."""
+    n = (molar - end_p) / a_p
+    if declared_dps is not None:
+        hit = [d for d in declared_dps if abs(d - n) <= DP_MATCH * max(1.0, abs(n))]
+        return (f"pool {label} holds the declared ensemble's DP {hit[0]} chains of {molar!r} g/mol"
+                if hit else None)
+    if m[0] > 0.0 and _point_mass(m):
+        mean = m[1] / m[0]
+        if abs(mean - n) > DP_MATCH * max(1.0, abs(n)):
+            return None
+    if reach is None:
+        k = round(n)
+        if k >= 1 and abs(n - k) <= DP_MATCH * max(1.0, abs(n)):
+            return f"pool {label} may hold DP {k} chains of {molar!r} g/mol (whole DPs >= 1)"
+        return None
+    why, step = reach
+    if molar <= 0.0:
+        return None
+    if step is None:
+        return f"pool {label} may hold chains at DP {n!r} ({molar!r} g/mol): {why}, so its DPs are dense"
+    k = round(n / step)
+    if abs(n - k * step) <= DP_MATCH * max(1.0, abs(n)):
+        return (f"pool {label} may hold chains at DP {n!r} ({molar!r} g/mol): {why}, so its DPs are on the "
+                f"lattice of step {step!r} down to zero mass")
+    return None
+
+
+def low_dp_bounds(m: Sequence[float], a_p: float, end_p: float, cut: float, floor_dp: float) -> Tuple[float, float]:
+    """[lower, upper] of sum over chains at DP <= ``cut`` of a_p n + end_p, over
+    every distribution on [floor_dp, inf) with moments ``m`` (CLASSIFICATION_FREE_ROWS
+    low_dp_mass_bounds_g.<pool>); exact for a point mass."""
+    mu0 = m[0]
+    if mu0 <= 0.0:
+        return 0.0, 0.0
+    mean = m[1] / mu0
+
+    def h(x):
+        return a_p * x + end_p
+    if _point_mass(m):
+        value = mu0 * h(mean) if mean <= cut else 0.0
+        if abs(mean - cut) <= DP_MATCH * max(1.0, abs(cut)):
+            return 0.0, mu0 * h(mean)                  # on the cut within roundoff: either side
+        return value, value
+    v = max(0.0, m[2] / mu0 - mean * mean)
+    if mean <= cut:
+        upper = mu0 * h(mean)
+    else:
+        upper = mu0 * h(cut) * v / (v + (mean - cut) ** 2)
+    if mean >= cut:
+        lower = 0.0
+    else:
+        x = max(floor_dp, mean - v / (cut - mean))
+        lower = mu0 * (cut - mean) * max(0.0, h(x)) / (cut - x)
+    return min(lower, upper), upper
+
+
+def classification_free_rows(*, t0: bool, row, first, pools, columns, ends, by_label, pm, corrupt_pools,
+                             species: Dict[str, int], species_mass: Dict[str, float], system, molar, header,
+                             ledger_pools, ledger_zero: bool, breaks: Dict[str, str], reach, declared_dps,
+                             main: str, cut: float) -> dict:
+    """The rows of CLASSIFICATION_FREE_ROWS at one profile row."""
+    out = {}
+    blocked = sorted(f"pool {p['label']} {block}" for p in pools for block in ("side_group_homolysis", "explicit_dp")
+                     if p.get(block))
+    missing = sorted(header[i] for i in system if row[i] != 0.0 and molar[i] is None)
+    chains = math.fsum(row[columns[p["label"]][1]] * p["monomer_mw_g_mol"]
+                       - row[columns[p["label"]][0]] * float(p.get("chain_mass_defect_g_mol") or 0.0)
+                       + ends[p["label"]] * row[columns[p["label"]][0]] for p in pools)
+    ledger = math.fsum(ends[p["label"]] * (first[columns[p["label"]][0]] - row[columns[p["label"]][0]])
+                       for p in ledger_pools)
+    inventory = None
+    if missing:
+        out["inventory_mass_g"] = _withheld(f"species without a structure present: {missing}")
+    elif blocked:
+        out["inventory_mass_g"] = _withheld(f"MoM's booking leaves out mass: {blocked}")
+    else:
+        gas = math.fsum(row[i] * molar[i] for i in system if row[i] != 0.0)
+        inventory = gas + chains + ledger
+        out["inventory_mass_g"] = _exact(inventory, f"species columns {gas!r} g + pool chains {chains!r} g + "
+                                                    f"orphan-end ledger {ledger!r} g")
+    mass_exact = None if t0 else (None if ledger_zero else "MoM's end-group ledger is nonzero: a chain's mass is "
+                                  "not a_p n + e_p")
+    if not t0 and breaks and mass_exact is None:
+        mass_exact = next(iter(breaks.values()))
+
+    def occupied(label):
+        return label in corrupt_pools or any(abs(x) > MOM_MOMENT_FLOOR for x in pm[label])
+
+    def end_of(p):
+        return ends[p["label"]] - float(p.get("chain_mass_defect_g_mol") or 0.0)
+    certified = []
+    for name in sorted(species):
+        reasons = []
+        for p in pools:
+            label = p["label"]
+            if not occupied(label):
+                continue
+            if label in corrupt_pools:
+                reasons.append(f"pool {label}'s moments are corrupt")
+                continue
+            if mass_exact is not None:
+                reasons.append(f"pool {label} is occupied and {mass_exact}")
+                continue
+            why = pool_may_hold(label, pm[label], species_mass[name], a_p=p["monomer_mw_g_mol"], end_p=end_of(p),
+                                reach=reach.get(label), declared_dps=declared_dps if t0 and label == main else None)
+            if why is not None:
+                reasons.append(why)
+        if reasons:
+            out[f"certified_species_mol.{name}"] = _withheld(f"{name}: " + "; ".join(reasons))
+        else:
+            certified.append(name)
+            out[f"certified_species_mol.{name}"] = _exact(row[species[name]])
+    if inventory is None:
+        out["mass_outside_certified_g"] = _withheld(out["inventory_mass_g"]["reason"])
+    else:
+        held = math.fsum(row[species[name]] * species_mass[name] for name in certified)
+        out["mass_outside_certified_g"] = dict(_exact(inventory - held, f"certified species at this time: "
+                                                                        f"{certified}"), certified=certified)
+    totals, why_not = [0.0, 0.0], []
+    for p in pools:
+        label = p["label"]
+        a_p, end_p = p["monomer_mw_g_mol"], end_of(p)
+        n_cut = (cut * (1.0 + mo.LOW_DP_RELATIVE) - end_p) / a_p
+        key = f"low_dp_mass_bounds_g.{label}"
+        if label in corrupt_pools:
+            out[key] = _withheld(f"pool {label}'s moments are corrupt")
+        elif not occupied(label):
+            out[key] = {"kind": "interval", "lower": 0.0, "upper": 0.0}
+        elif t0 and label == main and declared_dps:
+            total = sum(declared_dps.values())
+            value = math.fsum(pm[label][0] * k / total * (a_p * d + end_p) for d, k in declared_dps.items()
+                              if d <= n_cut)
+            out[key] = {"kind": "interval", "lower": value, "upper": value, "note": "the declared ensemble"}
+        elif mass_exact is not None:
+            out[key] = _withheld(f"pool {label}: {mass_exact}")
+        else:
+            floor_dp = 1.0 if label not in reach else -end_p / a_p
+            lo, hi = low_dp_bounds(pm[label], a_p, end_p, n_cut, floor_dp)
+            out[key] = {"kind": "interval", "lower": lo, "upper": hi,
+                        "note": f"n_cut {n_cut!r}, support from DP {floor_dp!r}"}
+        if out[key]["kind"] == "withheld":
+            why_not.append(out[key]["reason"])
+        else:
+            totals[0] += out[key]["lower"]
+            totals[1] += out[key]["upper"]
+    low_species = [i for i in system if row[i] != 0.0 and molar[i] is not None and mo.at_or_below_cut(molar[i], cut)]
+    if missing:
+        why_not.append(f"species without a structure present: {missing}")
+    if why_not:
+        out["low_dp_mass_bounds_g"] = _withheld("; ".join(why_not))
+    else:
+        light = math.fsum(row[i] * molar[i] for i in low_species)
+        out["low_dp_mass_bounds_g"] = {"kind": "interval", "lower": totals[0] + light, "upper": totals[1] + light,
+                                       "note": f"cut {cut!r} g/mol; species at or below it: "
+                                               f"{sorted(header[i] for i in low_species)}"}
+    return out
 
 
 def convert(rmg_dir, times: Sequence[float], facts: dict, classes: KmcClasses) -> Tuple[List[dict], List[dict], dict]:
@@ -4765,8 +5095,12 @@ def convert(rmg_dir, times: Sequence[float], facts: dict, classes: KmcClasses) -
     stray = [h for i, h in enumerate(header) if re.search(r"_mu[0-9]+$", h) and i not in used]
     if stray:
         raise ProducerError(f"profile {profile}: moment columns {stray} belong to no pool of {pools_path}")
-    bookkeeping = set(used) | {header.index(s) for p in pools for s in p.get("bookkeeping_species") or ()
-                               if s in header}
+    # a pool's bookkeeping species by identity: label(N) and formula(N) are one species, an index-less dummy is
+    # its moment column (species_key, moment_column), never by the raw string
+    named = {species_key(x) for p in pools for x in p.get("bookkeeping_species") or ()}
+    named |= {("label", moment_column(x)) for p in pools for x in p.get("bookkeeping_species") or ()
+              if species_key(x)[0] == "label"}
+    bookkeeping = set(used) | {i for i in range(2, len(header)) if species_key(header[i]) in named}
     species = resolve_species(header, dictionary, species_structures(facts))
     bath = {}
     for label in facts["bath"]:
@@ -4828,25 +5162,21 @@ def convert(rmg_dir, times: Sequence[float], facts: dict, classes: KmcClasses) -
                                          kernel_record=(facts.get("kernels") or {}).get("record"))
     light_pools = {}
     for r in pool_doc.get("reactions") or ():
-        units = (r.get("params") or {}).get("eject_units")
-        if (r.get("refused") or r.get("archetype") != "volatile_ejection/1"
-                or not isinstance(units, (int, float)) or r.get("dst_pool") not in columns):
+        a_mom = ejection_units(r, by_label)
+        if a_mom is None or r.get("dst_pool") not in columns:
             continue
-        # MoM moves eject_units corrected for the pools' defects between source and destination
-        # (polymer.pyx 4110-4113 at b1285f08f: a_mom = a_mass - (defect_dst - defect_src) / mw_src, zero
-        # within 1e-9 max(1, |a_mass|)); a source the table does not resolve keeps the raw units.
-        a_mom = float(units)
-        src, dst = by_label.get(r.get("src_pool")), by_label[r["dst_pool"]]
-        if src is not None and src is not dst and (src.get("monomer_mw_g_mol") or 0.0) > 0.0:
-            a_mom = units - (float(dst.get("chain_mass_defect_g_mol") or 0.0)
-                             - float(src.get("chain_mass_defect_g_mol") or 0.0)) / src["monomer_mw_g_mol"]
-            if abs(a_mom) <= 1.0e-9 * max(1.0, abs(units)):
-                a_mom = 0.0
+        src = by_label.get(r.get("src_pool"))
         if a_mom > 0.0:
             light_pools[r["dst_pool"]] = max(a_mom, light_pools.get(r["dst_pool"], 0.0))
+        elif a_mom < 0.0 and src is not None and (r.get("kinetics") or {}).get("reversible", True) is not False:
+            # written in reverse: the reverse leg sheds -a_mom units from a destination chain into the source
+            light_pools[src["label"]] = max(-a_mom, light_pools.get(src["label"], 0.0))
     pool_breaks = pool_coordinate_breaks(
         pool_doc, {p["label"]: ends[p["label"]] - float(p.get("chain_mass_defect_g_mol") or 0.0) for p in pools},
         a_deck)
+    reach = ejection_reach(pool_doc, by_label)
+    declared_dps = dict(classes.observer.spec.initial_ensemble.counts)
+    cut = mo.low_dp_cut_g_mol(a_deck, e_deck, species_mass.values())
     entries, diagnostics = [], []
     for t in times:
         row = interpolate(data, t)
@@ -4893,12 +5223,30 @@ def convert(rmg_dir, times: Sequence[float], facts: dict, classes: KmcClasses) -
                         for label, units in sorted(light_pools.items()) if pm[label][0] > MOM_MOMENT_FLOOR]
         # a species row stands only when every pool that may hold it is booked or provably empty
         species_withheld = {}
+        if t > data[0][0]:
+            for name in sorted(species):
+                held = []
+                for label, (why, step) in sorted(reach.items()):
+                    if label in corrupt_pools or all(abs(x) <= MOM_MOMENT_FLOOR for x in pm[label]):
+                        continue
+                    p = by_label[label]
+                    hold = pool_may_hold(label, pm[label], species_mass[name], a_p=p["monomer_mw_g_mol"],
+                                         end_p=ends[label] - float(p.get("chain_mass_defect_g_mol") or 0.0),
+                                         reach=(why, step))
+                    if hold is not None:
+                        held.append(hold)
+                if held:
+                    species_withheld[name] = "; ".join(held)
+                    quantities["species_mol"].pop(name, None)
         for name in sorted({c[0] for cands in candidates.values() for c in cands}):
             open_pools = [label for label, cands in candidates.items()
                           if label in unresolved and any(c[0] == name for c in cands)]
             if open_pools:
-                species_withheld[name] = "; ".join(unresolved[label] for label in open_pools)
+                species_withheld[name] = "; ".join([unresolved[label] for label in open_pools]
+                                                   + ([species_withheld[name]] if name in species_withheld else []))
                 quantities["species_mol"].pop(name, None)
+            elif name in species_withheld:
+                pass
             else:
                 into = [pm[label][0] for label, (s_name, _n) in booked_as.items() if s_name == name]
                 if into:
@@ -4955,7 +5303,13 @@ def convert(rmg_dir, times: Sequence[float], facts: dict, classes: KmcClasses) -
         code = math.fsum(row[columns[p["label"]][1]] * p["monomer_mw_g_mol"]
                          - row[columns[p["label"]][0]] * float(p.get("chain_mass_defect_g_mol") or 0.0)
                          for p in pools)
+        free = classification_free_rows(
+            t0=t == data[0][0], row=row, first=first, pools=pools, columns=columns, ends=ends, by_label=by_label,
+            pm=pm, corrupt_pools=corrupt_pools, species=species, species_mass=species_mass, system=system,
+            molar=molar, header=header, ledger_pools=ledger_pools, ledger_zero=ledger_zero,
+            breaks=pool_breaks, reach=reach, declared_dps=declared_dps, main=facts["label"], cut=cut)
         diagnostics.append({"time_s": t, "volume_m3": row[1], "whole_ensemble_moments_mol": mu,
+                            "comparison_rows": free,
                             "end_group_ledger_g": end_ledger,
                             "end_group_ledger_threshold_g": ledger_threshold(row, first, ledger_pools, columns,
                                                                              ends),

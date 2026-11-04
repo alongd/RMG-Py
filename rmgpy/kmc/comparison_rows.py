@@ -70,6 +70,19 @@ DEFINITIONS = {
     "mwd_mol.<p>": "the same above the cutoff: the length distribution (mol)",
     "mwd_overflow_mol": "polymer-derived molecules longer than a reference's length grid (mol)",
     "whole_<key>": "melt_observables.WHOLE_ENSEMBLE_DEFINITION",
+    "inventory_mass_g": "classification-free (I-171): the total non-bath chemical inventory (g); kMC: every "
+                        "molecule (total_mass_g); MoM: every species column + every pool's booked chain mass + "
+                        "MoM's orphan-end ledger (mom_producer.CLASSIFICATION_FREE_ROWS)",
+    "certified_species_mol.<name>": "classification-free: the declared species' amount where MoM proves no pool "
+                                    "can hold it (else withheld, with the reason); kMC: species_mol (mol)",
+    "mass_outside_certified_g": "classification-free: inventory_mass_g minus the mass of the species certified at "
+                                "that time, the set in the row's 'certified' list; the join derives the other "
+                                "side's value for that set (seed_masses) (g)",
+    "low_dp_mass_bounds_g": "classification-free: the mass of every molecule at most the low-DP cut "
+                            "(melt_observables.LOW_DP_DEFINITION); kMC exact, MoM an interval from each pool's "
+                            "moments plus the species columns (g)",
+    "low_dp_mass_bounds_g.<pool>": "classification-free, MoM only: one pool's share of low_dp_mass_bounds_g, the "
+                                   "interval its moments allow (g)",
     "mom_end_group_ledger_g": "diagnostic (MoM producer): the end-group mass MoM's pools gained or lost since t = 0 "
                               "(sum over pools of e_p (mu0_p(0) - mu0_p(t)), g); mu2 and Mw are withheld when it "
                               "exceeds mom_end_group_ledger_threshold_g",
@@ -136,9 +149,9 @@ def _length_bins(molecules: Counter, cut: int, unit: float, full: bool) -> Dict[
 
 
 def _row(time_s, name, producer, kind, value=None, stderr=None, lower=None, upper=None, seeds=None,
-         basis=None, reason=None) -> dict:
+         basis=None, reason=None, **extra) -> dict:
     return {"time_s": time_s, "row": name, "producer": producer, "kind": kind, "value": value, "stderr": stderr,
-            "lower": lower, "upper": upper, "seeds": seeds, "basis": basis, "reason": reason}
+            "lower": lower, "upper": upper, "seeds": seeds, "basis": basis, "reason": reason, **extra}
 
 
 def _aggregate(time_s, producer, per_seed: List[dict], basis: Dict[str, str]) -> List[dict]:
@@ -222,6 +235,17 @@ def _kmc_values(obs: dict, first: dict, ppu: int, nbb: int, cut: int) -> Tuple[d
         values[f"species_mol.{name}"] = (t1["species"][name]["amount_mol"],) * 2
         species_mass.append(t1["species"][name]["mass_g"])
     values["mass_outside_species_g"] = (t1["total_mass_g"] - math.fsum(species_mass),) * 2
+    values["inventory_mass_g"] = (t1["total_mass_g"],) * 2
+    for name in obs["declared_species"]:
+        values[f"certified_species_mol.{name}"] = (t1["species"][name]["amount_mol"],) * 2
+    basis["inventory_mass_g"] = "tier1.total_mass_g (every molecule)"
+    basis["certified_species_mol"] = "tier1 species amount (kMC knows every molecule's identity)"
+    if "low_dp_mass_g" in obs["tier2"]:
+        values["low_dp_mass_bounds_g"] = (obs["tier2"]["low_dp_mass_g"],) * 2
+        basis["low_dp_mass_bounds_g"] = (f"tier2.low_dp_mass_g: every molecule at most "
+                                         f"{obs['tier2']['low_dp_cut_g_mol']!r} g/mol")
+    else:
+        withheld["low_dp_mass_bounds_g"] = "the observation carries no low_dp_mass_g (written before I-171)"
     molecules = Counter()
     distribution = obs["tier2"].get("backbone_distribution")
     if distribution is not None:
@@ -271,14 +295,19 @@ def kmc_rows(run_dir, *, pass_name: str = PASS_DECLARED, deck=None) -> dict:
     series = {r["seed"]: _observation_lines(run_dir / r["path"]) if (run_dir / r["path"]).exists() else []
               for r in section["runs"]}
     cut = None
-    rows, withheld_families, names = [], {}, []
+    rows, withheld_families, names, seed_masses = [], {}, [], []
     for k, t in enumerate(times):
         reached = [s for s, obs in sorted(series.items()) if len(obs) > k]
         if cut is None and reached:
             cut = series[reached[0]][0]["xs"] * ppu
         if len(reached) < requested:
             rows += _withheld_time(t, "kmc", names, _CENSORED.format(len(reached), requested))
+            seed_masses.append(None)
             continue
+        seed_masses.append([{"inventory_mass_g": series[s][k]["tier1"]["total_mass_g"],
+                             "species_mass_g": {name: v["mass_g"]
+                                                for name, v in series[s][k]["tier1"]["species"].items()}}
+                            for s in reached])
         per_seed, basis = [], {}
         for s in reached:
             values, basis, withheld = _kmc_values(series[s][k], series[s][0], ppu, nbb, cut)
@@ -295,7 +324,7 @@ def kmc_rows(run_dir, *, pass_name: str = PASS_DECLARED, deck=None) -> dict:
               "seeds_requested": requested}
     return _document("kmc", source, binding, {"periods_per_declared_unit": ppu, "backbone_atoms_per_period": nbb,
                                               "cutoff_periods": cut},
-                     withheld_families, rows, mwd_support_periods=[1, None])
+                     withheld_families, rows, mwd_support_periods=[1, None], seed_masses=seed_masses)
 
 
 # --------------------------------------------------------------------------
@@ -466,6 +495,15 @@ def mom_rows(path, deck) -> dict:
             if diagnostics_at.get(t, {}).get(key) is not None:
                 rows.append(_row(t, name, "mom", "diagnostic", value=float(diagnostics_at[t][key])))
         rows += [_row(t, f"ladder_mol.{p}", "mom", "withheld", reason=ladder) for p in range(1, cut + 1)]
+        for name, r in sorted((diagnostics_at.get(t, {}).get("comparison_rows") or {}).items()):
+            extra = {"certified": list(r["certified"])} if "certified" in r else {}
+            if r["kind"] == "exact":
+                rows.append(_row(t, name, "mom", "exact", value=float(r["value"]), basis=r.get("note"), **extra))
+            elif r["kind"] == "interval":
+                rows.append(_row(t, name, "mom", "interval", lower=float(r["lower"]), upper=float(r["upper"]),
+                                 basis=r.get("note")))
+            else:
+                rows.append(_row(t, name, "mom", "withheld", reason=f"withheld by the MoM producer: {r['reason']}"))
     binding = {"deck_sha256": declared.sha256, "chemistry_sha256": kr.chemistry_sha256(declared.spec),
                "temperature_K": float((header.get("run") or {}).get("temperature_K")), "times_s": times,
                "pass": PASS_WELL_MIXED}
@@ -510,6 +548,26 @@ def _side(doc: dict, table: dict, k: int, name: str) -> Optional[dict]:
     return None
 
 
+OUTSIDE_CERTIFIED = "mass_outside_certified_g"
+
+
+def _derived_outside(doc: dict, k: int, certified: Sequence[str]) -> Optional[dict]:
+    """``doc``'s mass outside the species ``certified`` at time index ``k``,
+    from its per-seed masses (``seed_masses``): the seed mean of total mass
+    minus those species' masses, with its standard error; None without them."""
+    masses = doc.get("seed_masses") or []
+    per_seed = masses[k] if k < len(masses) else None
+    if not per_seed:
+        return None
+    if any(name not in seed["species_mass_g"] for seed in per_seed for name in certified):
+        return {"kind": "withheld", "reason": f"a certified species of {sorted(certified)} is not declared here"}
+    values = [seed["inventory_mass_g"] - math.fsum(seed["species_mass_g"][name] for name in certified)
+              for seed in per_seed]
+    n = len(values)
+    return {"kind": "exact", "value": math.fsum(values) / n,
+            "stderr": statistics.stdev(values) / math.sqrt(n) if n >= 2 else None, "derived": True}
+
+
 def join(a: dict, b: dict) -> List[dict]:
     """Per time and row of two row documents of one deck, temperature, time
     grid and pass (``ComparisonRowsError`` naming the field otherwise)."""
@@ -529,6 +587,12 @@ def join(a: dict, b: dict) -> List[dict]:
             names += [name for (kk, name) in table if kk == k and name not in names]
         for name in names:
             ra, rb = _side(a, index[0], k, name), _side(b, index[1], k, name)
+            if name == OUTSIDE_CERTIFIED:
+                # the set is the side's that names it; the other side's value is derived for that set
+                if ra is None and rb is not None and rb.get("certified") is not None:
+                    ra = _derived_outside(a, k, rb["certified"])
+                elif rb is None and ra is not None and ra.get("certified") is not None:
+                    rb = _derived_outside(b, k, ra["certified"])
             row = {c: None for c in JOIN_COLUMNS}
             row.update(time_s=t, row=name, source_a=a["producer"]["kind"], source_b=b["producer"]["kind"])
             for tag, r in (("a", ra), ("b", rb)):
@@ -552,6 +616,9 @@ def join(a: dict, b: dict) -> List[dict]:
             else:
                 row["status"] = "compared"
                 row["difference"] = ra["value"] - rb["value"]
+                named = next((r["certified"] for r in (ra, rb) if r.get("certified") is not None), None)
+                if named is not None:
+                    row["reason"] = f"mass outside the certified species {sorted(named)}"
                 errors = [r["stderr"] for r in (ra, rb) if r.get("stderr") is not None]
                 if errors:
                     se = math.sqrt(math.fsum(e * e for e in errors))

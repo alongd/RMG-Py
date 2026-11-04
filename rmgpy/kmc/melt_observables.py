@@ -961,6 +961,7 @@ class MeltObserver:
                                         "mass_g": u * molar_mass_g_mol(lost_atoms)}}
 
         # tier 2: mass moments over the polymer-derived molecules
+        low_cut = low_dp_cut_g_mol(a, e, self.declared_molar_mass.values())
         m = [r.molar_mass_g_mol for r in polymer]
         m1, m2 = _fsum(m), _fsum(x * x for x in m)
         n_m = [(x - e) / a for x in m]          # mass DP, MoM's pool coordinate
@@ -972,6 +973,9 @@ class MeltObserver:
             "dp_moments_representative": rep_all, "dp_moments_mol": mol_all,
             "backbone_distribution": {str(b): k for b, k in sorted(Counter(r.backbone for r in polymer).items())},
             "mass_dp_moments_mol": [u * len(n_m), u * _fsum(n_m), u * _fsum(x * x for x in n_m)],
+            "low_dp_cut_g_mol": low_cut,
+            "low_dp_mass_g": u * _fsum(r.molar_mass_g_mol for r in records if at_or_below_cut(r.molar_mass_g_mol,
+                                                                                             low_cut)),
             "mom_convention": {"mass_g": conv.mass_g, "Mn_g_mol": conv.mn_g_mol, "Mw_g_mol": conv.mw_g_mol,
                                "M2_g2_mol": conv.mw_g_mol * conv.mass_g},
             "end_mass_convention": {
@@ -1453,6 +1457,24 @@ def mom_reported_quantities(obs: Mapping) -> dict:
     }
 
 
+LOW_DP_RELATIVE = 1.0e-9
+LOW_DP_DEFINITION = (
+    "the low-DP cut M_cut = the largest of a + e (a molecule below one repeat unit's backbone, kMC class light, "
+    "holds at most one unit's atoms and two caps) and every declared species' molar mass, a and e the deck's "
+    "repeat-unit and end-group-pair masses; low_dp_mass_g = the mass of every molecule (any class) whose molar "
+    "mass is at most M_cut (1 + LOW_DP_RELATIVE)")
+
+
+def low_dp_cut_g_mol(a: float, e: float, species_molar_masses) -> float:
+    """``LOW_DP_DEFINITION``'s cut, in g/mol."""
+    return max([float(a) + float(e)] + [float(m) for m in species_molar_masses])
+
+
+def at_or_below_cut(molar_mass: float, cut: float) -> bool:
+    """A molecule of this molar mass counts at or below the low-DP cut."""
+    return molar_mass <= cut * (1.0 + LOW_DP_RELATIVE)
+
+
 _TIER1 = ("polymer_condensed_mass_g", "polymer_derived_molecules_mol", "polymer_conversion", "convention_gap_g")
 WHOLE_ENSEMBLE_KEYS = ("whole_mu0_mol", "whole_mu1_mol", "whole_mu2_mol", "whole_Mn_g_mol", "whole_Mw_g_mol")
 WHOLE_ENSEMBLE_DEFINITION = (
@@ -1545,7 +1567,7 @@ __all__ = [
     "SIDE_GROUP_DEFINITION", "BALANCE_DEFINITION", "SideGroupReleaseTracker", "site_class", "aromatic_atoms",
     "aromatic_atoms_whole", "channel_identity", "clear_aromaticity_cache", "PERCEPTION_STATS",
     "MeltObserver", "OBSERVABLES_SCHEMA", "ObservablesError", "SPECIES_RULE", "STOP_REASONS", "STOP_SCHEMA",
-    "TimeSeries", "TIER1_NOTE", "Totals",
+    "TimeSeries", "TIER1_NOTE", "Totals", "LOW_DP_DEFINITION", "at_or_below_cut", "low_dp_cut_g_mol",
     "backbone_atoms_per_unit", "canonical_key", "declared_species_names", "exact_totals",
     "side_group_site_indices", "validate_side_group_channels",
     "mom_reported_quantities", "molar_mass_g_mol", "observe", "side_by_side", "write_time_series",
