@@ -120,7 +120,8 @@ def _frozen_rows(frozen, owner_libraries=('PlasmaArgon',)):
         by_process[process] = row
         owner = row.get('rmg')
         if row['class'] == 'A':
-            if (not isinstance(owner, dict) or owner.get('library') not in owner_libraries
+            if (not isinstance(owner, dict) or not isinstance(owner.get('library'), str)
+                    or owner.get('library') not in owner_libraries
                     or not isinstance(owner.get('reaction'), str)
                     or not owner['reaction']
                     or owner.get('status') not in
@@ -144,6 +145,8 @@ def _frozen_rows(frozen, owner_libraries=('PlasmaArgon',)):
 
 def _owner_problem(row, libraries):
     owner = row['rmg']
+    if not isinstance(owner.get('library'), str):
+        raise SpecError('requested owner library label must be a string')
     if owner['status'] in ('absent', 'lumped_internal'):
         return owner['status']
     index = owner.get('index')
@@ -265,9 +268,16 @@ def _upgrade_frozen_map(frozen, gas, spec):
             'channels': rows}
 
 
-def _diagnostic_d6():
-    return {'set_by': 'owner', 'top_fraction_limit': .05,
-            'top_leak_share_limit': .05, 'K_step': 5, 'status': 'diagnostic'}
+def _diagnostic_d6(policy=None):
+    diagnostic = {'set_by': 'diagnostic', 'top_fraction_limit': .05,
+                  'top_leak_share_limit': .05, 'K_step': 5, 'status': 'diagnostic'}
+    if policy is not None and any(policy.get(key) != value for key, value in diagnostic.items()):
+        # The source manifest's explicit unset owner placeholders are not limits.
+        if (policy.get('set_by') != 'owner'
+                or policy.get('top_fraction_limit') is not None
+                or policy.get('top_leak_share_limit') is not None):
+            raise SpecError('diagnostic D6 conflicts with supplied policy')
+    return diagnostic
 
 
 def _branch_family(row, library, collision_set, cascade_yields):
@@ -325,6 +335,8 @@ def convert_channel_maps(spec, gas_maps, libraries, collision_set, cascade_yield
     for gas, frozen in gas_maps.items():
         if not isinstance(gas, str) or not gas:
             raise SpecError('gas-map key must be a nonempty gas name')
+        if not isinstance(library_by_gas[gas], str) or not library_by_gas[gas]:
+            raise SpecError('configured owner library label must be a string for gas ' + gas)
         if library_by_gas[gas] not in libraries:
             raise SpecError('configured owner library is not loaded for gas ' + gas)
         frozen = _upgrade_frozen_map(frozen, gas, spec)
@@ -420,9 +432,13 @@ def convert_channel_maps(spec, gas_maps, libraries, collision_set, cascade_yield
             if target not in mass_values or mass_values[target] <= 0:
                 raise SpecError('missing physical gas mass for derived Elastic ' + target)
             derived = copy.deepcopy(channel)
+            from rmgpy.tools.eedf.channels import _effective_elastic_section
+            _, states = _physical_properties(spec)
+            section = _effective_elastic_section(channel, channels, states)
             derived.update(description=derived_description, flux_group=derived_description,
                            kind='elastic', classification='B', reaction=None,
-                           mass_ratio=electron_mass / mass_values[target])
+                           mass_ratio=electron_mass / mass_values[target],
+                           cross_section=section, sigma_max_m2=max(section['sigma_m2']))
             converted.append(derived)
     report['missing_owners'].sort(key=lambda row: row['id'])
     report['branch_families'].sort(key=lambda row: row['id'])
@@ -543,7 +559,7 @@ def build_mixture_spec(base_spec, ladder_manifest, bindings, *,
             or min(tv_values) <= 0 or sorted(set(tv_values)) != list(tv_values)):
         raise SpecError('mixture composition and Tv axes must be ordered physical values')
     ladder = ladder_coupling(ladder_manifest, bindings, axis=tv_axis,
-                             parent='N2(X)', d6_policy=_diagnostic_d6())
+                             parent='N2(X)', d6_policy=_diagnostic_d6(ladder_manifest.get('D6')))
     domain = ladder.get('source_domain')
     if domain != {'initial_levels': list(range(30)), 'final_v': 58}:
         raise SpecError('N2 ladder must retain source domain initial v=0..29, final v=0..58')
@@ -581,6 +597,7 @@ def prepare_mixture_spec(base_spec, gas_maps, database, collision_set,
                          yield_table=None, radiative_source=None,
                          yield_table_sha256=None, source_sha256=None):
     """Prepare a multi-gas conversion from explicit (gas, map, hash, library) inputs."""
+    d6_policy = _diagnostic_d6(ladder_source_manifest.get('D6'))
     spec = load_spec(base_spec)
     if not isinstance(gas_maps, (list, tuple)) or len(gas_maps) < 2:
         raise SpecError('mixture conversion requires at least two gas maps')
@@ -642,8 +659,8 @@ def prepare_mixture_spec(base_spec, gas_maps, database, collision_set,
     report['provenance'] = provenance
     from rmgpy.tools.eedf.n2_vibrational import generate
     generator_manifest = copy.deepcopy(ladder_source_manifest)
-    generator_manifest['D6'] = _diagnostic_d6()
-    generated = generate(generator_manifest, K=10)
+    generator_manifest['D6'] = d6_policy
+    generated = generate(generator_manifest, K=10, production=False)
     ladder_manifest = json.loads(generated['manifest.json'])
     bindings = [{'source_sha256': row['source']['sha256'],
                  'source_block': row['source_block'],

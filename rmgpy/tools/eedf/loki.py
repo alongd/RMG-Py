@@ -579,7 +579,12 @@ def _enrich_row(row, channel_map, spec):
         raise LoKIError('channel map does not exactly cover the solver collision set')
     # LoKI's derived Elastic row is adjacent to its Effective source, but other
     # collision families may be emitted in a different order from the inputs.
-    channel_map = [by_description[description] for description in row['channels']]
+    if len(row['channels']) != len(channel_map):
+        raise LoKIError('duplicate solver collision identity')
+    indices = [row['channels'].index(channel['description']) for channel in channel_map]
+    for name in ('k_ine', 'k_sup'):
+        row[name] = np.asarray(row[name])[indices]
+    row['channels'] = [channel['description'] for channel in channel_map]
     _validate_physical_map(channel_map, spec, row['composition'])
     state = {name: env['reference'] for name, env in spec['envelopes'].items()}
     state.update(row['composition'])

@@ -355,3 +355,15 @@ def test_above_k_engine_species_cannot_be_silently_zeroed(small_ladder):
     extra.molecule[0].vibrational_level = ladder['K'] + 1
     with pytest.raises(VibrationalPopulationError, match='above ladder K'):
         resolve_levels(ladder, species + [extra])
+
+
+def test_diagnostic_policy_allows_table_metadata_but_not_terminal_qualification(small_ladder):
+    from rmgpy.tools.eedf.channel_map import _diagnostic_d6
+    from rmgpy.tools.eedf.vibrational import validate_ladders
+    from rmgpy.tools.eedf.n2_vibrational import LadderError
+    ladder = copy.deepcopy(small_ladder[1])
+    ladder['D6'] = _diagnostic_d6()
+    validate_ladders([ladder])
+    with pytest.raises(LadderError, match='diagnostic D6'):
+        qualify_ladder(ladder, [1.] + [0.] * ladder['K'],
+                       {'forward_power': 1., 'top_leak_power': 0.})

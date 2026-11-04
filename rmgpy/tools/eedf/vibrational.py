@@ -184,7 +184,7 @@ def validate_ladders(ladders):
             raise SpecError('invalid/duplicate vibrational axis or parent')
         axes.add(axis)
         parents.add(parent)
-        _policy(ladder['D6'])
+        _policy(ladder['D6'], allow_diagnostic=True)
         levels = ladder['levels']
         if len(levels) <= K:
             raise SpecError('vibrational levels do not cover K')

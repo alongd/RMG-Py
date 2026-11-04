@@ -36726,7 +36726,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "1383fac830da9fdd82dc8ea80543224d34840069a1707545990fb91744f14398"
+      "source_sha256": "052f954da9e427f1d9698373df5bd08a4db31dbc3d4041a08929db2a237c55fb"
     },
     "rmgpy/tools/eedf/channels.py:_validate_physical_map.gas_value": {
       "verdict": "carried",
@@ -36783,7 +36783,7 @@
         "test/rmgpy/data/stateDataCensusTest.py",
         "test/rmgpy/tools/eedf/vibrationalTest.py"
       ],
-      "source_sha256": "bff4bb06acbf10133c9cc48f6a120363f3021da1d0ce8ec4ae029bb38381c45e",
+      "source_sha256": "8f1ea6b0a5cae16147f6cac59d32bb1d5b490a8141cf97a8b69c06356ba09450",
       "file": "rmgpy/tools/eedf/integrity.py",
       "line": 321
     },
@@ -36891,7 +36891,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "8da92fa4287997c7f4fa4c0b2d277e11945e60f838437728a83bbecd8d7b245f"
+      "source_sha256": "0204cf65cdcf6a6689a8de916575de155a8e8b1f1d868982405d411d92c3df23"
     },
     "rmgpy/tools/eedf/loki.py:_finite_scalar": {
       "verdict": "carried",
@@ -37275,7 +37275,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/channelMapTest.py"
       ],
-      "source_sha256": "e2ee66c6f0810706a90d236774bf0314d4fcbf689e59da1e12675b7bfb669340"
+      "source_sha256": "7b3f7c42ff265e90fbaca29ba11ff5c2e5d01f373f09cdec5c72674effb0129a"
     },
     "rmgpy/tools/eedf/channel_map.py:_owner_problem": {
       "verdict": "carried",
@@ -37283,7 +37283,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/channelMapTest.py"
       ],
-      "source_sha256": "7dd167ac0431dc5d15904e27f910612a05228b4c0e3518a14669ac8c5070ad93"
+      "source_sha256": "78be8b1f2525dbbf1207de681d87cdefa2deb8beda41ecf64fa7769f1f65ce7d"
     },
     "rmgpy/tools/eedf/channel_map.py:_convert_channel": {
       "verdict": "not-reachable-for-resolved",
@@ -37723,7 +37723,7 @@
       "evidence": [
         "test/rmgpy/tools/n2VibrationalTest.py"
       ],
-      "source_sha256": "374a655fcb87f1ddd2bb81389c8b91d53a7142a7f29fa01ed3c82ef51f090780"
+      "source_sha256": "de3485a21d042529146f30a7d2285e5a1da54aa759665bcb82b470a3757f9ff1"
     },
     "rmgpy/tools/eedf/n2_vibrational.py:assess_truncation": {
       "verdict": "carried",
@@ -37755,7 +37755,7 @@
       "evidence": [
         "test/rmgpy/tools/n2VibrationalTest.py"
       ],
-      "source_sha256": "106fd3b6e0b5e8360c1145acaf11bec5e8e0e09a8119598cebbe3616d7fd3adb"
+      "source_sha256": "195c558b8ed0fbbac6560acd47d1f874ba831f72fff5729916642c86a73243ec"
     },
     "rmgpy/tools/eedf/n2_vibrational.py:generate.<lambda1>": {
       "verdict": "not-reachable-for-resolved",
@@ -37861,7 +37861,7 @@
       ],
       "file": "rmgpy/tools/eedf/vibrational.py",
       "line": 173,
-      "source_sha256": "66c3d6e919b411bf603df3d92c96406e27d798f5a127d3a86963798aab60ecf2"
+      "source_sha256": "64f76de93b91181001e20bcd9f9a5199e07b81eb98a055c858c6d7878e51eac2"
     },
     "rmgpy/kinetics/export.py:fit_kinetics_data_for_export": {
       "verdict": "carried",
@@ -37909,7 +37909,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/channelMapTest.py"
       ],
-      "source_sha256": "44701dae56abc1c173ef622158aae8164b54b9e327b1b4407c5f0babc8d621fe"
+      "source_sha256": "a0e3d849c7400f12035326e15c5dfa012f06f0aff1e9830c85d67659033f661f"
     },
     "rmgpy/tools/eedf/channel_map.py:convert_channel_maps.<lambda1>": {
       "verdict": "not-reachable-for-resolved",
@@ -37933,7 +37933,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/channelMapTest.py"
       ],
-      "source_sha256": "ab0ef5e664f60e85d499c7424c5aa194b17e88844a67ee5877d0b9838cd2f065"
+      "source_sha256": "48ef20f2ee8c2ce35f5a489b7c296311a44e90616de63dba353768bcc81e6ff2"
     },
     "rmgpy/tools/eedf/channel_map.py:prepare_mixture_spec": {
       "verdict": "not-reachable-for-resolved",
@@ -37941,7 +37941,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/channelMapTest.py"
       ],
-      "source_sha256": "16aaceaa18a4c2ca835801d9a4c582f06d6107e646697445e8ad8a01d497a800"
+      "source_sha256": "8309fb9c546753bf65784688c431aabadfd3f49ed7f7519175589456c523fe8a"
     },
     "rmgpy/tools/eedf/channel_map.py:_cascade_snapshot": {
       "verdict": "not-reachable-for-resolved",
@@ -37973,7 +37973,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/channelMapTest.py"
       ],
-      "source_sha256": "d8e097d09ec4116f62216d44ad0110661b8d4e6d5043f2abb174a8d79cc19ac5"
+      "source_sha256": "3908112750eb3ec748855c75f0ddda6566501e1c6657e077c07d44053e1758d2"
     },
     "rmgpy/tools/eedf/channel_map.py:_target_gas": {
       "verdict": "not-reachable-for-resolved",
@@ -38006,6 +38006,15 @@
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
       "source_sha256": "117a2f9d86478cd9847608e2c7398878aa6c0b4fd2ac4f0b910a2cd6d712ebd8"
+    },
+    "rmgpy/tools/eedf/channels.py:_effective_elastic_section": {
+      "verdict": "carried",
+      "reason": "Reconstructs the solver Elastic realization by numerical arithmetic on explicitly supplied pinned collision sections and state properties; performs no independent molecular data acquisition.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/multigasReworkTest.py",
+        "test/rmgpy/tools/eedf/channelMapTest.py"
+      ],
+      "source_sha256": "619f614f9e323c271b5feb19c8acb739df4e352954bb1d8225d4ff5b20ad94fb"
     }
   }
 }

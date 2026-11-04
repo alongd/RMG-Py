@@ -303,7 +303,12 @@ def test_effective_source_maps_to_one_unowned_elastic_heating_row(
     effective_path = tmp_path / 'N2_effective_LXCat.txt'
     effective_path.write_bytes(fixture.read_bytes())
     mass_path = tmp_path / 'masses.txt'
-    mass_path.write_text('Ar 39.948\nN2 28.0134\n')
+    from scipy.constants import atomic_mass
+    n2_mass = 28.0134 * atomic_mass
+    mass_path.write_text(f'Ar {39.948 * atomic_mass}\nN2 {n2_mass}\n')
+    spec['state_properties'].update(
+        energy=['N2(X,v=0) = 0', 'N2(X,v=1) = .29'],
+        statisticalWeight=['N2(X,v=0) = 1', 'N2(X,v=1) = 1'])
     spec['input_files']['N2_effective_LXCat.txt'] = {
         'path': str(effective_path), 'sha256': _file_hash(effective_path), 'kind': 'cross_section'}
     spec['input_files']['masses.txt'] = {
@@ -334,7 +339,7 @@ def test_effective_source_maps_to_one_unowned_elastic_heating_row(
     assert elastic_row['description'].endswith(', Elastic')
     assert elastic_row['classification'] == 'B'
     assert elastic_row['reaction'] is None
-    assert elastic_row['mass_ratio'] == pytest.approx(electron_mass / 28.0134)
+    assert elastic_row['mass_ratio'] == pytest.approx(electron_mass / n2_mass, rel=1e-12, abs=0.)
 
     energy = [.0005, .0015, .0025, .0035]
     edges = [0., .001, .002, .003, .004]
@@ -357,8 +362,8 @@ def test_effective_source_maps_to_one_unowned_elastic_heating_row(
                                       {'elastic_gain': 0., 'elastic_loss': -solver_elastic_net})
     assert powers[eff_index] == 0.
     assert powers[derived_index] == pytest.approx(
-        solver_elastic_net - sum(powers[i] for i in elastic_indices if i != derived_index))
-    assert sum(powers[i] for i in elastic_indices) == pytest.approx(solver_elastic_net)
+        solver_elastic_net - sum(powers[i] for i in elastic_indices if i != derived_index), rel=1e-12, abs=0.)
+    assert sum(powers[i] for i in elastic_indices) == pytest.approx(solver_elastic_net, rel=1e-12, abs=0.)
     powers_by_kind = dict(zip((item['kind'] for item in channels), moments['channel_power']))
     assert powers_by_kind['effective'] == 0.
     power_row = {'channel_power': powers,
@@ -366,14 +371,19 @@ def test_effective_source_maps_to_one_unowned_elastic_heating_row(
                                   'excitation_loss': 0., 'excitation_gain': 0.,
                                   'vibrational_loss': 0., 'vibrational_gain': 0.,
                                   'rotational_loss': 0., 'rotational_gain': 0.,
-                                  'ionization': 0., 'attachment': 0., 'field': 1.},}
-    tolerances = {'channel_power_sum': {'atol': 1e-12, 'rtol': 1e-12}}
+                                  'ionization': 0., 'attachment': 0., 'field': abs(solver_elastic_net)},}
+    tolerances = {'channel_power_sum': {'atol': abs(solver_elastic_net) * 1e-12, 'rtol': 1e-10}}
     checks = _channel_power_checks(power_row, {
         'channel_map': channels, 'tolerances': tolerances,
-        'floors': {'relative_power_share': 0., 'absolute_power_share': 1e-12}})
+        'floors': {'relative_power_share': .01, 'absolute_power_share': 1e-12}})
     elastic_check = next(check for check in checks if check['quantity'] == 'power.sum.elastic')
     assert elastic_check['passed']
-    assert elastic_power == pytest.approx(-power_row['power_groups']['elastic_loss'])
+    assert elastic_power != pytest.approx(-power_row['power_groups']['elastic_loss'], rel=1e-12, abs=0.)
+    power_row['channel_power'][derived_index] += abs(solver_elastic_net) * .01
+    checks = _channel_power_checks(power_row, {
+        'channel_map': channels, 'tolerances': tolerances,
+        'floors': {'relative_power_share': .01, 'absolute_power_share': 1e-12}})
+    assert not next(check for check in checks if check['quantity'] == 'power.sum.elastic')['passed']
 
 
 def test_irreversible_excitation_group_has_no_product_population_requirement():
@@ -796,3 +806,34 @@ def test_i353_fixture_families_are_reported(tmp_path, monkeypatch):
     assert report['shared_owners'] == []
     adapter._write_outputs(tmp_path / 'refusal', report)
     assert [path.name for path in (tmp_path / 'refusal').iterdir()] == ['conversion-report.json']
+
+
+@pytest.mark.parametrize('location', ['configuration', 'frozen', 'lookup'])
+def test_list_owner_label_refuses_by_name(conversion_inputs, tmp_path, location):
+    spec, ar_map, n2_map, libraries = _two_gas_fixture(conversion_inputs, tmp_path)
+    configured = {'Ar': 'PlasmaArgon', 'N2': 'PlasmaNitrogen'}
+    if location == 'configuration':
+        configured['Ar'] = ['PlasmaArgon']
+    else:
+        ar_map['channels'][0]['rmg']['library'] = ['PlasmaArgon']
+    with pytest.raises(SpecError, match='owner library|reaction metadata'):
+        if location == 'lookup':
+            adapter._owner_problem(ar_map['channels'][0], libraries)
+        else:
+            adapter.convert_channel_maps(spec, {'Ar': ar_map, 'N2': n2_map},
+                                         libraries, 'mix-Ar-N2', library_by_gas=configured)
+
+
+@pytest.mark.parametrize('prepare', [False, True])
+def test_mixture_builder_refuses_supplied_owner_d6(conversion_inputs, prepare):
+    spec, _, _ = conversion_inputs
+    owner = {'set_by': 'owner', 'top_fraction_limit': .01,
+             'top_leak_share_limit': .02, 'K_step': 5}
+    manifest = {'D6': owner}
+    original = copy.deepcopy(manifest)
+    with pytest.raises(SpecError, match='diagnostic D6 conflicts'):
+        if prepare:
+            adapter.prepare_mixture_spec('unused', [], 'unused', 'mixture', manifest)
+        else:
+            adapter.build_mixture_spec(spec, manifest, [])
+    assert manifest == original

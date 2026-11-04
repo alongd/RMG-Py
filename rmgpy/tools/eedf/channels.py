@@ -180,6 +180,68 @@ def _gas_values(path, digest):
     return data
 
 
+def _effective_elastic_section(source, sections, states):
+    """Reconstruct LoKI's Elastic lookup table, retaining the Effective source.
+
+    EedfCollisions.cpp:624-739 subtracts on the raw Effective grid, with
+    default hierarchical populations at 300 K, before interpolating to the
+    solver grid. These populations are independent of the runtime Tv.
+    """
+    from scipy.constants import Boltzmann, elementary_charge
+    sections = {section['description']: section for section in sections}
+    energy = np.asarray(source['cross_section']['energy_eV'])
+    elastic = np.array(source['cross_section']['sigma_m2'], dtype=float)
+    root = source['description'].split(' ', 3)[2]
+    properties = {name: {item.split(' = ', 1)[0]: float(item.split(' = ', 1)[1])
+                         for item in states.get(name, [])}
+                  for name in ('energy', 'statisticalWeight')}
+    identities = set()
+    for section in sections.values():
+        identities.add(section['description'].split(' ', 3)[2])
+        if '<->' in section['description']:
+            identities.add(section['description'].split(' <-> e + ', 1)[1].rsplit(', ', 1)[0])
+    populations = {root: 1.}
+    parent = root
+    for coordinate in ('v', 'J'):
+        children = sorted(state for state in identities
+                          if re.fullmatch(re.escape(parent[:-1]) + ',' + coordinate + r'=\d+\)', state))
+        if not children:
+            continue
+        try:
+            weights = np.array([properties['statisticalWeight'][state] * np.exp(
+                -properties['energy'][state] * elementary_charge / (Boltzmann * 300.)) for state in children])
+        except KeyError as error:
+            raise SpecError('missing default Effective population property: ' + str(error)) from error
+        if not np.isfinite(weights).all() or weights.sum() <= 0:
+            raise SpecError('invalid default Effective population weights')
+        populations.update(zip(children, weights / weights.sum() * populations[parent]))
+        parent = min((properties['energy'][state], state) for state in children)[1]
+    for description in sorted(sections):
+        section = sections[description]
+        if (section['kind'] == 'effective' or section['description'] ==
+                source['description'].rsplit(', ', 1)[0] + ', Elastic'):
+            continue
+        description = section['description']
+        target = description.split(' ', 3)[2]
+        if target not in populations:
+            continue
+        raw = section['cross_section']
+        sigma = np.interp(energy, raw['energy_eV'], raw['sigma_m2'], left=0, right=0)
+        sigma[energy <= section['threshold_eV']] = 0.
+        elastic -= sigma * populations[target]
+        if '<->' in description:
+            product = description.split(' <-> e + ', 1)[1].rsplit(', ', 1)[0]
+            if product in populations:
+                shifted = energy + section['threshold_eV']
+                reverse = np.interp(shifted, raw['energy_eV'], raw['sigma_m2'], left=0, right=0)
+                reverse[shifted <= section['threshold_eV']] = 0.
+                ratio = properties['statisticalWeight'][target] / properties['statisticalWeight'][product]
+                reverse *= ratio * (1 + section['threshold_eV'] / np.where(energy > 0, energy, 1.))
+                reverse[energy == 0] = 0.
+                elastic -= reverse * populations[product]
+    return {'energy_eV': energy.tolist(), 'sigma_m2': np.maximum(elastic, 0.).tolist()}
+
+
 def _validate_physical_map(channels, spec, coordinates):
     """Refuse verdict-changing metadata that differs from actual solver inputs."""
     _validate_map(channels)
@@ -226,13 +288,14 @@ def _validate_physical_map(channels, spec, coordinates):
         physical = sections.get(channel['description'])
         if derived_source is not None:
             source = sections[derived_source]
-            if (channel['kind'] != 'elastic' or channel['threshold_eV'] != source['threshold_eV']
-                    or channel['cross_section'] != source['cross_section']):
-                raise SpecError('derived Elastic differs from hashed Effective source')
+            derived_section = _effective_elastic_section(source, sections.values(), states)
+            if (channel['kind'] != 'elastic' or channel['threshold_eV'] != 0.
+                    or channel['cross_section'] != derived_section):
+                raise SpecError('derived Elastic differs from hashed Effective realization')
         elif physical is None:
             raise SpecError('channel has no hashed physical source: ' + channel['description'])
         expected_source = source if derived_source else physical
-        fields = ('threshold_eV', 'cross_section') if derived_source else ('kind', 'threshold_eV', 'cross_section')
+        fields = () if derived_source else ('kind', 'threshold_eV', 'cross_section')
         for field in fields:
             if channel[field] != expected_source[field]:
                 raise SpecError('channel ' + field + ' differs from hashed LoKI input')

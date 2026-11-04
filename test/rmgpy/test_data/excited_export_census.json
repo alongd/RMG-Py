@@ -4091,7 +4091,7 @@
     "rmgpy/tools/eedf/n2_vibrational.py:main": {
       "file": "rmgpy/tools/eedf/n2_vibrational.py",
       "function": "main",
-      "line": 454,
+      "line": 457,
       "signature": "150e5297fce9549574d233188b244ee7c7d5ac32ce2a5832c9208521da4ab454",
       "verdict": "R",
       "reason": "Fixed-domain N2 X-state generator emits validated exact-v adjacency identities and the unkeyed ground manifold declaration; no arbitrary input species labels are used as identity.",
@@ -5695,7 +5695,7 @@
     "rmgpy/tools/eedf/channel_map.py:_load_library": {
       "file": "rmgpy/tools/eedf/channel_map.py",
       "function": "_load_library",
-      "line": 446,
+      "line": 462,
       "signature": "017f7cde1e3a7501526bc2632889acc48e07157618ee741cd0588ad76dc08d99",
       "reason": "Copies byte-pinned kinetics-library sources into private loader scratch; it does not export or reserialize molecular state.",
       "verdict": "E"
@@ -5703,7 +5703,7 @@
     "rmgpy/tools/eedf/channel_map.py:prepare_spec": {
       "file": "rmgpy/tools/eedf/channel_map.py",
       "function": "prepare_spec",
-      "line": 485,
+      "line": 501,
       "signature": "3e969ccb42c7d81e58a0943650b7704c01f4af162f5af599ba07b3dfe6fd4859",
       "verdict": "E",
       "reason": "Copies pinned physical-input bytes into private scratch space and checks ownership against the explicit library; does not export reconstructed molecular identities."
@@ -5711,7 +5711,7 @@
     "rmgpy/tools/eedf/channel_map.py:_write_outputs": {
       "file": "rmgpy/tools/eedf/channel_map.py",
       "function": "_write_outputs",
-      "line": 657,
+      "line": 674,
       "signature": "e6f5964d189a14b6cf43f27c6adb05d01a2cfc25d4287c6756960bde4c972b1e",
       "reason": "Publishes EEDF channel maps and solver specifications, not molecular identifiers or species dictionaries.",
       "verdict": "E"
@@ -5719,7 +5719,7 @@
     "rmgpy/tools/eedf/channel_map.py:_main": {
       "file": "rmgpy/tools/eedf/channel_map.py",
       "function": "_main",
-      "line": 687,
+      "line": 704,
       "signature": "e4bf09af1a031ca89fc6efe448f15672de48145721255cd1ffb30e4e310d43f8",
       "reason": "CLI routing and refusal reporting for EEDF artifact conversion; no molecular export sink.",
       "verdict": "E"
@@ -5735,7 +5735,7 @@
     "rmgpy/tools/eedf/n2_vibrational.py:_validate_thermo": {
       "file": "rmgpy/tools/eedf/n2_vibrational.py",
       "function": "_validate_thermo",
-      "line": 241,
+      "line": 244,
       "signature": "e8aa1eeafff2499fad883f87cafd9409e2192f696524314f4c99fc99d9f29ae7",
       "verdict": "E",
       "reason": "Internal scratch materialization of a SHA256-validated thermo-library byte snapshot for loading; no public species identifier or mechanism is exported. Exact retained N2 fixed-v identities are checked before any generated artifacts can be returned."
@@ -5755,8 +5755,8 @@
     "rmgpy/tools/eedf/channel_map.py:prepare_mixture_spec": {
       "file": "rmgpy/tools/eedf/channel_map.py",
       "function": "prepare_mixture_spec",
-      "line": 579,
-      "signature": "ec396b017c2c2cf4fcbf6c37c7b6eefecd374705301b81bafe120934b632e338",
+      "line": 595,
+      "signature": "b0a3317f7bbb2747951fc0b130e493eaddd8c18a2802884a12b7fd7ea6fe0611",
       "reason": "Snapshots pinned collision inputs and builds EEDF specifications; it does not serialize molecular species.",
       "verdict": "E"
     }

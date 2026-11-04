@@ -189,8 +189,11 @@ def require_complete_pairs(sections, upper_v=None, *, initial_levels=None, final
         raise MissingPairsError(missing)
 
 
-def _policy(policy, allow_unset=False):
-    if policy.get('set_by') != 'owner':
+def _policy(policy, allow_unset=False, allow_diagnostic=False):
+    diagnostic = policy.get('set_by') == 'diagnostic' or policy.get('status') == 'diagnostic'
+    if diagnostic and not allow_diagnostic:
+        raise LadderError('diagnostic D6 policy cannot qualify as owner-set')
+    if policy.get('set_by') != 'owner' and not (allow_diagnostic and diagnostic):
         raise LadderError('D6 thresholds must be explicitly owner-set')
     for name in ('top_fraction_limit', 'top_leak_share_limit'):
         if allow_unset and policy.get(name) is None:
@@ -284,7 +287,7 @@ def generate(manifest, K=10, production=True):
         raise LadderError('unsupported N2 source schema')
     if not isinstance(manifest.get('D6'), dict):
         raise LadderError('D6 policy must be an object')
-    _policy(manifest['D6'], allow_unset=not production)
+    _policy(manifest['D6'], allow_unset=not production, allow_diagnostic=not production)
     cross_section_pins = manifest.get('cross_sections')
     if not isinstance(cross_section_pins, list) or not cross_section_pins:
         raise LadderError('cross_sections must be a nonempty list of source pins')

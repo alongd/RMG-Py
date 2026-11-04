@@ -359,7 +359,7 @@ def _channel_fractions(channel_map, gas, populations, coordinates):
         if not match:
             raise SpecError('channel population cannot be resolved from description')
         target = density(match[1])
-        if channel['kind'] in ('vibrational', 'rotational') and '<->' in channel['description']:
+        if channel['kind'] in ('excitation', 'vibrational', 'rotational') and '<->' in channel['description']:
             product_match = re.fullmatch(r'e \+ (.+)', match[2])
             if not product_match:
                 raise SpecError('superelastic population cannot be resolved')
