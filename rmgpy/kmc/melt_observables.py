@@ -1435,13 +1435,6 @@ def mom_reported_quantities(obs: Mapping) -> dict:
     a, e = obs["repeat_unit_molar_mass_g_mol"], obs["end_group_molar_mass_g_mol"]
     mu = list(t3["tail"]["dp_moments_mol"])
     tail = observables_from_moments(mu, a, e)
-    t2 = obs["tier2"]
-    if "mass_dp_moments_mol" in t2:
-        whole_mu = list(t2["mass_dp_moments_mol"])
-    else:                                   # an observation written before the key: the same sums
-        n0, n1, n2 = t2["M0_mol"], t2["M1_g"], t2["M2_g2_mol"]
-        whole_mu = [n0, (n1 - e * n0) / a, (n2 - 2.0 * e * n1 + e * e * n0) / (a * a)]
-    whole_mn, whole_mw = whole_averages(whole_mu, a, e)
     return {
         "mu0_mol": mu[0], "mu1_mol": mu[1], "mu2_mol": mu[2],
         "end_inventory_mol": law["end_inventory_mol"],
@@ -1452,8 +1445,7 @@ def mom_reported_quantities(obs: Mapping) -> dict:
         "released_mol": {row["label"]: row["released_mol"] for row in obs.get("side_group_channels", ())},
         "species_mol": {k: v["amount_mol"] for k, v in t1["species"].items()},
         "polymer_derived_molecules_mol": t1["polymer_derived"]["mom_definition"]["amount_mol"],
-        "whole_mu0_mol": whole_mu[0], "whole_mu1_mol": whole_mu[1], "whole_mu2_mol": whole_mu[2],
-        "whole_Mn_g_mol": whole_mn, "whole_Mw_g_mol": whole_mw,
+        **whole_ensemble_quantities(obs),
     }
 
 
@@ -1473,6 +1465,22 @@ def low_dp_cut_g_mol(a: float, e: float, species_molar_masses) -> float:
 def at_or_below_cut(molar_mass: float, cut: float) -> bool:
     """A molecule of this molar mass counts at or below the low-DP cut."""
     return molar_mass <= cut * (1.0 + LOW_DP_RELATIVE)
+
+
+def whole_ensemble_quantities(obs: Mapping) -> dict:
+    """The whole-ensemble keys (``WHOLE_ENSEMBLE_DEFINITION``) of one
+    observation, a copolymer's included: its ``a`` is the mean residue molar
+    mass Mbar0, the mass DP (M - e) / Mbar0 of one copolymer pool."""
+    a, e = obs["repeat_unit_molar_mass_g_mol"], obs["end_group_molar_mass_g_mol"]
+    t2 = obs["tier2"]
+    if "mass_dp_moments_mol" in t2:
+        whole_mu = list(t2["mass_dp_moments_mol"])
+    else:                                   # an observation written before the key: the same sums
+        n0, n1, n2 = t2["M0_mol"], t2["M1_g"], t2["M2_g2_mol"]
+        whole_mu = [n0, (n1 - e * n0) / a, (n2 - 2.0 * e * n1 + e * e * n0) / (a * a)]
+    whole_mn, whole_mw = whole_averages(whole_mu, a, e)
+    return {"whole_mu0_mol": whole_mu[0], "whole_mu1_mol": whole_mu[1], "whole_mu2_mol": whole_mu[2],
+            "whole_Mn_g_mol": whole_mn, "whole_Mw_g_mol": whole_mw}
 
 
 _TIER1 = ("polymer_condensed_mass_g", "polymer_derived_molecules_mol", "polymer_conversion", "convention_gap_g")

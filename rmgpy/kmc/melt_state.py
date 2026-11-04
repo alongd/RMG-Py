@@ -1069,10 +1069,30 @@ def _homopolymer_chains(spec):
     return builder, chain
 
 
-def _sequence_chains(spec):
+def materialize_sequences(spec, sequences) -> MeltState:
+    """One chain per given residue sequence of a ``PolymerSpec``, built as
+    ``materialize`` builds a sampled chain (chains in the given order, no
+    mobile molecules); a residue the declaration lacks, or a step the
+    sequence support does not allow, is refused."""
+    residues = dict(spec.residues)
+    for sequence in sequences:
+        if not sequence or set(sequence) - set(residues):
+            raise MeltStateError(f"sequence {tuple(sequence)} is empty or names an undeclared residue")
+        for a, b in zip(sequence, sequence[1:]):
+            if (a, b) not in spec.junctions:
+                raise MeltStateError(f"sequence {tuple(sequence)}: the step {a}->{b} is outside the sequence support")
+    builder, molecules = _sequence_chains(spec, [tuple(s) for s in sequences])
+    state = builder.state()
+    if len(state.components) != molecules:
+        raise MeltStateError(f"sequences yield {len(state.components)} connected molecules, expected {molecules}")
+    return state
+
+
+def _sequence_chains(spec, sequences=None):
     from rmgpy.kmc import melt_sequence as msq
-    sequences = msq.sample_sequences(spec)
-    msq.check_composition(spec, msq.realized_composition(spec, sequences))
+    if sequences is None:
+        sequences = msq.sample_sequences(spec)
+        msq.check_composition(spec, msq.realized_composition(spec, sequences))
     residues = dict(spec.residues)
     sites = {name: msq.residue_sites(spec, name) for name in residues}
     backbone = {name: msq.residue_backbone_keys(spec, name) for name in residues}
