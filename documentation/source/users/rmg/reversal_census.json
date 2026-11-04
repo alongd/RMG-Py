@@ -7278,7 +7278,7 @@
   {
     "site": "rmgpy/tools/eedf/n2_vibrational.py::_validate_thermo::is_isomorphic#1",
     "kind": "direction",
-    "line": 261,
+    "line": 324,
     "source": "if entry is None or entry.data is None or not entry.item.is_isomorphic(expected):",
     "verdict": "not-reachable-for-resolved",
     "reason": "Exact molecule fixed-v identity comparison authorizes sourced thermo; it does not reverse or serialize Reaction kinetics.",
@@ -7289,8 +7289,8 @@
   {
     "site": "rmgpy/tools/eedf/n2_vibrational.py::generate::reaction-io",
     "kind": "reader-exporter",
-    "line": 277,
-    "source": "def generate(manifest, K=10, production=True):",
+    "line": 340,
+    "source": "def generate(manifest, K=10, production=True, molecule='N2'):",
     "verdict": "guarded",
     "reason": "Electron direction records are explicit irreversible declarations bound to the same sourced pair; k_sup partners occur only for two retained endpoints, never by thermal reversal. Top-leak forward channels have no unresolved reverse.",
     "tests": [
@@ -7322,7 +7322,7 @@
   {
     "site": "rmgpy/tools/eedf/vibrational.py::validate_bound_channels::reaction-io",
     "kind": "reader-exporter",
-    "line": 286,
+    "line": 288,
     "source": "def validate_bound_channels(ladder, channels, reactions, reaction_map, indices, species):",
     "reason": "Requires separate irreversible inelastic and superelastic owners with exact retained level endpoints; a reversible reaction is refused, never reversed through equilibrium thermo.",
     "tests": [

@@ -829,3 +829,5 @@ C11,scripts/checkModels.py,printThermo,read,spec.thermo,9
 N2,scripts/generateTree.py,main,read,database.thermo,3
 C8,scripts/thermoEstimator.py,run_thermo_estimator,argument-write,library.load_entry:thermo,1
 C8,scripts/thermoEstimator.py,run_thermo_estimator,call,species.get_thermo_data,2
+C13,rmgpy/solver/plasma.pyx,_library_entry_thermo_forms,cython-field,rmgpy.thermo,1
+A2,rmgpy/tools/eedf/n2_vibrational.py,_validate_thermo,call,database.get_thermo_data_from_library,1

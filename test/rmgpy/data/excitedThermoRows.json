@@ -9,7 +9,7 @@
     "title": "Database library acquisition",
     "verdict": "Exact state and explicit limits only",
     "test": "test/rmgpy/data/excitedThermoTest.py:test_resolved_thermo_is_from_exact_library_entry",
-    "sites": 23
+    "sites": 24
   },
   "A3": {
     "title": "GA, HBI, ML and surface estimation",
@@ -165,7 +165,7 @@
     "title": "Plasma thermo provenance",
     "verdict": "Checked whole library source before charge provenance",
     "test": "test/rmgpy/solver/excitedThermoProvenanceTest.py:test_plasma_refuses_altered_resolved_thermo",
-    "sites": 7
+    "sites": 8
   },
   "C14": {
     "title": "Surface coverage thermo",
