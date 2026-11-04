@@ -272,3 +272,23 @@ def test_saved_input_refuses_explicit_resolved_levels(database, tmp_path, monkey
     with pytest.raises(SpeciesIdentityError, match='save_input_file'):
         inp.save_input_file(str(saved), job)
     assert not saved.exists()
+
+
+def test_thermo_only_assembly_does_not_fabricate_energy_transfer(database, tmp_path, monkeypatch):
+    job = load_deck(tmp_path, monkeypatch, level=False)
+    install_database(monkeypatch, database)
+    level = Species(label='N2v1').from_adjacency_list('vibrationallevel 1\n' + N2)
+    added, _ = job.reaction_model.make_new_species(level, generate_thermo=True)
+    assert added.thermo.label == 'N2v1'
+    assert added.energy_transfer_model is None
+    with pytest.raises(StateProvenanceError, match='energy transfer'):
+        job.reaction_model.generate_thermo(added)
+
+
+def test_pressure_dependent_assembly_retains_energy_transfer_refusal(database, tmp_path, monkeypatch):
+    job = load_deck(tmp_path, monkeypatch, level=False)
+    install_database(monkeypatch, database)
+    job.reaction_model.pressure_dependence = SimpleNamespace()
+    level = Species(label='N2v1').from_adjacency_list('vibrationallevel 1\n' + N2)
+    with pytest.raises(StateProvenanceError, match='energy transfer'):
+        job.reaction_model.make_new_species(level, generate_thermo=True)

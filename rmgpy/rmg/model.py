@@ -589,7 +589,9 @@ class CoreEdgeReactionModel:
 
         if generate_thermo:
             # Rename from thermo library label only if no user-provided label exists yet.
-            self.generate_thermo(spec, rename=not bool(spec.label))
+            self.generate_thermo(spec, rename=not bool(spec.label),
+                                 generate_energy_transfer=self.pressure_dependence is not None
+                                 or not any(m.vibrational_level >= 0 for m in spec.molecule))
 
         # If the species still does not have a label, set initial label as the SMILES
         # (applies when generate_thermo is False, or when no library match was found)
@@ -1276,9 +1278,11 @@ class CoreEdgeReactionModel:
 
         # Serial thermo calculation for other methods
         for spc in self.new_species_list:
-            self.generate_thermo(spc, rename=True)
+            self.generate_thermo(spc, rename=True,
+                                 generate_energy_transfer=self.pressure_dependence is not None
+                                 or not any(m.vibrational_level >= 0 for m in spc.molecule))
 
-    def generate_thermo(self, spc, rename=False):
+    def generate_thermo(self, spc, rename=False, generate_energy_transfer=True):
         """
         Generate thermo for species.
         """
@@ -1317,10 +1321,10 @@ class CoreEdgeReactionModel:
             spc.get_liquid_volumetric_mass_transfer_coefficient_data()
             spc.get_henry_law_constant_data()
 
-        # A vibrationally resolved species has no default energy-transfer
-        # parameters. Simple-reactor jobs can still use its library thermo and
-        # kinetics; pressure-dependence paths must provide resolved-state data.
-        if not any(molecule.vibrational_level >= 0 for molecule in spc.molecule):
+        # Direct requests retain the provenance guard. Non-pressure-dependent
+        # model assembly may request thermo alone for explicit vibrational levels;
+        # it must never synthesize an energy-transfer model for them.
+        if generate_energy_transfer:
             spc.generate_energy_transfer_model()
 
     def process_coverage_dependence(self, kinetics):
