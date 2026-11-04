@@ -2998,12 +2998,15 @@ def options(name='Seed', generateSeedEachIteration=True, saveSeedToDatabase=Fals
             verboseComments=False, saveEdgeSpecies=False, keepIrreversible=False,
             trimolecularProductReversible=True, wallTime='00:00:00:00', saveSeedModulus=-1,
             generateChemkin=True, generateRMSYAML=True,
-            generateCanteraYAML1=False, generateCanteraYAML2=False):
+            generateCanteraYAML1=False, generateCanteraYAML2=False, generateCanteraFromChemkin=True):
     if saveRestartPeriod:
         logging.warning("`saveRestartPeriod` flag was set in the input file, but this feature has been removed. Please "
                         "remove this line from the input file. This will throw an error after RMG-Py 3.1. For "
                         "restarting an RMG job see the documentation for restarting from a seed mechanism at "
                         "https://reactionmechanismgenerator.github.io/RMG-Py/users/rmg/input.html#restarting-from-a-seed-mechanism")
+
+    if not isinstance(generateCanteraFromChemkin, bool):
+        raise InputError('generateCanteraFromChemkin must be True or False.')
 
     rmg.name = name
     rmg.generate_seed_each_iteration = generateSeedEachIteration
@@ -3027,6 +3030,7 @@ def options(name='Seed', generateSeedEachIteration=True, saveSeedToDatabase=Fals
     rmg.walltime = wallTime
     rmg.save_seed_modulus = saveSeedModulus
 
+    rmg.generate_cantera_from_chemkin = generateCanteraFromChemkin
     rmg.chemkin_writer_config = _parse_writer_config(generateChemkin)
     rmg.rms_writer_config = _parse_writer_config(generateRMSYAML)
     rmg.cantera1_writer_config = _parse_writer_config(generateCanteraYAML1)
@@ -3723,6 +3727,8 @@ def save_input_file(path, rmg):
     # type (pre-existing bug, latent only because save_input_file has no in-repo caller).
     f.write('    wallTime = "{0}",\n'.format(rmg.walltime))
     f.write('    generateChemkin = {0},\n'.format(_writer_config_to_input(rmg.chemkin_writer_config)))
+    if not rmg.generate_cantera_from_chemkin:
+        f.write('    generateCanteraFromChemkin = False,\n')
     f.write('    generateRMSYAML = {0},\n'.format(_writer_config_to_input(rmg.rms_writer_config)))
     if rmg.cantera1_writer_config and rmg.cantera1_writer_config.enabled:
         f.write('    generateCanteraYAML1 = {0},\n'.format(_writer_config_to_input(rmg.cantera1_writer_config)))

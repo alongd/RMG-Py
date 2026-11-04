@@ -248,6 +248,7 @@ class RMG(util.Subject):
         self.verbose_comments = None
         self.save_edge_species = None
         self.chemkin_writer_config = None
+        self.generate_cantera_from_chemkin = True
         self.rms_writer_config = None
         self.cantera1_writer_config = None
         self.cantera2_writer_config = None
@@ -1473,7 +1474,9 @@ class RMG(util.Subject):
         # Chemkin's chem.inp / chem_annotated.inp split, and run the comparison.
         translated_cantera_file = None
         try:
-            if self.mechanism_has_plasma_kinetics():
+            if not self.generate_cantera_from_chemkin:
+                logging.info("Chemkin-to-Cantera translation disabled by generateCanteraFromChemkin=False.")
+            elif self.mechanism_has_plasma_kinetics():
                 # The Chemkin file carries TDEP/ lines that ck2yaml cannot parse,
                 # so the translated copy (cantera_from_ck/) cannot be produced.
                 # Name the omission and its cause -- this is not silence.

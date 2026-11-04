@@ -1868,3 +1868,26 @@ class TestSaveInputTemperaturePressureRoundTrip:
                         delattr(inp, name)
                 else:
                     setattr(inp, name, value)
+
+
+@pytest.mark.parametrize('value', [True, False])
+def test_translation_option_accepts_boolean(value, monkeypatch):
+    job = RMG()
+    monkeypatch.setattr(inp, 'rmg', job)
+    inp.options(generateCanteraFromChemkin=value)
+    assert job.generate_cantera_from_chemkin is value
+
+
+def test_translation_option_defaults_true(monkeypatch):
+    job = RMG()
+    monkeypatch.setattr(inp, 'rmg', job)
+    inp.options()
+    assert job.generate_cantera_from_chemkin is True
+
+
+@pytest.mark.parametrize('value', [None, 'False', 0, 1, {}, []])
+def test_translation_option_rejects_non_boolean(value, monkeypatch):
+    job = RMG()
+    monkeypatch.setattr(inp, 'rmg', job)
+    with pytest.raises(InputError, match='generateCanteraFromChemkin must be True or False'):
+        inp.options(generateCanteraFromChemkin=value)

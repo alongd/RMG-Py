@@ -461,3 +461,34 @@ class TestPredicateMatchesWriterUnderMultiWrappers:
         rmg.reaction_model = CoreEdgeReactionModel()
         rmg.reaction_model.core = ReactionModel(species=[e, o_atom, o_cation], reactions=[rxn])
         assert rmg.mechanism_has_plasma_kinetics() is True
+
+
+class TestTranslationSchedulingOption:
+    def test_default_and_explicit_true_produce_identical_ordinary_output(self, thermal_rmg, monkeypatch):
+        from pathlib import Path
+        import cantera.ck2yaml as ck2yaml
+        # Freeze only the writer timestamp so the byte comparison spans clock ticks.
+        monkeypatch.setattr(ck2yaml, 'formatdate', lambda **kwargs: 'fixed conversion date')
+        assert thermal_rmg.generate_cantera_from_chemkin is True
+        thermal_rmg.generate_end_of_run_cantera_files()
+        thermal_rmg.report_export_failures()
+        output = Path(thermal_rmg.output_directory) / 'cantera_from_ck'
+        before = {path.name: path.read_bytes() for path in output.glob('*.yaml')}
+        assert {'chem.yaml', 'chem_annotated.yaml'} <= before.keys()
+        thermal_rmg.generate_cantera_from_chemkin = True
+        thermal_rmg.generate_end_of_run_cantera_files()
+        thermal_rmg.report_export_failures()
+        assert {path.name: path.read_bytes() for path in output.glob('*.yaml')} == before
+
+    def test_false_skips_translation_and_keeps_direct_writer(self, thermal_rmg, monkeypatch):
+        from pathlib import Path
+        thermal_rmg.generate_cantera_from_chemkin = False
+
+        def unexpected_translation(*args, **kwargs):
+            pytest.fail('disabled translation was scheduled')
+
+        monkeypatch.setattr(thermal_rmg, 'generate_cantera_files_from_chemkin', unexpected_translation)
+        thermal_rmg.generate_end_of_run_cantera_files()
+        thermal_rmg.report_export_failures()
+        assert not list((Path(thermal_rmg.output_directory) / 'cantera_from_ck').glob('*.yaml'))
+        assert (Path(thermal_rmg.output_directory) / 'cantera2/chem.yaml').is_file()

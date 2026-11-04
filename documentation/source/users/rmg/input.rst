@@ -2483,6 +2483,7 @@ Miscellaneous options::
         trimolecularProductReversible=False,
         saveSeedModulus=-1,
         generateChemkin=True,
+        generateCanteraFromChemkin=True,
         generateRMSYAML=True,
         generateCanteraYAML1=False,
         generateCanteraYAML2=False,
@@ -2542,8 +2543,21 @@ Examples::
 
 ``generateChemkin`` (default ``True``)
   Controls the Chemkin writer.  Output is written to the ``chemkin/`` folder.
-  When enabled, Cantera's ``ck2yaml`` converter is also run at the end of the
-  job to produce a ``cantera_from_ck/`` folder — see :ref:`output`.
+  When enabled with ``generateCanteraFromChemkin=True``, Cantera's ``ck2yaml``
+  converter is also run at the end of the job to produce a ``cantera_from_ck/``
+  folder — see :ref:`output`.
+
+``generateCanteraFromChemkin`` (default ``True``)
+  Controls whether RMG schedules the end-of-run Chemkin-to-Cantera translation.
+  Requires the Chemkin writer to be enabled. Set to ``False`` to keep Chemkin
+  output without requesting its translation; this does not disable either direct
+  Cantera writer. The option must be a boolean. It does not change any exporter
+  identity checks or add support for resolved electronic or vibrational states.
+  For resolved-state table models simulated with RMG's own solver, use
+  ``generateChemkin=True``, ``generateCanteraFromChemkin=False``,
+  ``generateRMSYAML=False``, ``generateCanteraYAML1=False`` and
+  ``generateCanteraYAML2=False``. State-preserving Cantera/RMS export for these
+  models is planned separately.
 
 ``generateRMSYAML`` (default ``True``)
   Controls the RMS YAML writer.  Output is written to the ``rms/`` folder.
