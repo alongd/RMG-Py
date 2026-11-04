@@ -3656,7 +3656,7 @@
         "test/rmgpy/chemkinTest.py",
         "test/rmgpy/kinetics/kineticsDataExportTest.py"
       ],
-      "source_sha256": "7a314a6b281730055ef5773e40dfaf9a86729062c8141b60eeb050a2fdacc22f"
+      "source_sha256": "9de851ac73b5f785f0712582c162c158a3fc55cf088e2c7897c90ed870cde715"
     },
     "rmgpy/chemkin.pyx:_read_kinetics_line": {
       "verdict": "carried",
