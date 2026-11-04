@@ -67,7 +67,7 @@ def _validate_map(channels):
         if (set(channel) - required - optional or required - set(channel)
                 or channel['classification'] not in ('A', 'B', 'C', 'D')):
             raise SpecError('channel map fields/classification')
-        if channel['kind'] not in ('elastic', 'excitation', 'vibrational', 'rotational', 'ionization', 'attachment'):
+        if channel['kind'] not in ('elastic', 'effective', 'excitation', 'vibrational', 'rotational', 'ionization', 'attachment'):
             raise SpecError('unsupported channel power kind')
         for name in ('threshold_eV', 'sigma_max_m2') + tuple(optional & set(channel)):
             value = channel[name]
@@ -192,7 +192,19 @@ def _validate_physical_map(channels, spec, coordinates):
                 if name in sections:
                     raise SpecError('duplicate physical collision')
                 sections[name] = section
-    if set(sections) != {c['description'] for c in channels} or len(sections) != len(channels):
+    expected = set(sections)
+    # LoKI keeps the source Effective rate and also installs that cross section
+    # as an Elastic collision for momentum-transfer heating. The source remains
+    # the physical identity; its derived Elastic realization is not a second
+    # cross-section input.
+    effective_sources = {}
+    for description, section in sections.items():
+        if section['kind'] == 'effective':
+            derived = description.rsplit(', ', 1)[0] + ', Elastic'
+            effective_sources[derived] = description
+            expected.add(derived)
+    actual = {c['description'] for c in channels}
+    if actual not in (set(sections), expected) or len(actual) != len(channels):
         raise SpecError('channel map does not cover physical collision identities')
     _, states, _, _ = _resolved_properties(spec, coordinates)
     weights = {v.split(' = ', 1)[0]: float(v.split(' = ', 1)[1])
@@ -210,9 +222,19 @@ def _validate_physical_map(channels, spec, coordinates):
         return values.get(species, default)
 
     for channel in channels:
-        physical = sections[channel['description']]
-        for field in ('kind', 'threshold_eV', 'cross_section'):
-            if channel[field] != physical[field]:
+        derived_source = effective_sources.get(channel['description'])
+        physical = sections.get(channel['description'])
+        if derived_source is not None:
+            source = sections[derived_source]
+            if (channel['kind'] != 'elastic' or channel['threshold_eV'] != source['threshold_eV']
+                    or channel['cross_section'] != source['cross_section']):
+                raise SpecError('derived Elastic differs from hashed Effective source')
+        elif physical is None:
+            raise SpecError('channel has no hashed physical source: ' + channel['description'])
+        expected_source = source if derived_source else physical
+        fields = ('threshold_eV', 'cross_section') if derived_source else ('kind', 'threshold_eV', 'cross_section')
+        for field in fields:
+            if channel[field] != expected_source[field]:
                 raise SpecError('channel ' + field + ' differs from hashed LoKI input')
         target = channel['description'].split(' ', 3)[2]
         species = target.split('(', 1)[0]

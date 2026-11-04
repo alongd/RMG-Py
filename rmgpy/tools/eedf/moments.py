@@ -114,6 +114,10 @@ def _distribution_moments(row, channels):
             thermal = Boltzmann / elementary_charge * Tg
             power_kernel = -gamma * (g[1:]*(thermal-widths/2)-g[:-1]*(thermal+widths/2))
             result['channel_power'][j] = power_kernel.dot(f0)
+        elif channel['kind'] == 'effective':
+            # The source Effective row carries the momentum-transfer rate. LoKI
+            # also emits a derived Elastic row, which alone owns elastic heat.
+            result['channel_power'][j] = 0.
         elif channel['kind'] == 'attachment':
             result['channel_power'][j] = target * (kernel * energy).dot(f0)
         elif channel['kind'] == 'ionization':

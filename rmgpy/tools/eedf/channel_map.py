@@ -40,10 +40,14 @@ import sys
 import tempfile
 
 import yaml
+from scipy.constants import electron_mass
 
 from rmgpy.kinetics import EEDFChannel
 from rmgpy.exceptions import DatabaseError
-from rmgpy.tools.eedf.channels import _load_channel_map, _validate_map, _validate_physical_map
+from rmgpy.tools.eedf.channels import (
+    _classic_sections, _gas_values, _load_channel_map, _validate_map, _validate_physical_map,
+)
+from rmgpy.tools.eedf.integrity import _physical_properties
 from rmgpy.tools.eedf.schema import FingerprintMismatch, SpecError, load_spec
 from rmgpy.tools.eedf.ownership import load_cascade_yields, make_branch_family
 
@@ -143,7 +147,7 @@ def _owner_problem(row, libraries):
     if owner['status'] in ('absent', 'lumped_internal'):
         return owner['status']
     index = owner.get('index')
-    library = libraries.get(owner['library'])
+    library = libraries if hasattr(libraries, 'entries') else libraries.get(owner['library'])
     if library is None or type(index) is not int or index not in library.entries:
         return 'requested library entry is absent'
     from rmgpy.util import parse_reaction_equation
@@ -174,6 +178,96 @@ def _convert_channel(physical, frozen, collision_set):
         result['reaction'] = {'library': owner['library'], 'index': owner['index'],
                               'repr': repr(marker)}
     return result
+
+
+def _derived_elastic(description):
+    """Return LoKI's derived Elastic identity for a source Effective process."""
+    suffix = ', Effective'
+    return description[:-len(suffix)] + ', Elastic' if description.endswith(suffix) else None
+
+
+def _target_gas(description):
+    match = re.match(r'^e \+ ([A-Z][A-Za-z0-9]*)\(', description)
+    if not match:
+        raise SpecError('cannot identify collision target gas: ' + description)
+    return match[1]
+
+
+def _declared_gases(spec):
+    raw = spec.get('gas_properties', {}).get('fraction')
+    if not isinstance(raw, list) or not raw:
+        raise SpecError('physical gas fractions are required')
+    gases = []
+    for entry in raw:
+        match = re.fullmatch(r'\s*([A-Z][A-Za-z0-9]*)\s+=\s+.+', entry) if isinstance(entry, str) else None
+        if not match or match[1] in gases:
+            raise SpecError('invalid or duplicate physical gas fraction')
+        gases.append(match[1])
+    return set(gases)
+
+
+def _upgrade_frozen_map(frozen, gas, spec):
+    """Adapt the DB's generated N2/1 map into the converter's pinned /2 form."""
+    if not isinstance(frozen, dict) or frozen.get('schema') == 'eedf-channel-map/2':
+        return frozen
+    if gas != 'N2' or frozen.get('schema') != 'eedf-channel-map/1':
+        raise SpecError('unsupported frozen channel map schema for gas ' + gas)
+    if (set(frozen) != {'schema', 'set', 'source_file', 'source_sha256', 'class_counts', 'channels'}
+            or not isinstance(frozen['source_file'], str)
+            or not isinstance(frozen['channels'], list)):
+        raise SpecError('malformed generated N2 channel map')
+    source_file = Path(frozen['source_file']).name
+    candidates = [(name, entry) for name, entry in spec['input_files'].items()
+                  if Path(name).name == source_file]
+    if len(candidates) != 1 or candidates[0][1]['sha256'] != frozen['source_sha256']:
+        raise FingerprintMismatch('N2 frozen map source file: ' + source_file)
+    source_name, source_entry = candidates[0]
+    sections = _classic_sections(source_entry['path'], source_entry['sha256'])
+    ordered = sorted(frozen['channels'], key=lambda row: row.get('id', -1))
+    if (len(ordered) != len(sections)
+            or [row.get('id') for row in ordered] != list(range(1, len(ordered) + 1))):
+        raise SpecError('generated N2 map does not cover source blocks in order')
+    rows, counts = [], Counter()
+    for row, section in zip(ordered, sections):
+        if row.get('threshold_eV') != section['threshold_eV']:
+            raise SpecError('generated N2 map threshold differs from source block ' + str(row.get('id')))
+        label, index = row.get('owner_library'), row.get('owner_index')
+        owner = None
+        if row.get('class') == 'A':
+            if not isinstance(label, str) or type(index) is not int or not isinstance(row.get('owner_label'), str):
+                raise SpecError('generated N2 class-A owner is incomplete: ' + str(row.get('id')))
+            owner = {'library': label, 'index': index, 'status': 'present',
+                     'reaction': row['owner_label']}
+        elif row.get('class') not in ('B', 'C', 'D'):
+            raise SpecError('generated N2 channel classification: ' + str(row.get('id')))
+        rows.append({'id': row['id'], 'loki_process': section['description'],
+                     'lxcat_file': Path(source_name).name,
+                     'threshold_eV': section['threshold_eV'],
+                     'class': row['class'], 'rmg': owner})
+        counts[row['class']] += 1
+    loki_files = {Path(source_name).name: source_entry['sha256']}
+    vib_entries = [(name, entry) for name, entry in spec['input_files'].items()
+                   if Path(name).name == 'N2_vib_LXCat.txt']
+    if vib_entries:
+        if len(vib_entries) != 1:
+            raise SpecError('ambiguous N2_vib_LXCat.txt source')
+        vib_name, vib_entry = vib_entries[0]
+        vib_sections = _classic_sections(vib_entry['path'], vib_entry['sha256'])
+        loki_files[Path(vib_name).name] = vib_entry['sha256']
+        for offset, section in enumerate(vib_sections, len(rows) + 1):
+            rows.append({'id': offset, 'loki_process': section['description'],
+                         'lxcat_file': Path(vib_name).name,
+                         'threshold_eV': section['threshold_eV'], 'class': 'B', 'rmg': None})
+            counts['B'] += 1
+    return {'schema': 'eedf-channel-map/2', 'set': frozen['set'],
+            'loki_files': loki_files, 'class_a_gaps': {},
+            'class_counts': {label: counts[label] for label in 'ABCD'},
+            'channels': rows}
+
+
+def _diagnostic_d6():
+    return {'set_by': 'owner', 'top_fraction_limit': .05,
+            'top_leak_share_limit': .05, 'K_step': 5, 'status': 'diagnostic'}
 
 
 def _branch_family(row, library, collision_set, cascade_yields):
@@ -218,12 +312,33 @@ def convert_channel_maps(spec, gas_maps, libraries, collision_set, cascade_yield
                    for value, library in libraries.items())
             or not isinstance(library_by_gas, dict) or set(library_by_gas) != set(gas_maps)):
         raise SpecError('gas maps and configured owner libraries are required')
-    by_process, owner_gas, frozen_file_hashes = {}, {}, {}
+    declared_gases = _declared_gases(spec)
+    if set(gas_maps) != declared_gases:
+        extra = sorted(set(gas_maps) - declared_gases)
+        if extra:
+            raise SpecError('channel map gas is not declared: ' + extra[0])
+        missing = sorted(declared_gases - set(gas_maps))
+        if missing:
+            raise SpecError('missing channel map for gas ' + missing[0])
+        raise SpecError('gas map configuration differs from physical gases')
+    by_process, owner_gas, frozen_file_hashes, normalized_maps = {}, {}, {}, {}
     for gas, frozen in gas_maps.items():
         if not isinstance(gas, str) or not gas:
             raise SpecError('gas-map key must be a nonempty gas name')
         if library_by_gas[gas] not in libraries:
             raise SpecError('configured owner library is not loaded for gas ' + gas)
+        frozen = _upgrade_frozen_map(frozen, gas, spec)
+        normalized_maps[gas] = frozen
+        if not isinstance(frozen, dict) or not isinstance(frozen.get('channels'), list):
+            raise SpecError('invalid frozen channel map for gas ' + gas)
+        for row in frozen['channels']:
+            process = row.get('loki_process', '') if isinstance(row, dict) else ''
+            if _target_gas(process) != gas:
+                raise SpecError('channel target gas differs from map gas ' + gas)
+            owner = row.get('rmg')
+            if (row.get('class') == 'A' and isinstance(owner, dict)
+                    and owner.get('library') != library_by_gas[gas]):
+                raise SpecError('configured owner library mismatch for gas ' + gas)
         allowed = {library_by_gas[gas]}
         rows = _frozen_rows(frozen, allowed)
         for process, row in rows.items():
@@ -254,7 +369,7 @@ def convert_channel_maps(spec, gas_maps, libraries, collision_set, cascade_yield
             if frozen_file_hashes.get(filename) != entry['sha256']:
                 raise FingerprintMismatch('frozen collision file: ' + filename)
             selected_files[filename] = entry['sha256']
-    selected = [row for frozen in gas_maps.values() for row in frozen['channels']
+    selected = [row for frozen in normalized_maps.values() for row in frozen['channels']
                 if row['lxcat_file'] in selected_files]
     if {row['loki_process'] for row in selected} != {row['description'] for row in channels}:
         raise SpecError('frozen map does not cover selected physical collisions')
@@ -263,6 +378,10 @@ def convert_channel_maps(spec, gas_maps, libraries, collision_set, cascade_yield
               'selected_ids': sorted(row['id'] for row in selected),
               'missing_owners': [], 'shared_owners': [], 'branch_families': []}
     shared = defaultdict(list)
+    gas_properties, _ = _physical_properties(spec)
+    mass_entry = spec['input_files'].get(gas_properties.get('mass'))
+    mass_values = (_gas_values(mass_entry['path'], mass_entry['sha256'])
+                   if mass_entry is not None else {})
     converted = []
     for physical in channels:
         row = by_process[physical['description']]
@@ -293,7 +412,18 @@ def convert_channel_maps(spec, gas_maps, libraries, collision_set, cascade_yield
                     shared[(owner['library'], owner['index'])].append(row['id'])
                 continue
             shared[(row['rmg']['library'], row['rmg']['index'])].append(row['id'])
-        converted.append(_convert_channel(physical, row, collision_set))
+        channel = _convert_channel(physical, row, collision_set)
+        converted.append(channel)
+        if physical['kind'] == 'effective':
+            derived_description = _derived_elastic(physical['description'])
+            target = _target_gas(physical['description'])
+            if target not in mass_values or mass_values[target] <= 0:
+                raise SpecError('missing physical gas mass for derived Elastic ' + target)
+            derived = copy.deepcopy(channel)
+            derived.update(description=derived_description, flux_group=derived_description,
+                           kind='elastic', classification='B', reaction=None,
+                           mass_ratio=electron_mass / mass_values[target])
+            converted.append(derived)
     report['missing_owners'].sort(key=lambda row: row['id'])
     report['branch_families'].sort(key=lambda row: row['id'])
     report['shared_owners'] = [
@@ -335,6 +465,23 @@ def _load_library(database, scratch, label='PlasmaArgon'):
     return library, hashes
 
 
+def _cascade_snapshot(database, *, yield_table=None, radiative_source=None,
+                      yield_table_sha256=None, source_sha256=None):
+    """Load the legacy pinned cascade documents for either CLI conversion path."""
+    default_root = Path(database) / 'input/eedf'
+    yield_path = Path(yield_table) if yield_table is not None else default_root / 'argon_cascade_yields.yaml'
+    source_path = Path(radiative_source) if radiative_source is not None else default_root / 'argon_radiative_data.yaml'
+    if not (yield_path.exists() or source_path.exists() or yield_table is not None
+            or radiative_source is not None or yield_table_sha256 is not None or source_sha256 is not None):
+        return None, None
+    snapshot = load_cascade_yields(yield_path, source_path,
+                                   yield_table_sha256=yield_table_sha256,
+                                   source_sha256=source_sha256)
+    provenance = {name: snapshot[name] for name in
+                  ('yield_table_sha256', 'source_sha256', 'radiative_model')}
+    return snapshot, provenance
+
+
 def prepare_spec(base_spec, frozen_map, frozen_digest, database, collision_set, *,
                  yield_table=None, radiative_source=None, yield_table_sha256=None, source_sha256=None):
     """Snapshot external inputs; no solver is started and no source is written."""
@@ -362,18 +509,13 @@ def prepare_spec(base_spec, frozen_map, frozen_digest, database, collision_set, 
         snapshot['channel_map']['path'] = str(scratch / 'channels.json')
         library, hashes = _load_library(database, scratch)
         provenance['library_sha256'] = hashes
-        default_root = Path(database) / 'input/eedf'
-        yield_path = Path(yield_table) if yield_table is not None else default_root / 'argon_cascade_yields.yaml'
-        source_path = Path(radiative_source) if radiative_source is not None else default_root / 'argon_radiative_data.yaml'
-        cascade = None
-        # Old databases without any cascade documents remain valid for ordinary
-        # conversion. Explicit pins, partial installs and requested families fail closed.
-        if (yield_path.exists() or source_path.exists() or yield_table is not None
-                or radiative_source is not None or yield_table_sha256 is not None or source_sha256 is not None):
-            cascade = load_cascade_yields(yield_path, source_path,
-                                          yield_table_sha256=yield_table_sha256, source_sha256=source_sha256)
-            provenance['cascade_sources'] = {name: cascade[name] for name in
-                                              ('yield_table_sha256', 'source_sha256', 'radiative_model')}
+        # Old databases without documents remain valid for ordinary conversion;
+        # explicit pins, partial installs and requested families fail closed.
+        cascade, cascade_provenance = _cascade_snapshot(
+            database, yield_table=yield_table, radiative_source=radiative_source,
+            yield_table_sha256=yield_table_sha256, source_sha256=source_sha256)
+        if cascade_provenance is not None:
+            provenance['cascade_sources'] = cascade_provenance
         try:
             converted, report = convert_channel_map(snapshot, frozen, library, collision_set, cascade)
         except MissingOwners as error:
@@ -400,7 +542,8 @@ def build_mixture_spec(base_spec, ladder_manifest, bindings, *,
             or sorted(set(composition_values)) != list(composition_values)
             or min(tv_values) <= 0 or sorted(set(tv_values)) != list(tv_values)):
         raise SpecError('mixture composition and Tv axes must be ordered physical values')
-    ladder = ladder_coupling(ladder_manifest, bindings, axis=tv_axis, parent='N2(X)')
+    ladder = ladder_coupling(ladder_manifest, bindings, axis=tv_axis,
+                             parent='N2(X)', d6_policy=_diagnostic_d6())
     domain = ladder.get('source_domain')
     if domain != {'initial_levels': list(range(30)), 'final_v': 58}:
         raise SpecError('N2 ladder must retain source domain initial v=0..29, final v=0..58')
@@ -409,20 +552,34 @@ def build_mixture_spec(base_spec, ladder_manifest, bindings, *,
     spec['gas_properties']['fraction'] = [f'Ar = 1-{{{composition_axis}}}',
                                           f'N2 = {{{composition_axis}}}']
     populations = ['Ar(1S0) = 1', 'N2(X) = 1']
-    for level in ladder['levels'][:ladder['K'] + 1]:
-        populations.append(f'{level["loki_state"]} = boltzmann:{tv_axis}:{level["v"]}')
+    zero_population_tail = {}
+    for level in ladder['levels']:
+        expression = (f'boltzmann:{tv_axis}:{level["v"]}'
+                      if level['v'] <= ladder['K'] else '0')
+        if level['v'] <= ladder['K']:
+            populations.append(f'{level["loki_state"]} = {expression}')
+        else:
+            zero_population_tail[level['loki_state']] = 0.0
+    ladder['zero_population_tail'] = zero_population_tail
     spec['state_properties'] = copy.deepcopy(spec['state_properties'])
     spec['state_properties']['population'] = populations
+    child_prefix = ladder['parent'][:-1] + ',v='
     for name, field in (('energy', 'energy_eV'), ('statisticalWeight', 'statistical_weight')):
-        entries = list(spec['state_properties'].get(name, []))
-        entries.extend(f'{level["loki_state"]} = {level[field]}' for level in ladder['levels'])
+        # The base spec can carry a complete source ladder for accounting.
+        # Remove those declarations before adding only solver-supported rows.
+        entries = [entry for entry in spec['state_properties'].get(name, [])
+                   if not entry.split(' = ', 1)[0].startswith(child_prefix)]
+        entries.extend(f'{level["loki_state"]} = {level[field]}'
+                       for level in ladder['levels'] if level['v'] <= ladder['K'])
         spec['state_properties'][name] = entries
     spec['vibrational_ladders'] = [ladder]
     return spec
 
 
 def prepare_mixture_spec(base_spec, gas_maps, database, collision_set,
-                         ladder_source_manifest, *, cascade_yields=None):
+                         ladder_source_manifest, *, cascade_yields=None,
+                         yield_table=None, radiative_source=None,
+                         yield_table_sha256=None, source_sha256=None):
     """Prepare a multi-gas conversion from explicit (gas, map, hash, library) inputs."""
     spec = load_spec(base_spec)
     if not isinstance(gas_maps, (list, tuple)) or len(gas_maps) < 2:
@@ -445,6 +602,8 @@ def prepare_mixture_spec(base_spec, gas_maps, database, collision_set,
         library_by_gas[gas] = label
         map_hashes[gas] = item['sha256']
     provenance = {'frozen_map_sha256': map_hashes,
+                  'map_sets_by_gas': {gas: frozen.get('set')
+                                      for gas, frozen in frozen_by_gas.items()},
                   'base_channel_map': copy.deepcopy(spec['channel_map']),
                   'input_files': copy.deepcopy(spec['input_files']),
                   'collision_set': collision_set}
@@ -462,6 +621,16 @@ def prepare_mixture_spec(base_spec, gas_maps, database, collision_set,
         loaded = {}
         for label in sorted(libraries_needed):
             loaded[label], library_hashes[label] = _load_library(database, scratch, label)
+        cascade_provenance = None
+        if cascade_yields is None:
+            cascade_yields, cascade_provenance = _cascade_snapshot(
+                database, yield_table=yield_table, radiative_source=radiative_source,
+                yield_table_sha256=yield_table_sha256, source_sha256=source_sha256)
+        else:
+            cascade_provenance = {name: cascade_yields[name] for name in
+                                  ('yield_table_sha256', 'source_sha256', 'radiative_model')}
+        if cascade_provenance is not None:
+            provenance['cascade_sources'] = cascade_provenance
         try:
             converted, report = convert_channel_maps(snapshot, frozen_by_gas, loaded,
                                                       collision_set, cascade_yields, library_by_gas)
@@ -472,7 +641,9 @@ def prepare_mixture_spec(base_spec, gas_maps, database, collision_set,
     provenance['library_sha256'] = library_hashes
     report['provenance'] = provenance
     from rmgpy.tools.eedf.n2_vibrational import generate
-    generated = generate(ladder_source_manifest, K=10)
+    generator_manifest = copy.deepcopy(ladder_source_manifest)
+    generator_manifest['D6'] = _diagnostic_d6()
+    generated = generate(generator_manifest, K=10)
     ladder_manifest = json.loads(generated['manifest.json'])
     bindings = [{'source_sha256': row['source']['sha256'],
                  'source_block': row['source_block'],
@@ -540,7 +711,7 @@ def _main(argv=None):
                         for gas, path, digest, library in args.gas_map]
             spec, channels, report, mixture_spec = prepare_mixture_spec(
                 args.base_spec, gas_maps, args.database, args.collision_set,
-                ladder_manifest)
+                ladder_manifest, **optional)
         else:
             if not args.frozen_map or not args.frozen_map_sha256:
                 raise SpecError('legacy conversion requires --frozen-map and --frozen-map-sha256')

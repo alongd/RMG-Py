@@ -290,12 +290,21 @@ def _resolved_properties(spec, coordinates):
 
     fractions = numbers(gas['fraction'])
     populations = numbers(properties.get('population', []), population=True)
+    solver_populations = populations.copy()
+    # Keep source-domain zero populations for accounting while omitting states
+    # outside the solver's declared state table from emitted LoKI properties.
+    for ladder in ladders.values():
+        tail = ladder.get('zero_population_tail', {})
+        for key, value in tail.items():
+            if key in populations or value != 0.:
+                raise SpecError('invalid/duplicate zero-population vibrational tail')
+            populations[key] = 0.
     # patchFractions does not understand signs or exponents. Exact decimal
     # spelling round-trips even tiny fractions without changing their bits.
     gas['fraction'] = [key + ' = ' + format(Decimal.from_float(value), 'f')
                        for key, value in fractions.items()]
     properties['population'] = [key + ' = ' + format(value, '.17g')
-                                for key, value in populations.items()]
+                                for key, value in solver_populations.items()]
     for name in properties.keys() - {'population'}:
         expanded = []
         for entry in properties[name]:
@@ -315,6 +324,8 @@ def _resolved_properties(spec, coordinates):
             declared = {entry.split(' = ', 1)[0]: float(entry.split(' = ', 1)[1])
                         for entry in properties.get(name, [])}
             for level in ladder['levels']:
+                if level['v'] > ladder['K'] and level['loki_state'] in ladder.get('zero_population_tail', {}):
+                    continue
                 if (level['loki_state'] not in populations or
                         declared.get(level['loki_state']) != level[field]):
                     raise SpecError('vibrational population/level property differs from source: ' + name)
@@ -348,7 +359,7 @@ def _channel_fractions(channel_map, gas, populations, coordinates):
         if not match:
             raise SpecError('channel population cannot be resolved from description')
         target = density(match[1])
-        if channel['kind'] in ('excitation', 'vibrational', 'rotational'):
+        if channel['kind'] in ('vibrational', 'rotational') and '<->' in channel['description']:
             product_match = re.fullmatch(r'e \+ (.+)', match[2])
             if not product_match:
                 raise SpecError('superelastic population cannot be resolved')
