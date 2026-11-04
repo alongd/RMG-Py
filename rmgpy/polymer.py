@@ -185,6 +185,43 @@ def _new_polymer():
     return Polymer.__new__(Polymer)
 
 
+def _declared_unit(label, unit_molar_mass, unit_atoms):
+    """(unit_molar_mass [g/mol] or None, unit_atoms ((element, Fraction), ...)
+    sorted, or None) of a pool whose unit is declared, not its monomer graph
+    (I-302).  Both or neither; the mass finite and positive, each element
+    known and its count a positive exact rational (an int, a float or a
+    "p/q" string).  A tuple of pairs is taken as already normalized."""
+    from fractions import Fraction
+    from rmgpy.molecule.element import get_element
+    if unit_molar_mass is None and unit_atoms is None:
+        return None, None
+    if unit_molar_mass is None:
+        raise InputError(f"Polymer '{label}': unit_atoms without unit_molar_mass; declare both or neither.")
+    if unit_atoms is None:
+        raise InputError(f"Polymer '{label}': unit_molar_mass without unit_atoms; declare both or neither.")
+    if isinstance(unit_molar_mass, bool) or not isinstance(unit_molar_mass, (int, float)) \
+            or not math.isfinite(unit_molar_mass) or unit_molar_mass <= 0.0:
+        raise InputError(f"Polymer '{label}': unit_molar_mass={unit_molar_mass!r} must be a finite "
+                         "positive molar mass in g/mol.")
+    items = unit_atoms.items() if isinstance(unit_atoms, Mapping) else unit_atoms
+    atoms = {}
+    try:
+        for element, count in items:
+            get_element(str(element))
+            if isinstance(count, bool):
+                raise ValueError(count)
+            n = Fraction(count) if isinstance(count, (int, Fraction)) else Fraction(str(count))
+            if n <= 0 or str(element) in atoms:
+                raise ValueError(count)
+            atoms[str(element)] = n
+    except Exception as error:
+        raise InputError(f"Polymer '{label}': unit_atoms={unit_atoms!r}: each entry is a known element "
+                         f"and a positive exact count ({error!r}).")
+    if not atoms:
+        raise InputError(f"Polymer '{label}': unit_atoms is empty.")
+    return float(unit_molar_mass), tuple(sorted(atoms.items()))
+
+
 class Polymer(Species):
     """
     A class representing a polymer distribution (Polymer Pool).
@@ -294,8 +331,16 @@ class Polymer(Species):
                  interior_feature: Optional[str] = None,
                  end_class: Optional[str] = None,
                  position_class: Optional[str] = None,
+                 unit_molar_mass: Optional[float] = None,
+                 unit_atoms: Optional[Mapping[str, Any]] = None,
                  **kwargs,
                  ):
+        # unit_molar_mass / unit_atoms (I-302): the pool's unit when it is not
+        # its monomer's graph -- one residue of mean molar mass of a linear
+        # statistical copolymer carried as one pool, whose proxy monomer only
+        # names it.  Both or neither (_declared_unit); without them the unit
+        # is the monomer graph, as before.
+        self.unit_molar_mass, self.unit_atoms = _declared_unit(label, unit_molar_mass, unit_atoms)
         # k_unzip/k_scission/radical_qssa_unzip/k_homolysis/end_radical_site
         # are named parameters, so they never
         # appear in kwargs; assign them directly. discrete_dp_threshold (below) is
@@ -481,7 +526,8 @@ class Polymer(Species):
         self.Mn, self.Mw, self.moments = None, None, None
 
         self.initial_mass_g = initial_mass * 1000.0  # convert to grams
-        self.monomer_mw_g_mol = self.monomer.get_molecular_weight() * 1000.0
+        self.monomer_mw_g_mol = (self.unit_molar_mass if self.unit_molar_mass is not None
+                                 else self.monomer.get_molecular_weight() * 1000.0)
 
         self._baseline_proxy = None
         self._feature_proxy = None
@@ -674,6 +720,10 @@ class Polymer(Species):
                         feat += f'-pos{self.position_class}'
                     if getattr(self, 'end_class', None):
                         feat += f'-class{self.end_class}'
+                if getattr(self, 'unit_molar_mass', None) is not None:
+                    # A declared unit (I-302): two pools on one proxy unit
+                    # (two copolymer compositions) are two pools.
+                    feat += f'_Unit-{self.unit_molar_mass!r}'
                 eg = '_'.join(eg.fingerprint for eg in self.end_groups) if self.end_groups else ''
                 self._fingerprint = f'Polymer_{self.monomer.fingerprint}{feat}_EG-{eg}_{self.cutoff}'
         return self._fingerprint
@@ -967,6 +1017,8 @@ class Polymer(Species):
         other.moments = self.moments
         other.initial_mass_g = self.initial_mass_g
         other.monomer_mw_g_mol = self.monomer_mw_g_mol
+        other.unit_molar_mass = getattr(self, 'unit_molar_mass', None)
+        other.unit_atoms = getattr(self, 'unit_atoms', None)
         other._baseline_proxy = self._baseline_proxy.copy(deep=True) if self._baseline_proxy else None
         other._feature_proxy = self._feature_proxy.copy(deep=True) if self._feature_proxy else None
         other._end_radical_proxy = (self._end_radical_proxy.copy(deep=True)
@@ -1502,6 +1554,8 @@ class Polymer(Species):
                 initial_mass=0.0,
                 end_radical_site=site,
                 **dist_kwargs,
+                unit_molar_mass=getattr(self, 'unit_molar_mass', None),
+                unit_atoms=getattr(self, 'unit_atoms', None),
             )
             daughter.parent_pool_label = self.label
             # Literal pinned as module constant HOMOLYSIS_SPAWN_SOURCE
@@ -1637,6 +1691,8 @@ class Polymer(Species):
                 moments=None,
                 initial_mass=0.0,
                 side_loss_channel=ch['label'],
+                unit_molar_mass=getattr(self, 'unit_molar_mass', None),
+                unit_atoms=getattr(self, 'unit_atoms', None),
             )
             daughter.parent_pool_label = self.label
             daughter.spawn_metadata = {"source": SIDE_GROUP_HOMOLYSIS_SPAWN_SOURCE,
@@ -2472,6 +2528,8 @@ class Polymer(Species):
             Mw=self.Mw,
             moments=None,
             initial_mass=0.0,
+            unit_molar_mass=getattr(self, 'unit_molar_mass', None),
+            unit_atoms=getattr(self, 'unit_atoms', None),
         )
         daughter.parent_pool_label = self.label
         daughter.spawn_metadata = {"source": source}
@@ -2609,6 +2667,8 @@ class Polymer(Species):
             Mw=self.Mw,
             moments=None,
             initial_mass=0.0,
+            unit_molar_mass=getattr(self, 'unit_molar_mass', None),
+            unit_atoms=getattr(self, 'unit_atoms', None),
         )
         daughter.parent_pool_label = self.label
         daughter.spawn_metadata = {"source": CONCERTED_LOSS_SPAWN_SOURCE,
@@ -11044,6 +11104,8 @@ def drain_spawn_intents(
             Mn=parent.Mn,
             Mw=parent.Mw,
             initial_mass=0.001,
+            unit_molar_mass=getattr(parent, 'unit_molar_mass', None),
+            unit_atoms=getattr(parent, 'unit_atoms', None),
         )
         # Override fingerprint so _register_polymer's dedup sees the daughter
         # as distinct from the parent (which shares monomer + end_groups +

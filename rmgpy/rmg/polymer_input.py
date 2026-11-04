@@ -756,6 +756,9 @@ class PolymerPhase(object):
                 continue
 
             monomer_mw = pool.monomer.get_molecular_weight()  # kg/mol
+            if getattr(getattr(pool, "proxy_species", None), "unit_molar_mass", None) is not None:
+                # a declared unit (I-302): its mass, not the proxy monomer graph's
+                monomer_mw = float(pool.proxy_species.unit_molar_mass) / 1000.0
 
             # Calculate explicit contribution to Mu1
             explicit_mu1 = 0.0
@@ -1687,6 +1690,9 @@ class PolymerPool(object):
                 monomer_mw_g_mol = self.monomer.get_molecular_weight() * 1000.0
         except Exception:
             monomer_mw_g_mol = 0.0
+        if getattr(self.proxy_species, "unit_molar_mass", None) is not None:
+            # a declared unit (I-302): its mass, not the proxy monomer graph's
+            monomer_mw_g_mol = float(self.proxy_species.unit_molar_mass)
         # 4b. Monomer heavy-atom (non-H) count -- the SECOND axis of the r89
         #     dual-axis melt gate in the solver's reference-state tripwire
         #     (mirrors rmgpy.polymer._discrete_is_polymer_sized: mass AND
@@ -1726,7 +1732,7 @@ class PolymerPool(object):
             k_depropagation=(None if self.k_depropagation is None else
                              validate_k_depropagation(self.label, self.k_depropagation)),
             depropagation_residue_index=residue_idx,
-            repeat_unit_atoms=_element_count_tuple(self.monomer),
+            repeat_unit_atoms=_repeat_unit_atoms(self.proxy_species, self.monomer),
             end_group_atoms=_end_group_atoms(
                 getattr(self.proxy_species, "end_groups", None)),
         )
@@ -1742,6 +1748,16 @@ def _element_count_tuple(obj):
                             for k, v in mol.get_element_count().items()))
     except Exception:
         return None
+
+
+def _repeat_unit_atoms(pool_species, monomer):
+    """Element counts of one pool unit: the pool's declared unit (I-302,
+    ``Polymer.unit_atoms``: exact rationals) when it has one, else the
+    monomer graph's."""
+    declared = getattr(pool_species, "unit_atoms", None)
+    if declared is not None:
+        return tuple(declared)
+    return _element_count_tuple(monomer)
 
 
 def _end_group_atoms(end_groups):
@@ -2015,7 +2031,7 @@ def derive_daughter_pool_configs(core_species, spc_map, existing_pool_labels,
             # without it. 0.0 on every other daughter class (unchanged).
             chain_mass_defect_g_mol=float(
                 getattr(spc, "chain_mass_defect_g_mol", 0.0) or 0.0),
-            repeat_unit_atoms=_element_count_tuple(getattr(spc, "monomer", None)),
+            repeat_unit_atoms=_repeat_unit_atoms(spc, getattr(spc, "monomer", None)),
             end_group_atoms=_end_group_atoms(getattr(spc, "end_groups", None)),
             # Born empty by design: the solver does not warn that it has no
             # initial conditions. A deck pool configured here keeps False.

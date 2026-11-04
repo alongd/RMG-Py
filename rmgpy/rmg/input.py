@@ -287,6 +287,8 @@ def polymer(label: str,
             position_class: Optional[str] = None,
             kernel_interior_scission: Optional[list] = None,
             depropagation_residue: Optional[Union[Molecule, str]] = None,
+            unit_molar_mass: Optional[float] = None,
+            unit_atoms: Optional[dict] = None,
             ):
     """
     Helper function exposed in the input file to define a Polymer Pool.
@@ -466,6 +468,14 @@ def polymer(label: str,
             drains leaves behind (its end groups, with no unit), registered
             as a core species: the drain credits it one molecule per chain.
             Requires k_depropagation. Default None (the drain is uncredited).
+        unit_molar_mass (float): the molar mass (g/mol) of the pool's unit
+            when it is not ``monomer``'s graph (I-302): one residue of mean
+            molar mass of a linear statistical copolymer carried as one
+            pool, whose ``monomer`` (a proxy unit) only names it. With
+            ``unit_atoms``; default None (the unit is the monomer graph).
+        unit_atoms (dict): {element: count} of that unit, each count a
+            positive exact number (int, float or "p/q" string): the pool's
+            element ledger. With ``unit_molar_mass``.
 
     k_depropagation on an end_radical_site pool runs on that pool (it is
     the radical-end pool); on any other pool it needs k_homolysis, as
@@ -738,6 +748,8 @@ def polymer(label: str,
         interior_feature=interior_feature,
         end_class=end_class,
         position_class=position_class,
+        unit_molar_mass=unit_molar_mass,
+        unit_atoms=unit_atoms,
     )
     poly_obj.kernel_homolysis = kernel_homolysis
     poly_obj.kernel_recombination = kernel_recombination
