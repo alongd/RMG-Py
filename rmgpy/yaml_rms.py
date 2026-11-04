@@ -50,6 +50,7 @@ from rmgpy.kinetics.arrhenius import Arrhenius, PDepArrhenius, MultiArrhenius, M
                                      check_marcus_work_terms_exportable
 from rmgpy.kinetics.falloff import Troe, ThirdBody, Lindemann
 from rmgpy.kinetics.chebyshev import Chebyshev
+from rmgpy.kinetics.kineticsdata import KineticsData
 from rmgpy.data.solvation import SolventData
 from rmgpy.kinetics.surface import StickingCoefficient, SurfaceChargeTransfer
 from rmgpy.util import make_output_subdirectory
@@ -336,6 +337,10 @@ def obj_to_dict(obj, spcs, names=None, label="solvent"):
         viscosity["D"] = float(obj.D)
         viscosity["E"] = float(obj.E)
         result_dict["mu"] = viscosity
+    elif isinstance(obj, KineticsData):
+        raise ValueError(
+            'RMS table kinetics export is unsupported: KineticsData cannot be exported to RMS. '
+            'Set generateRMSYAML=False in options() to turn RMS output off.')
     elif obj is None:
         return None
     else:
