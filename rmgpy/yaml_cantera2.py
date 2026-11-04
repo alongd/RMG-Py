@@ -760,7 +760,13 @@ def reaction_to_dict_list(reaction, species_list=None, duplicate=None):
         n_gas = len(reaction.reactants) - n_surf + max(-reaction.electrons, 0)
         export_reaction = copy(reaction)
         export_reaction.kinetics = fit_kinetics_data_for_export(reaction.kinetics, n_gas, n_surf)
-        return reaction_to_dict_list(export_reaction, species_list, duplicate)
+        entries = reaction_to_dict_list(export_reaction, species_list, duplicate)
+        if isinstance(export_reaction.kinetics, MultiArrhenius):
+            # Expansion serializes leaf kinetics; retain the sum's fit audit
+            # on each emitted entry without mutating either source or leaves.
+            for entry in entries:
+                entry['note'] = entry.get('note', '') + export_reaction.kinetics.comment + '\n'
+        return entries
 
     reaction.check_resolved_species_reversibility()
     # Refuse an unrenderable collider HERE as well as in get_reaction_equation, so the

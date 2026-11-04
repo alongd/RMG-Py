@@ -766,7 +766,7 @@ def _remove_line_breaks(comments):
     """
     comments = comments.replace('\n', ' ')
     new_statement_indicators = ['Reaction index', 'Template reaction', 'Library reaction',
-                                'PDep reaction', 'Flux pairs', 'BM rule fitted to',
+                                'PDep reaction', 'Flux pairs', 'Output-only', 'BM rule fitted to',
                                 'Uncertainty in Total Std:',
                                 'Estimated using', 'Exact match found', 'Average of ',
                                 'Euclidian distance', 'Matched node ', 'Matched reaction ',
@@ -2261,6 +2261,16 @@ def write_kinetics_entry(reaction, species_list, verbose=True, java_library=Fals
         duplicate = reaction.duplicate
     string = ""
 
+    if isinstance(reaction.kinetics, _kinetics.KineticsData):
+        from copy import copy
+        from rmgpy.kinetics.export import fit_kinetics_data_for_export
+        exported = copy(reaction)
+        n_surf = sum(species.contains_surface_site() for species in reaction.reactants)
+        n_gas = len(reaction.reactants) - n_surf + max(-reaction.electrons, 0)
+        exported.kinetics = fit_kinetics_data_for_export(reaction.kinetics, n_gas, n_surf)
+        return write_kinetics_entry(exported, species_list, verbose, java_library,
+                                    commented, duplicate=duplicate)
+
     if isinstance(reaction.kinetics, MULTI_KINETICS_CLASSES):
         if verbose:
             if reaction.kinetics.comment:
@@ -2285,7 +2295,7 @@ def write_kinetics_entry(reaction, species_list, verbose=True, java_library=Fals
                                                reversible=reaction.reversible,
                                                kinetics=kinetics,
                                                library=reaction.library,
-                                               electrons=reaction.electrons
+                                               electrons=reaction.electrons, pairs=reaction.pairs
                                                )
             else:
                 new_reaction = Reaction(index=reaction.index,
@@ -2294,7 +2304,7 @@ def write_kinetics_entry(reaction, species_list, verbose=True, java_library=Fals
                                         specific_collider=reaction.specific_collider,
                                         reversible=reaction.reversible,
                                         kinetics=kinetics,
-                                        electrons=reaction.electrons)
+                                        electrons=reaction.electrons, pairs=reaction.pairs)
             # duplicate=False on the inner call because the DUPLICATE line for a leaf is
             # written here, not by the recursion.
             string += write_kinetics_entry(new_reaction, species_list, verbose, java_library,
@@ -2308,11 +2318,6 @@ def write_kinetics_entry(reaction, species_list, verbose=True, java_library=Fals
         return string + "\n"
 
     kinetics = reaction.kinetics
-    if isinstance(kinetics, _kinetics.KineticsData):
-        from rmgpy.kinetics.export import fit_kinetics_data_for_export
-        n_surf = sum(species.contains_surface_site() for species in reaction.reactants)
-        n_gas = len(reaction.reactants) - n_surf + max(-reaction.electrons, 0)
-        kinetics = fit_kinetics_data_for_export(kinetics, n_gas, n_surf)
 
     # Add to global chemkin reaction count if the kinetics is not a duplicate
     global _chemkin_reaction_count

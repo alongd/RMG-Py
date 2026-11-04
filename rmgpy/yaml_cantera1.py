@@ -490,12 +490,15 @@ def reaction_to_dicts(obj, spcs, duplicate=None):
 
     obj.check_resolved_species_reversibility()
 
-    kinetics_for_comment = obj.kinetics
-    if isinstance(kinetics_for_comment, KineticsData):
+    if isinstance(obj.kinetics, KineticsData):
+        from copy import copy
         from rmgpy.kinetics.export import fit_kinetics_data_for_export
         n_surf = sum(species.contains_surface_site() for species in obj.reactants)
         n_gas = len(obj.reactants) - n_surf + max(-obj.electrons, 0)
-        kinetics_for_comment = fit_kinetics_data_for_export(kinetics_for_comment, n_gas, n_surf)
+        exported = copy(obj)
+        exported.kinetics = fit_kinetics_data_for_export(obj.kinetics, n_gas, n_surf)
+        obj = exported
+    kinetics_for_comment = obj.kinetics
 
     spcs = _cantera_declarations(spcs)
     validate_reaction_references([obj], spcs)
