@@ -329,13 +329,38 @@ def _upgrade_frozen_map(frozen, gas, spec):
 def _diagnostic_d6(policy=None):
     diagnostic = {'set_by': 'diagnostic', 'top_fraction_limit': .05,
                   'top_leak_share_limit': .05, 'K_step': 5, 'status': 'diagnostic'}
-    if policy is not None and any(policy.get(key) != value for key, value in diagnostic.items()):
-        # The source manifest's explicit unset owner placeholders are not limits.
-        if (policy.get('set_by') != 'owner'
-                or policy.get('top_fraction_limit') is not None
-                or policy.get('top_leak_share_limit') is not None):
+    if policy is not None:
+        if not isinstance(policy, dict):
+            raise SpecError('diagnostic D6 conflicts with supplied policy')
+        if policy.get('set_by') == 'owner':
+            if (policy.get('top_fraction_limit') is None
+                    and policy.get('top_leak_share_limit') is None):
+                from rmgpy.tools.eedf.n2_vibrational import LadderError, _policy
+                try:
+                    _policy(policy, allow_unset=True)
+                except LadderError as error:
+                    raise SpecError('diagnostic D6 conflicts with supplied policy') from error
+            else:
+                try:
+                    _owner_d6(policy)
+                except SpecError as error:
+                    raise SpecError('diagnostic D6 conflicts with supplied policy') from error
+        elif any(policy.get(key) != value for key, value in diagnostic.items()):
             raise SpecError('diagnostic D6 conflicts with supplied policy')
     return diagnostic
+
+
+def _owner_d6(policy):
+    if (not isinstance(policy, dict) or policy.get('set_by') != 'owner'
+            or not isinstance(policy.get('owner_decision'), str)
+            or not policy['owner_decision'].strip()):
+        raise SpecError('production mixture requires a complete owner-set D6 policy')
+    from rmgpy.tools.eedf.n2_vibrational import LadderError, _policy
+    try:
+        _policy(policy)
+    except LadderError as error:
+        raise SpecError('production mixture has an invalid owner-set D6 policy') from error
+    return copy.deepcopy(policy)
 
 
 def _branch_family(row, library, collision_set, cascade_yields):
@@ -754,7 +779,7 @@ def _build_declared_mixture_spec(spec, ladder, gas_maps, composition, tv_axis, t
 def build_mixture_spec(base_spec, ladder_manifest, bindings, *,
                        composition_axis='x_N2', tv_axis='Tv_K',
                        composition_values=(0., .5, 1.), tv_values=(1000., 2000.),
-                       gas_maps=None, composition=None):
+                       gas_maps=None, composition=None, production=False):
     """Add explicit Ar/N2 composition and a coupled N2(X,v) Tv ladder."""
     from rmgpy.tools.eedf.vibrational import ladder_coupling
     spec = copy.deepcopy(base_spec)
@@ -769,8 +794,10 @@ def build_mixture_spec(base_spec, ladder_manifest, bindings, *,
             or sorted(set(composition_values)) != list(composition_values)
             or min(tv_values) <= 0 or sorted(set(tv_values)) != list(tv_values)):
         raise SpecError('mixture composition and Tv axes must be ordered physical values')
+    d6_policy = (_owner_d6(ladder_manifest.get('D6')) if production else
+                 _diagnostic_d6(ladder_manifest.get('D6')))
     ladder = ladder_coupling(ladder_manifest, bindings, axis=tv_axis,
-                             parent='N2(X)', d6_policy=_diagnostic_d6(ladder_manifest.get('D6')))
+                             parent='N2(X)', d6_policy=d6_policy)
     domain = ladder.get('source_domain')
     if domain != {'initial_levels': list(range(30)), 'final_v': 58}:
         raise SpecError('N2 ladder must retain source domain initial v=0..29, final v=0..58')
@@ -809,9 +836,11 @@ def prepare_mixture_spec(base_spec, gas_maps, database, collision_set,
                          ladder_source_manifest, *, cascade_yields=None,
                          composition=None, tv_axis='Tv_K', tv_values=(1000., 2000.),
                          yield_table=None, radiative_source=None,
-                         yield_table_sha256=None, source_sha256=None):
+                         yield_table_sha256=None, source_sha256=None,
+                         production=False):
     """Prepare a multi-gas conversion from explicit (gas, map, hash, library) inputs."""
-    d6_policy = _diagnostic_d6(ladder_source_manifest.get('D6'))
+    d6_policy = (_owner_d6(ladder_source_manifest.get('D6')) if production else
+                 _diagnostic_d6(ladder_source_manifest.get('D6')))
     spec = load_spec(base_spec)
     if not isinstance(gas_maps, (list, tuple)) or len(gas_maps) < 2:
         raise SpecError('mixture conversion requires at least two gas maps')
@@ -843,7 +872,7 @@ def prepare_mixture_spec(base_spec, gas_maps, database, collision_set,
     from rmgpy.tools.eedf.n2_vibrational import generate
     generator_manifest = copy.deepcopy(ladder_source_manifest)
     generator_manifest['D6'] = d6_policy
-    generated = generate(generator_manifest, K=10, production=False)
+    generated = generate(generator_manifest, K=10, production=production)
     ladder_manifest = json.loads(generated['manifest.json'])
     bindings = [{'source_sha256': row['source']['sha256'],
                  'source_block': row['source_block'],
@@ -855,7 +884,8 @@ def prepare_mixture_spec(base_spec, gas_maps, database, collision_set,
     if composition is not None:
         ladder_spec = build_mixture_spec(spec, ladder_manifest, bindings,
                                          gas_maps=frozen_by_gas, composition=composition,
-                                         tv_axis=tv_axis, tv_values=tv_values)
+                                         tv_axis=tv_axis, tv_values=tv_values,
+                                         production=production)
         conversion_source = ladder_spec
     with tempfile.TemporaryDirectory(prefix='eedf-map-') as directory:
         scratch = Path(directory)
@@ -921,7 +951,8 @@ def prepare_mixture_spec(base_spec, gas_maps, database, collision_set,
     provenance['library_sha256'] = library_hashes
     report['provenance'] = provenance
     if ladder_spec is None:
-        ladder_spec = build_mixture_spec(spec, ladder_manifest, bindings)
+        ladder_spec = build_mixture_spec(spec, ladder_manifest, bindings,
+                                         production=production)
     if generated_input_files:
         ladder_spec['_generated_input_files'] = generated_input_files
     return spec, converted, report, ladder_spec
@@ -978,6 +1009,8 @@ def _main(argv=None):
         parser.add_argument('--' + option)
     parser.add_argument('--gas-map', nargs=4, action='append', metavar=('GAS', 'PATH', 'SHA256', 'LIBRARY'))
     parser.add_argument('--ladder-manifest')
+    parser.add_argument('--production', action='store_true',
+                        help='require the source manifest owner D6 policy')
     for option in ('database', 'collision-set', 'output-directory'):
         parser.add_argument('--' + option, required=True)
     for option in ('yield-table', 'radiative-source', 'yield-table-sha256', 'source-sha256'):
@@ -998,7 +1031,7 @@ def _main(argv=None):
                         for gas, path, digest, library in args.gas_map]
             spec, channels, report, mixture_spec = prepare_mixture_spec(
                 args.base_spec, gas_maps, args.database, args.collision_set,
-                ladder_manifest, **optional)
+                ladder_manifest, production=args.production, **optional)
         else:
             if not args.frozen_map or not args.frozen_map_sha256:
                 raise SpecError('legacy conversion requires --frozen-map and --frozen-map-sha256')

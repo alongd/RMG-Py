@@ -396,8 +396,9 @@ def test_gas_map_species_supplies_missing_loki_particle_mass():
     assert mass == pytest.approx(.030006258748471737 / 6.02214076e23)
 
 
+@pytest.mark.parametrize('production', [False, True])
 def test_prepare_mixture_spec_uses_real_59_level_source_manifest(
-        conversion_inputs, tmp_path, monkeypatch):
+        conversion_inputs, tmp_path, monkeypatch, production):
     import importlib.util
     from rmgpy.tools.eedf.integrity import _resolved_properties
     database = os.environ.get('EEDF_DATABASE_ROOT')
@@ -429,9 +430,16 @@ def test_prepare_mixture_spec_uses_real_59_level_source_manifest(
         map_paths.append({'gas': gas, 'path': str(path), 'sha256': _file_hash(path),
                           'library': label})
     prepared, converted, conversion_report, mixture = adapter.prepare_mixture_spec(
-        'unused', map_paths, database, 'mix-Ar-N2', manifest)
+        'unused', map_paths, database, 'mix-Ar-N2', manifest,
+        production=production)
     assert len(mixture['vibrational_ladders'][0]['levels']) == 59
     assert mixture['vibrational_ladders'][0]['K'] == 10
+    if production:
+        ladder_policy = mixture['vibrational_ladders'][0]['D6']
+        assert all(ladder_policy[key] == value
+                   for key, value in manifest['D6'].items())
+    else:
+        assert mixture['vibrational_ladders'][0]['D6']['set_by'] == 'diagnostic'
     assert 'N2(X,v=58)' in mixture['vibrational_ladders'][0]['zero_population_tail']
     assert 'N2(X,v=58) = 0' not in mixture['state_properties']['population']
     mixture.update(working_conditions={}, solver_options={}, Tg_K=300., P_Pa=101325.)
