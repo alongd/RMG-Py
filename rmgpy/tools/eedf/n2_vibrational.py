@@ -53,9 +53,9 @@ class LadderError(ValueError):
 class MissingPairsError(LadderError):
     """A declared source domain has uncovered upward pairs."""
 
-    def __init__(self, pairs):
+    def __init__(self, pairs, molecule='N2'):
         self.pairs = tuple(pairs)
-        super().__init__('missing N2 source pairs: ' + ', '.join(
+        super().__init__(f'missing {molecule} source pairs: ' + ', '.join(
             f'({i},{j})' for i, j in self.pairs))
 
 
@@ -97,7 +97,7 @@ def _pin(pin):
         raise LadderError(f'unreadable archive member {member!r}: {path}') from exc
 
 
-def read_cross_sections(pin):
+def read_cross_sections(pin, molecule='N2'):
     """Parse upward/diagonal LXCat Laporta N2 blocks, returning references.
 
     The one-based block index counts EXCITATION blocks. Unsupported identities,
@@ -105,6 +105,47 @@ def read_cross_sections(pin):
     weights for detailed balance come from the explicit spectroscopy record.
     """
     lines = _pin(pin).decode('utf-8').splitlines()
+    if molecule == 'O2':
+        text = '\n'.join(lines)
+        result = []
+        for block in re.split(r'(?m)(?=^PROCESS:\s*)', text):
+            process = re.search(r'(?m)^PROCESS:\s*E \+ Oxygen <-> E \+ O2 \(v=(\d+)-(?:v=)?(\d+)\), Vibrational\s*$', block)
+            if process is None:
+                continue
+            lower, upper = map(int, process.groups())
+            parameter = re.search(r'(?m)^PARAM\.:\s*E\s*=\s*([0-9.eE+-]+)\s*eV,\s*g1/g0\s*=\s*([0-9.eE+-]+)', block)
+            if parameter is None:
+                raise LadderError('missing sourced O2 excitation threshold or weight ratio')
+            threshold, weight_ratio = map(float, parameter.groups())
+            _number(threshold, 'O2 source threshold')
+            if weight_ratio != 1.0:
+                raise LadderError('unsupported O2 source statistical-weight ratio')
+            if upper <= lower:
+                raise LadderError('O2 source pairs must be strictly upward')
+            grid = re.search(r'(?m)^-{5,}\s*\n(.*?)\n-{5,}\s*$', block, re.S)
+            if grid is None:
+                raise LadderError('missing O2 cross-section grid')
+            # Keep this as a source-domain parser: one IST block has its threshold
+            # row before lower-energy zero rows, and the ladder never consumes grid order.
+            count = 0
+            for row in grid.group(1).splitlines():
+                fields = row.split()
+                if len(fields) != 2:
+                    raise LadderError('malformed O2 cross-section row')
+                energy, sigma = map(float, fields)
+                _number(energy, 'O2 cross-section energy')
+                _number(sigma, 'O2 cross section')
+                count += 1
+            if count < 2:
+                raise LadderError('incomplete O2 cross-section grid')
+            result.append({'initial_v': lower, 'final_v': upper,
+                           'threshold_eV': threshold, 'source_block': len(result) + 1,
+                           'source': dict(pin)})
+        if not result:
+            raise LadderError('no O2 cross-section blocks')
+        return result
+    if molecule != 'N2':
+        raise LadderError(f'unsupported vibrational molecule: {molecule}')
     result = []
     position = 0
     while position < len(lines):
@@ -153,7 +194,8 @@ def read_cross_sections(pin):
     return result
 
 
-def require_complete_pairs(sections, upper_v=None, *, initial_levels=None, final_v=None):
+def require_complete_pairs(sections, upper_v=None, *, initial_levels=None, final_v=None,
+                           molecule='N2'):
     """Require every upward pair for covered initial levels through ``final_v``.
 
     The legacy ``upper_v`` form means initial and final levels are both 0..upper_v.
@@ -186,7 +228,7 @@ def require_complete_pairs(sections, upper_v=None, *, initial_levels=None, final
     missing = [(i, j) for i in checked_initials
                for j in range(i + 1, final_v + 1) if (i, j) not in pairs]
     if missing:
-        raise MissingPairsError(missing)
+        raise MissingPairsError(missing, molecule=molecule)
 
 
 def _policy(policy, allow_unset=False, allow_diagnostic=False):
@@ -237,11 +279,26 @@ def assess_truncation(K, populations, forward_vibrational_power, top_leak_power,
             'top_fraction': fraction, 'top_leak_share': share, 'exceeded': reasons}
 
 
-def _adjacency(v):
-    return f'vibrationallevel {v}\n' + N2_GRAPH
+def _molecule_config(molecule):
+    if molecule == 'N2':
+        return {'species': 'N2', 'formula': '14N2', 'electronic_state': 'X1Sigma_g+',
+                'graph': N2_GRAPH, 'thermo_library': 'N2Vibrational'}
+    if molecule == 'O2':
+        return {'species': 'O2', 'formula': '16O2', 'electronic_state': 'X3Sigma_g-',
+                'graph': '1 O u1 p2 c0 {2,S}\n2 O u1 p2 c0 {1,S}\n',
+                'thermo_library': 'O2Vibrational'}
+    raise LadderError(f'unsupported vibrational molecule: {molecule}')
 
 
-def _validate_thermo(data, levels, K):
+def _adjacency(v, molecule='N2'):
+    config = _molecule_config(molecule)
+    if molecule == 'N2':
+        return f'vibrationallevel {v}\n' + config['graph']
+    tag = f'vibrationallevel {v}\n' if v else ''
+    return 'multiplicity 3\n' + tag + config['graph']
+
+
+def _validate_thermo(data, levels, K, molecule='N2'):
     """Load the pinned library snapshot and require exact X-state fixed-v entries."""
     from rmgpy.data.thermo import ThermoDatabase, ThermoLibrary
     from rmgpy.molecule.molecule import Molecule
@@ -249,7 +306,8 @@ def _validate_thermo(data, levels, K):
     from rmgpy.thermo import NASA, ThermoData, Wilhoit
 
     database = ThermoDatabase()
-    library = ThermoLibrary(label='N2Vibrational')
+    config = _molecule_config(molecule)
+    library = ThermoLibrary(label=config['thermo_library'])
     with tempfile.TemporaryDirectory() as directory:
         path = Path(directory) / 'thermo.py'
         path.write_bytes(data)
@@ -257,24 +315,29 @@ def _validate_thermo(data, levels, K):
     for v in range(K + 1):
         label = levels[v]['thermo_entry']
         entry = library.entries.get(label)
-        expected = Molecule().from_adjacency_list(_adjacency(v))
+        adjacency = _adjacency(v, molecule)
+        if molecule == 'O2' and v == 0:
+            # The library's O2v0 entry is only a fixed-thermo reference;
+            # the emitted model and adapter use plain O2 for ground v=0.
+            adjacency = 'multiplicity 3\nvibrationallevel 0\n' + config['graph']
+        expected = Molecule().from_adjacency_list(adjacency)
         if entry is None or entry.data is None or not entry.item.is_isomorphic(expected):
-            raise LadderError(f'missing exact library thermo for N2(X,v={v}): {label}')
+            raise LadderError(f'missing exact library thermo for {molecule}(X,v={v}): {label}')
         if not isinstance(entry.data, (NASA, Wilhoit, ThermoData)):
-            raise LadderError(f'unsupported library thermo for N2(X,v={v}): {label}')
+            raise LadderError(f'unsupported library thermo for {molecule}(X,v={v}): {label}')
         # Exercise the same exact lookup as the emitted library's consumer,
         # without entering get_thermo_data's estimation fallback.
         try:
             match = database.get_thermo_data_from_library(
                 Species(molecule=[expected]), library)
         except Exception as exc:
-            raise LadderError(f'unusable library thermo for N2(X,v={v}): {label}') from exc
+            raise LadderError(f'unusable library thermo for {molecule}(X,v={v}): {label}') from exc
         if (match is None or match[2] is not entry
                 or not isinstance(match[0], (NASA, Wilhoit, ThermoData))):
-            raise LadderError(f'missing exact library thermo for N2(X,v={v}): {label}')
+            raise LadderError(f'missing exact library thermo for {molecule}(X,v={v}): {label}')
 
 
-def generate(manifest, K=10, production=True):
+def generate(manifest, K=10, production=True, molecule='N2'):
     """Return deterministic artifact bytes after validating all input snapshots.
 
     ``manifest`` is a decoded JSON object. ``production=False`` permits unset
@@ -282,9 +345,15 @@ def generate(manifest, K=10, production=True):
     Output consists of manifest.json, input.py and an unchanged thermo.py library
     snapshot. The deck is a loadable species/manifold fragment, not a reactor run.
     """
+    config = _molecule_config(molecule)
+    expected_schema = f'{molecule.lower()}-vibrational-source-v1'
+    if manifest.get('schema') != expected_schema:
+        raise LadderError(f'unsupported {molecule} source schema')
+    declared_domain = manifest.get('source_domain')
+    if (molecule == 'O2' and isinstance(declared_domain, dict) and type(K) is int and K >= 0
+            and K not in declared_domain.get('initial_levels', [])):
+        raise LadderError(f'requested K={K} requires uncovered initial v={K}')
     _integer(K, 'K', 1, 30)
-    if manifest.get('schema') != 'n2-vibrational-source-v1':
-        raise LadderError('unsupported N2 source schema')
     if not isinstance(manifest.get('D6'), dict):
         raise LadderError('D6 policy must be an object')
     _policy(manifest['D6'], allow_unset=not production, allow_diagnostic=not production)
@@ -295,9 +364,10 @@ def generate(manifest, K=10, production=True):
         raise LadderError('each cross-section source pin must be an object')
     level_pin = manifest['level_source']
     spectroscopy = json.loads(_pin(level_pin))
-    if (spectroscopy.get('molecule') != '14N2' or spectroscopy.get('electronic_state') != 'X1Sigma_g+'
+    if (spectroscopy.get('molecule') != config['formula']
+            or spectroscopy.get('electronic_state') != config['electronic_state']
             or spectroscopy.get('energy_unit') != 'eV' or spectroscopy.get('energy_zero') != 'v=0'):
-        raise LadderError('require explicit 14N2 X1Sigma_g+ term energies in eV relative to v=0')
+        raise LadderError(f"require explicit {config['formula']} {config['electronic_state']} term energies in eV relative to v=0")
     levels = spectroscopy['levels']
     if not isinstance(levels, list) or len(levels) < K + 1:
         raise LadderError('level source does not cover K')
@@ -341,7 +411,8 @@ def generate(manifest, K=10, production=True):
         if v > K and level.get('thermo_entry') is not None and not isinstance(level['thermo_entry'], str):
             raise LadderError(f'invalid thermo entry label for source-only level v={v}')
         previous = energy
-    sections = [section for pin in cross_section_pins for section in read_cross_sections(pin)]
+    sections = [section for pin in cross_section_pins
+                for section in read_cross_sections(pin, molecule=molecule)]
     assignments = manifest.get('source_assignments')
     if legacy:
         assignments = {str(v): None for v in initial_levels}
@@ -365,7 +436,8 @@ def generate(manifest, K=10, production=True):
     uncovered = [v for v in required_initials if str(v) not in assignments]
     if uncovered:
         raise LadderError(f'requested K={K} requires uncovered initial v={uncovered[0]}')
-    require_complete_pairs(sections, initial_levels=initial_levels, final_v=final_v)
+    require_complete_pairs(sections, initial_levels=initial_levels, final_v=final_v,
+                           molecule=molecule)
     tolerance = _number(manifest['energy_tolerance_eV'], 'energy tolerance')
     for section in sections:
         i, j = section['initial_v'], section['final_v']
@@ -373,16 +445,16 @@ def generate(manifest, K=10, production=True):
         if abs(section['threshold_eV'] - gap) > tolerance:
             raise LadderError(f'sourced threshold disagrees with term energies for ({i},{j})')
     thermo_data = _pin(manifest['thermo_library'])
-    _validate_thermo(thermo_data, levels, K)
-    retained = [{'v': v, 'label': 'N2' if v == 0 else f'N2v{v}',
-                 'adjacency_list': _adjacency(v), **levels[v],
+    _validate_thermo(thermo_data, levels, K, molecule=molecule)
+    retained = [{'v': v, 'label': config['species'] if v == 0 else f'{config["species"]}v{v}',
+                 'adjacency_list': _adjacency(v, molecule), **levels[v],
                  'provenance': dict(level_pin),
                  'thermo': {**manifest['thermo_library'], 'entry': levels[v]['thermo_entry']}}
                 for v in range(K + 1)]
     audit, channels, ledger = [], [], []
     for pair_index, section in enumerate(sorted(sections, key=lambda x: (x['initial_v'], x['final_v']))):
         i, j = section['initial_v'], section['final_v']
-        pair_id = f'N2:v{i}-v{j}'
+        pair_id = f'{config["species"]}:v{i}-v{j}'
         record = dict(section, source_pair_index=pair_index, pair_id=pair_id)
         if i > K:
             status = 'unresolved_initial_above_K'
@@ -425,13 +497,13 @@ def generate(manifest, K=10, production=True):
                                                   levels[i]['statistical_weight'] / levels[j]['statistical_weight']}))
     ready = all(manifest['D6'].get(key) is not None
                 for key in ('top_fraction_limit', 'top_leak_share_limit'))
-    output = {'schema': 'n2-vibrational-ladder-v1', 'K': K, 'source_upper_v': final_v,
+    output = {'schema': f'{molecule.lower()}-vibrational-ladder-v1', 'K': K, 'source_upper_v': final_v,
               'source_complete': True, 'production_manifest': production and ready,
               'runtime_ready': False,
-              'runtime_requirements': (['qualified EEDF hierarchical N2(X,v) selectors',
+              'runtime_requirements': ([f'qualified EEDF hierarchical {molecule}(X,v) selectors',
                                         'coupling executes D6 regeneration before accepting a run'] if legacy else
                                        ['coupling automatically executes D6 regeneration before accepting a run',
-                                        'physical Ar+N2 arm qualification requires complete channel maps and class-A owners in their configured per-gas libraries']),
+                                        f'physical Ar+{molecule} arm qualification requires complete channel maps and class-A owners in their configured per-gas libraries']),
               'D6': dict(manifest['D6'], maximum_K=30, top_v=K,
                          evaluator='rmgpy.tools.eedf.n2_vibrational.assess_truncation',
                          power_denominator='gross forward vibrational electron power'),
@@ -442,13 +514,16 @@ def generate(manifest, K=10, production=True):
     if not legacy:
         output['source_initial_levels'] = initial_levels
         output['source_domain'] = {'initial_levels': initial_levels, 'final_v': final_v}
-    deck = ["# Species/manifold fragment. Install the supplied thermo.py as N2Vibrational.",
+    deck = [f"# Species/manifold fragment. Install the supplied thermo.py as {config['thermo_library']}.",
             "# Electron mappings and D6 execution require the separate coupling layer.",
-            "database(thermoLibraries=['N2Vibrational'], kineticsFamilies='none')",
-            "species(label='N2', structure=SMILES('N#N'))"]
+            f"database(thermoLibraries=['{config['thermo_library']}'], kineticsFamilies='none')"]
+    if molecule == 'N2':
+        deck.append("species(label='N2', structure=SMILES('N#N'))")
+    else:
+        deck.append(f"species(label='O2', structure=adjacencyList({_adjacency(0, molecule)!r}))")
     for v in range(1, K + 1):
-        deck.append(f'species(label="N2v{v}", structure=adjacencyList({_adjacency(v)!r}))')
-    deck.extend(["vibrationalManifold(species='N2')", 'simulator(atol=1e-16, rtol=1e-8)',
+        deck.append(f'species(label="{config["species"]}v{v}", structure=adjacencyList({_adjacency(v, molecule)!r}))')
+    deck.extend([f"vibrationalManifold(species='{config['species']}')", 'simulator(atol=1e-16, rtol=1e-8)',
                  'model(toleranceMoveToCore=0.1, toleranceInterruptSimulation=1.0)'])
     return {'manifest.json': (json.dumps(output, sort_keys=True, indent=2, allow_nan=False) + '\n').encode(),
             'input.py': ('\n'.join(deck) + '\n').encode(), 'thermo.py': thermo_data}

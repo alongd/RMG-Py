@@ -135,7 +135,8 @@ def ladder_coupling(manifest, bindings, *, axis, parent, d6_policy=None):
     for v, level in enumerate(source_levels):
         if v <= manifest['K']:
             molecule = Molecule().from_adjacency_list(states[v]['adjacency_list'])
-            if (molecule.get_formula() != formula or molecule.vibrational_level != v
+            level_matches = molecule.vibrational_level == v or (v == 0 and molecule.vibrational_level == -1)
+            if (molecule.get_formula() != formula or not level_matches
                     or molecule.electronic_state != ground.electronic_state
                     or molecule.multiplicity != ground.multiplicity
                     or any(states[v][key] != level[key]
@@ -272,7 +273,8 @@ def resolve_levels(ladder, species):
         for index, spc in enumerate(species):
             if not spc.molecule or spc.get_net_charge() != 0:
                 continue
-            identities = {(m.get_formula(), m.electronic_state, m.vibrational_level, m.multiplicity)
+            identities = {(m.get_formula(), m.electronic_state,
+                           0 if m.vibrational_level == -1 else m.vibrational_level, m.multiplicity)
                           for m in spc.molecule}
             expected = (level['formula'], level['electronic_state'], level['v'], level['multiplicity'])
             if identities == {expected}:

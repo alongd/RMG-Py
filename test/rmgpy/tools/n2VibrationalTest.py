@@ -30,6 +30,7 @@
 """Synthetic source/thermo inputs are generated in scratch, never physical data."""
 import copy
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -252,6 +253,51 @@ def test_initial_coverage_is_separate_from_final_domain(tmp_path):
         require_complete_pairs(sections[:-1], initial_levels=initials, final_v=final_v)
     with pytest.raises(LadderError, match='outside declared domain'):
         require_complete_pairs(sections, initial_levels=initials, final_v=57)
+
+
+def test_o2_source_parser_accepts_both_pair_label_spellings(tmp_path):
+    blocks = []
+    for label, threshold in [('v=7-v=18', 1.733), ('v=7-19', 1.873)]:
+        blocks.append(f'''VIBRATIONAL
+SPECIES: e / Oxygen
+PROCESS: E + Oxygen <-> E + O2 ({label}), Vibrational
+PARAM.:  E = {threshold} eV, g1/g0 = 1
+COMMENT: Test formatting only
+COLUMNS: Energy (eV) | Cross section (m2)
+-----------------------------
+ {threshold:.6e} 0.000000e+00
+ {threshold + 0.01:.6e} 1.000000e-24
+-----------------------------
+''')
+    path = tmp_path / 'ist-o2-format.txt'
+    path.write_text('\n'.join(blocks))
+    module_path = Path(__file__).resolve().parents[3] / 'rmgpy/tools/eedf/n2_vibrational.py'
+    spec = importlib.util.spec_from_file_location('n2_vibrational_o2_parser_test', module_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    parsed = module.read_cross_sections(pin(path), molecule='O2')
+    assert [(record['initial_v'], record['final_v']) for record in parsed] == [(7, 18), (7, 19)]
+    assert [record['threshold_eV'] for record in parsed] == [1.733, 1.873]
+    supplied = [{'initial_v': 7, 'final_v': final} for final in range(8, 18)]
+    supplied.append(parsed[0])
+    with pytest.raises(module.MissingPairsError) as refusal:
+        module.require_complete_pairs(supplied, initial_levels=[7], final_v=19, molecule='O2')
+    assert refusal.value.pairs == ((7, 19),)
+
+
+def test_generalized_generator_preserves_n2_legacy_artifact_digest(source, tmp_path):
+    module_path = Path(__file__).resolve().parents[3] / 'rmgpy/tools/eedf/n2_vibrational.py'
+    spec = importlib.util.spec_from_file_location('n2_vibrational_compatibility_test', module_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    source.pop('source_domain')
+    source.pop('source_assignments')
+    for source_pin in source['cross_sections']:
+        source_pin.pop('source_id')
+    artifact = module.generate(source, K=10)['manifest.json']
+    normalized = artifact.replace(str(tmp_path).encode(), b'<fixture>')
+    assert hashlib.sha256(normalized).hexdigest() == (
+        '9f806447cfc000589a2842fee961c19b69734411a5861cb91f5f0cf02903537f')
 
 
 def test_archive_member_uses_hash_of_original_snapshot(tmp_path):
