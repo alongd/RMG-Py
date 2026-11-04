@@ -104,6 +104,11 @@ def test_converts_complete_map_without_mutating_history(conversion_inputs, tmp_p
     assert output == json.loads((destination / 'pure-ar-spec.json').read_text())
 
 
+def test_owner_problem_keeps_single_library_call_compatibility(conversion_inputs):
+    _, frozen, library = conversion_inputs
+    assert adapter._owner_problem(frozen['channels'][0], library) is None
+
+
 def _two_gas_fixture(conversion_inputs, tmp_path):
     spec, ar_map, ar_library = conversion_inputs
     spec = copy.deepcopy(spec)
@@ -171,6 +176,68 @@ def test_multigas_conversion_uses_each_configured_owner_library(conversion_input
     assert published['channel_map']['sha256'] == _file_hash(destination / 'channel-map.json')
     assert published['axes']['Tv_K'] == [1000., 2000.]
     assert not (destination / 'pure-ar-spec.json').exists()
+    from rmgpy.tools.eedf.integrity import _resolved_properties
+    _, _, fractions, populations = _resolved_properties(
+        published, {'x_N2': .25, 'Tv_K': 1000.})
+    assert fractions == {'Ar': .75, 'N2': .25}
+    assert populations['N2(X,v=0)'] + populations['N2(X,v=1)'] == pytest.approx(1.)
+
+
+def test_prepare_mixture_spec_uses_real_59_level_source_manifest(
+        conversion_inputs, tmp_path, monkeypatch):
+    import importlib.util
+    from rmgpy.tools.eedf.integrity import _resolved_properties
+    database = os.environ.get('EEDF_DATABASE_ROOT')
+    if not database:
+        pytest.skip('requires EEDF_DATABASE_ROOT for sourced N2 ladder')
+    checker_path = Path(database) / 'scripts/check_n2_vibrational_data.py'
+    source = importlib.util.spec_from_file_location('i369_n2_checker', checker_path)
+    checker = importlib.util.module_from_spec(source)
+    source.loader.exec_module(checker)
+    data_root = os.environ.get('EEDF_DATA_ROOT')
+    if not data_root:
+        pytest.skip('requires EEDF_DATA_ROOT for sourced N2 cross sections')
+    manifest = checker.resolve_generator_manifest(data_root)
+
+    spec, ar_map, n2_map, libraries = _two_gas_fixture(conversion_inputs, tmp_path)
+    monkeypatch.setattr(adapter, 'load_spec', lambda _: copy.deepcopy(spec))
+    monkeypatch.setattr(adapter, '_load_library',
+                        lambda _, __, label: (libraries[label], {'fixture': label}))
+    channels = json.loads(Path(spec['channel_map']['path']).read_text())
+    report = {'outcome': 'converted', 'selected_channel_count': len(channels),
+              'missing_owners': [], 'shared_owners': [], 'branch_families': []}
+    monkeypatch.setattr(adapter, 'convert_channel_maps',
+                        lambda *args: (channels, copy.deepcopy(report)))
+    map_paths = []
+    for gas, frozen, label in (('Ar', ar_map, 'PlasmaArgon'),
+                               ('N2', n2_map, 'PlasmaNitrogen')):
+        path = tmp_path / f'{gas}-map.yaml'
+        path.write_text(yaml.safe_dump(frozen))
+        map_paths.append({'gas': gas, 'path': str(path), 'sha256': _file_hash(path),
+                          'library': label})
+    prepared, converted, conversion_report, mixture = adapter.prepare_mixture_spec(
+        'unused', map_paths, database, 'mix-Ar-N2', manifest)
+    assert len(mixture['vibrational_ladders'][0]['levels']) == 59
+    assert mixture['vibrational_ladders'][0]['K'] == 10
+    assert 'N2(X,v=58)' in mixture['vibrational_ladders'][0]['zero_population_tail']
+    assert 'N2(X,v=58) = 0' not in mixture['state_properties']['population']
+    mixture.update(working_conditions={}, solver_options={}, Tg_K=300., P_Pa=101325.)
+    from rmgpy.tools.eedf.loki import _setup_text
+    setup = yaml.safe_load(_setup_text(
+        mixture, {'x_N2': .25, 'Tv_K': 1000.}, [5.], 'test-output'))
+    for field in ('population', 'energy', 'statisticalWeight'):
+        entries = setup['electronKinetics']['stateProperties'][field]
+        names = [entry.split(' = ', 1)[0] for entry in entries]
+        assert not any(name.startswith('N2(X,v=') and
+                       int(name.rsplit('=', 1)[1][:-1]) > 10 for name in names)
+    destination = tmp_path / 'real-ladder-mixture'
+    adapter._write_outputs(destination, conversion_report, prepared, converted, mixture)
+    published = json.loads((destination / 'ar-n2-spec.json').read_text())
+    _, _, fractions, populations = _resolved_properties(
+        published, {'x_N2': .25, 'Tv_K': 1000.})
+    assert fractions == {'Ar': .75, 'N2': .25}
+    assert len(populations) == 61
+    assert all(populations[f'N2(X,v={v})'] == 0 for v in range(11, 59))
 
 
 @pytest.mark.parametrize('failure', ['wrong_library', 'missing_owner', 'cross_gas_duplicate'])
@@ -189,6 +256,135 @@ def test_multigas_owner_failures_refuse(conversion_inputs, tmp_path, failure):
         adapter.convert_channel_maps(
             spec, {'Ar': ar_map, 'N2': n2_map}, libraries, 'mix-Ar-N2',
             library_by_gas={'Ar': 'PlasmaArgon', 'N2': owner_library})
+
+
+@pytest.mark.parametrize('problem', ['normal', 'swapped_libraries', 'undeclared_map',
+                                     'target_map_mismatch', 'missing_gas_map'])
+def test_mixture_binds_physical_gases_to_maps_and_libraries(
+        conversion_inputs, tmp_path, problem):
+    spec, ar_map, n2_map, libraries = _two_gas_fixture(conversion_inputs, tmp_path)
+    maps = {'Ar': ar_map, 'N2': n2_map}
+    configured = {'Ar': 'PlasmaArgon', 'N2': 'PlasmaNitrogen'}
+    if problem == 'swapped_libraries':
+        configured = {'Ar': 'PlasmaNitrogen', 'N2': 'PlasmaArgon'}
+    elif problem == 'undeclared_map':
+        maps['He'] = maps.pop('N2')
+        configured['He'] = configured.pop('N2')
+    elif problem == 'target_map_mismatch':
+        n2_map['channels'][0]['loki_process'] = ar_map['channels'][0]['loki_process']
+    elif problem == 'missing_gas_map':
+        maps.pop('N2')
+        configured.pop('N2')
+    if problem == 'normal':
+        channels, _ = adapter.convert_channel_maps(
+            spec, maps, libraries, 'mix-Ar-N2', library_by_gas=configured)
+        assert len(channels) == 2
+    else:
+        expected = {
+            'swapped_libraries': 'configured owner library mismatch for gas Ar',
+            'undeclared_map': 'channel map gas is not declared: He',
+            'target_map_mismatch': 'channel target gas differs from map gas N2',
+            'missing_gas_map': 'missing channel map for gas N2'}[problem]
+        with pytest.raises(SpecError, match=expected):
+            adapter.convert_channel_maps(
+                spec, maps, libraries, 'mix-Ar-N2', library_by_gas=configured)
+
+
+def test_effective_source_maps_to_one_unowned_elastic_heating_row(
+        conversion_inputs, tmp_path):
+    """Fixture excerpt from LoKI input/Nitrogen/N2_LXCat.txt (SHA256 d7299f42250e6a8897f93f81acb9d2a4eaafc0bea684bddfa92d79ad43647e1a)."""
+    from scipy.constants import electron_mass
+    from rmgpy.tools.eedf.moments import _distribution_moments
+    from rmgpy.tools.eedf.validation import _channel_power_checks
+    from rmgpy.tools.eedf.loki import _partition_effective_elastic_power
+
+    spec, ar_map, n2_map, libraries = _two_gas_fixture(conversion_inputs, tmp_path)
+    fixture = Path(__file__).parent / 'fixtures/n2-effective-minimal.txt'
+    effective_path = tmp_path / 'N2_effective_LXCat.txt'
+    effective_path.write_bytes(fixture.read_bytes())
+    mass_path = tmp_path / 'masses.txt'
+    mass_path.write_text('Ar 39.948\nN2 28.0134\n')
+    spec['input_files']['N2_effective_LXCat.txt'] = {
+        'path': str(effective_path), 'sha256': _file_hash(effective_path), 'kind': 'cross_section'}
+    spec['input_files']['masses.txt'] = {
+        'path': str(mass_path), 'sha256': _file_hash(mass_path), 'kind': 'gas_property'}
+    spec['gas_properties']['mass'] = 'masses.txt'
+    from rmgpy.tools.eedf.channels import _classic_sections
+    effective = _classic_sections(str(effective_path), _file_hash(effective_path))[0]
+    effective.update(classification='B', target_fraction=.5, product_fraction=.5,
+                     sigma_max_m2=1.62e-20,
+                     flux_group=effective['description'], reaction=None)
+    physical = json.loads(Path(spec['channel_map']['path']).read_text())
+    physical.append(effective)
+    channel_path = Path(spec['channel_map']['path'])
+    channel_path.write_text(json.dumps(physical))
+    spec['channel_map']['sha256'] = _file_hash(channel_path)
+    n2_map['loki_files']['N2_effective_LXCat.txt'] = _file_hash(effective_path)
+    n2_map['class_counts'] = {'A': 1, 'B': 1, 'C': 0, 'D': 0}
+    n2_map['channels'].append({
+        'id': 10, 'loki_process': effective['description'],
+        'lxcat_file': 'N2_effective_LXCat.txt', 'threshold_eV': 0., 'class': 'B', 'rmg': None})
+
+    channels, _ = adapter.convert_channel_maps(
+        spec, {'Ar': ar_map, 'N2': n2_map}, libraries, 'mix-Ar-N2',
+        library_by_gas={'Ar': 'PlasmaArgon', 'N2': 'PlasmaNitrogen'})
+    effective_row = next(row for row in channels if row['kind'] == 'effective')
+    elastic_row = next(row for row in channels if row['kind'] == 'elastic')
+    assert effective_row['description'] == effective['description']
+    assert elastic_row['description'].endswith(', Elastic')
+    assert elastic_row['classification'] == 'B'
+    assert elastic_row['reaction'] is None
+    assert elastic_row['mass_ratio'] == pytest.approx(electron_mass / 28.0134)
+
+    energy = [.0005, .0015, .0025, .0035]
+    edges = [0., .001, .002, .003, .004]
+    row = {'energy_eV': energy, 'energy_edges_eV': edges,
+           'f0': [0.2, 0.15, 0.08, 0.02], 'target_fractions': [.5] * len(channels),
+           'product_fractions': [.5] * len(channels), 'gas_temperature_K': 300.}
+    moments = _distribution_moments(row, channels)
+    eff_index = next(i for i, item in enumerate(channels) if item['kind'] == 'effective')
+    elastic_index = next(i for i, item in enumerate(channels) if item['kind'] == 'elastic')
+    assert moments['channel_power'][eff_index] == 0.
+    elastic_power = moments['channel_power'][elastic_index]
+    assert elastic_power != 0.
+    powers = list(moments['channel_power'])
+    elastic_indices = [i for i, item in enumerate(channels) if item['kind'] == 'elastic']
+    derived_index = next(i for i in elastic_indices
+                         if channels[i]['description'] ==
+                         effective_row['description'].replace(', Effective', ', Elastic'))
+    solver_elastic_net = sum(powers[i] for i in elastic_indices) + abs(elastic_power) * .2
+    _partition_effective_elastic_power(channels, powers,
+                                      {'elastic_gain': 0., 'elastic_loss': -solver_elastic_net})
+    assert powers[eff_index] == 0.
+    assert powers[derived_index] == pytest.approx(
+        solver_elastic_net - sum(powers[i] for i in elastic_indices if i != derived_index))
+    assert sum(powers[i] for i in elastic_indices) == pytest.approx(solver_elastic_net)
+    powers_by_kind = dict(zip((item['kind'] for item in channels), moments['channel_power']))
+    assert powers_by_kind['effective'] == 0.
+    power_row = {'channel_power': powers,
+                 'power_groups': {'elastic_gain': 0., 'elastic_loss': -solver_elastic_net,
+                                  'excitation_loss': 0., 'excitation_gain': 0.,
+                                  'vibrational_loss': 0., 'vibrational_gain': 0.,
+                                  'rotational_loss': 0., 'rotational_gain': 0.,
+                                  'ionization': 0., 'attachment': 0., 'field': 1.},}
+    tolerances = {'channel_power_sum': {'atol': 1e-12, 'rtol': 1e-12}}
+    checks = _channel_power_checks(power_row, {
+        'channel_map': channels, 'tolerances': tolerances,
+        'floors': {'relative_power_share': 0., 'absolute_power_share': 1e-12}})
+    elastic_check = next(check for check in checks if check['quantity'] == 'power.sum.elastic')
+    assert elastic_check['passed']
+    assert elastic_power == pytest.approx(-power_row['power_groups']['elastic_loss'])
+
+
+def test_irreversible_excitation_group_has_no_product_population_requirement():
+    from rmgpy.tools.eedf.integrity import _channel_fractions
+    channel = {'description': 'e + N2(X) -> e + N2(A3Su+,v=0-4), Excitation',
+               'kind': 'excitation', 'target_fraction': 'state:N2(X)',
+               'product_fraction': 0.}
+    targets, products = _channel_fractions([channel], {'N2': 1.},
+                                           {'N2(X)': 1.}, {})
+    assert targets == [1.]
+    assert products == [0.]
 
 
 def test_mixture_spec_writer_emits_composition_and_tv_ladder(conversion_inputs, monkeypatch):
@@ -501,6 +697,68 @@ def test_prepare_family_reads_pinned_sources(cascade_conversion, source_files, t
     with pytest.raises(FingerprintMismatch, match='source hash'):
         adapter.prepare_spec('unused', frozen_path, _file_hash(frozen_path), tmp_path, 'test-Ar',
                              yield_table=yields, radiative_source=source, yield_table_sha256='0' * 64)
+
+
+def test_mixture_cli_loads_pinned_cascade_sources_and_converts_family(
+        conversion_inputs, cascade_conversion, source_files, tmp_path, monkeypatch):
+    import importlib.util
+    spec, ar_map, _, cascade_snapshot, _ = cascade_conversion
+    ar_library = SimpleNamespace(entries={
+        reaction.entry.index: reaction.entry
+        for reaction in branch_reactions(cascade_snapshot, 6, 'mix-Ar-N2')})
+    vib_spec, _, n2_map, libraries = _two_gas_fixture(conversion_inputs, tmp_path)
+    spec = copy.deepcopy(spec)
+    spec['input_files']['N2_LXCat.txt'] = copy.deepcopy(vib_spec['input_files']['N2_LXCat.txt'])
+    spec['axes']['x_N2'] = [.5]
+    spec['gas_properties']['fraction'] = ['Ar = 1-{x_N2}', 'N2 = {x_N2}']
+    spec['state_properties'] = copy.deepcopy(vib_spec['state_properties'])
+    physical = [row for row in json.loads(Path(spec['channel_map']['path']).read_text())
+                if row['description'] == PROCESS]
+    physical.extend(row for row in json.loads(Path(vib_spec['channel_map']['path']).read_text())
+                    if row['description'].startswith('e + N2('))
+    channel_path = Path(spec['channel_map']['path'])
+    channel_path.write_text(json.dumps(physical))
+    spec['channel_map']['sha256'] = _file_hash(channel_path)
+    loaded_libraries = {'PlasmaArgon': ar_library,
+                        'PlasmaNitrogen': libraries['PlasmaNitrogen']}
+    monkeypatch.setattr(adapter, 'load_spec', lambda _: copy.deepcopy(spec))
+    monkeypatch.setattr(adapter, '_load_library',
+                        lambda _, __, label: (loaded_libraries[label], {'fixture': label}))
+
+    database = os.environ.get('EEDF_DATABASE_ROOT')
+    data_root = os.environ.get('EEDF_DATA_ROOT')
+    if not database or not data_root:
+        pytest.skip('requires EEDF_DATABASE_ROOT and EEDF_DATA_ROOT for the real ladder')
+    checker_path = Path(database) / 'scripts/check_n2_vibrational_data.py'
+    checker_spec = importlib.util.spec_from_file_location('i369_n2_checker_cli', checker_path)
+    checker = importlib.util.module_from_spec(checker_spec)
+    checker_spec.loader.exec_module(checker)
+    manifest = checker.resolve_generator_manifest(data_root)
+    manifest_path = tmp_path / 'ladder-manifest.json'
+    manifest_path.write_text(json.dumps(manifest))
+    map_options = []
+    for gas, frozen, label in (('Ar', ar_map, 'PlasmaArgon'),
+                               ('N2', n2_map, 'PlasmaNitrogen')):
+        path = tmp_path / f'{gas}-cascade-map.yaml'
+        path.write_text(yaml.safe_dump(frozen))
+        map_options.extend(['--gas-map', gas, str(path), _file_hash(path), label])
+    yields, radiative_source, _ = source_files
+    output = tmp_path / 'mixture-cli'
+    argv = ['--base-spec', 'unused', *map_options,
+            '--ladder-manifest', str(manifest_path), '--database', str(tmp_path),
+            '--collision-set', 'mix-Ar-N2', '--output-directory', str(output),
+            '--yield-table', str(yields), '--radiative-source', str(radiative_source),
+            '--yield-table-sha256', _file_hash(yields),
+            '--source-sha256', _file_hash(radiative_source)]
+    assert adapter._main(argv) == 0
+    published = json.loads((output / 'conversion-report.json').read_text())
+    assert [row['id'] for row in published['branch_families']] == [6]
+    assert published['branch_families'][0]['family']['collision_set'] == 'mix-Ar-N2'
+    assert published['provenance']['cascade_sources'] == {
+        'yield_table_sha256': _file_hash(yields),
+        'source_sha256': _file_hash(radiative_source),
+        'radiative_model': published['provenance']['cascade_sources']['radiative_model']}
+    assert (output / 'ar-n2-spec.json').is_file()
 
 
 def test_i353_fixture_families_are_reported(tmp_path, monkeypatch):

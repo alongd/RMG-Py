@@ -104,7 +104,7 @@ def boltzmann_populations(ladder, tv):
     return result + [0.] * (len(levels) - K - 1)
 
 
-def ladder_coupling(manifest, bindings, *, axis, parent):
+def ladder_coupling(manifest, bindings, *, axis, parent, d6_policy=None):
     """Adapt an emitted ladder to explicitly bound LoKI collision descriptions.
 
     ``bindings`` contains {source_sha256, source_block, description} for every
@@ -161,7 +161,8 @@ def ladder_coupling(manifest, bindings, *, axis, parent):
     if indexed:
         raise SpecError('unexpected source collision binding')
     result = {'axis': axis, 'parent': parent, 'K': manifest['K'],
-              'levels': levels, 'channels': channels, 'D6': copy.deepcopy(manifest['D6']),
+              'levels': levels, 'channels': channels,
+              'D6': copy.deepcopy(manifest['D6'] if d6_policy is None else d6_policy),
               'source_manifest_sha256': _content_hash(manifest),
               'level_source': copy.deepcopy(states[0]['provenance'])}
     if 'source_domain' in manifest:
@@ -187,6 +188,12 @@ def validate_ladders(ladders):
         levels = ladder['levels']
         if len(levels) <= K:
             raise SpecError('vibrational levels do not cover K')
+        tail = ladder.get('zero_population_tail')
+        if tail is not None:
+            expected_tail = {level['loki_state'] for level in levels if level['v'] > K}
+            if (not isinstance(tail, dict) or set(tail) != expected_tail
+                    or any(type(value) not in (int, float) or value != 0. for value in tail.values())):
+                raise SpecError('invalid explicit zero-population vibrational tail')
         previous = -1.
         for v, level in enumerate(levels):
             energy, weight = level['energy_eV'], level['statistical_weight']

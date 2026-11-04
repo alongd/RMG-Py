@@ -573,8 +573,13 @@ def _enrich_row(row, channel_map, spec):
     """Add collision powers, attachment moments, physical inputs and floor flags."""
     caller_row = row
     row, channel_map, spec = copy.deepcopy((row, channel_map, spec))
-    if row['channels'] != [entry['description'] for entry in channel_map]:
+    by_description = {entry['description']: entry for entry in channel_map}
+    if (len(by_description) != len(channel_map)
+            or set(row['channels']) != set(by_description)):
         raise LoKIError('channel map does not exactly cover the solver collision set')
+    # LoKI's derived Elastic row is adjacent to its Effective source, but other
+    # collision families may be emitted in a different order from the inputs.
+    channel_map = [by_description[description] for description in row['channels']]
     _validate_physical_map(channel_map, spec, row['composition'])
     state = {name: env['reference'] for name, env in spec['envelopes'].items()}
     state.update(row['composition'])
@@ -616,6 +621,7 @@ def _enrich_row(row, channel_map, spec):
             raise LoKIError('per-channel elastic partition needs cross sections and masses')
         if len(elastic) == 1:
             row['channel_power'][elastic[0]] = -row['power_groups']['elastic_gain'] - row['power_groups']['elastic_loss']
+        _partition_effective_elastic_power(channel_map, row['channel_power'], row['power_groups'])
     if 'power_groups' in row:
         from rmgpy.tools.eedf.validation import _channel_power_checks
         checks = _channel_power_checks(row, {'channel_map': channel_map, 'tolerances': spec['tolerances'], 'floors': spec['floors']})
@@ -625,3 +631,27 @@ def _enrich_row(row, channel_map, spec):
     caller_row.clear()
     caller_row.update(copy.deepcopy(row))
     return caller_row
+
+
+def _partition_effective_elastic_power(channel_map, channel_power, power_groups):
+    """Assign LoKI's derived Effective->Elastic heating exactly once."""
+    effective = [channel for channel in channel_map if channel['kind'] == 'effective']
+    if not effective:
+        return
+    if len(effective) != 1:
+        raise LoKIError('power partition supports one Effective source per solver row')
+    source = effective[0]['description']
+    derived_description = (source[:-len(', Effective')] + ', Elastic'
+                           if source.endswith(', Effective') else None)
+    derived = [i for i, channel in enumerate(channel_map)
+               if channel['kind'] == 'elastic'
+               and channel['description'] == derived_description]
+    if len(derived) != 1:
+        raise LoKIError('Effective source has no unique derived Elastic power row')
+    # LoKI subtracts state-resolved inelastic cross sections from an Effective
+    # source when it constructs the derived Elastic sigma. The Effective row
+    # carries momentum transfer; its Elastic realization owns the remaining heat.
+    elastic = [i for i, channel in enumerate(channel_map) if channel['kind'] == 'elastic']
+    target = -power_groups['elastic_gain'] - power_groups['elastic_loss']
+    known = sum(channel_power[i] for i in elastic if i != derived[0])
+    channel_power[derived[0]] = target - known
