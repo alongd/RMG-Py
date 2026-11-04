@@ -34178,6 +34178,14 @@
       ],
       "source_sha256": "ada74037a5162d8668fb2d7fbcda67647d9a4de50b111975c00aa576d4371c12"
     },
+    "rmgpy/tools/eedf/channel_map.py:_build_declared_mixture_spec": {
+      "verdict": "carried",
+      "reason": "Validates the explicitly declared bath, fractions, Tv axis and frozen-map state properties, then builds a solver mixture specification; it introduces no inferred composition or library lookup.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/channelMapTest.py"
+      ],
+      "source_sha256": "1eec28f89407cb202e01aa1c09d8491fd2d9285dc0b2e7d1857d7683285fb9d8"
+    },
     "rmgpy/tools/eedf/channel_map.py:_cascade_snapshot": {
       "verdict": "not-reachable-for-resolved",
       "reason": "Adapts explicit frozen collision metadata and pinned file snapshots; no thermo acquisition, rate evaluation, or state transfer. Missing reaction ownership refuses.",
@@ -34226,6 +34234,14 @@
       ],
       "source_sha256": "7b3f7c42ff265e90fbaca29ba11ff5c2e5d01f373f09cdec5c72674effb0129a"
     },
+    "rmgpy/tools/eedf/channel_map.py:_gas_mass_from_library": {
+      "verdict": "carried",
+      "reason": "Selects the single ground-state species explicitly mapped in the frozen gas map and reads its molecular weight from the named kinetics library; missing or nonphysical masses are refused before conversion to kg.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/channelMapTest.py"
+      ],
+      "source_sha256": "9d2855bcffc3f04e0f6b01e0777fa2509bf0e30df9ed1513ee4b84609b7f8706"
+    },
     "rmgpy/tools/eedf/channel_map.py:_load_library": {
       "verdict": "carried",
       "reason": "Loads exact copied library bytes through KineticsLibrary.load, preserving species state and generation-pair validation; only verifies collision ownership, without assigning new thermo or kinetics.",
@@ -34249,6 +34265,14 @@
         "test/rmgpy/tools/eedf/channelMapTest.py"
       ],
       "source_sha256": "78be8b1f2525dbbf1207de681d87cdefa2deb8beda41ecf64fa7769f1f65ce7d"
+    },
+    "rmgpy/tools/eedf/channel_map.py:_physical_channel_from_frozen": {
+      "verdict": "carried",
+      "reason": "Transforms a physical cross-section record from the pinned frozen map into one converter channel, requiring explicit valid mass and reverse weights where applicable; it does not infer values from another gas or owner.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/channelMapTest.py"
+      ],
+      "source_sha256": "c1f518bafca9cbb92370cef887fec711c7ed049ab6c663798b329b4cbf99edd4"
     },
     "rmgpy/tools/eedf/channel_map.py:_read_pinned_bytes": {
       "verdict": "not-reachable-for-resolved",
@@ -34288,7 +34312,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/channelMapTest.py"
       ],
-      "source_sha256": "2e8fd11e2df355400dbfeb6e85c2d736312e05ad8e50170d0460a370278347c7"
+      "source_sha256": "6e6f916868f8ced2d37f92f14e3200631ad6509f2f7c0bc65b2783d09feff499"
     },
     "rmgpy/tools/eedf/channel_map.py:build_mixture_spec": {
       "verdict": "not-reachable-for-resolved",
@@ -34296,7 +34320,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/channelMapTest.py"
       ],
-      "source_sha256": "48ef20f2ee8c2ce35f5a489b7c296311a44e90616de63dba353768bcc81e6ff2"
+      "source_sha256": "4c8ca4cf5c45184f461f57b9827f74047c0109289104f5d725d0142d7d1fd7c3"
     },
     "rmgpy/tools/eedf/channel_map.py:convert_channel_map": {
       "verdict": "not-reachable-for-resolved",
@@ -34312,7 +34336,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/channelMapTest.py"
       ],
-      "source_sha256": "a0e3d849c7400f12035326e15c5dfa012f06f0aff1e9830c85d67659033f661f"
+      "source_sha256": "9e6ed7eebbc3be086ac803bd8d5aaae58143fd3786f5c7fd2f28e644f29f9e56"
     },
     "rmgpy/tools/eedf/channel_map.py:convert_channel_maps.<lambda1>": {
       "verdict": "not-reachable-for-resolved",
@@ -34336,7 +34360,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/channelMapTest.py"
       ],
-      "source_sha256": "8309fb9c546753bf65784688c431aabadfd3f49ed7f7519175589456c523fe8a"
+      "source_sha256": "e3dc53efa5151515ade0afc91afa2faff6e2ce19bfbb11fe5b11c0c46f2ce5e6"
     },
     "rmgpy/tools/eedf/channel_map.py:prepare_spec": {
       "verdict": "not-reachable-for-resolved",
@@ -35044,7 +35068,7 @@
         "test/rmgpy/data/stateDataCensusTest.py",
         "test/rmgpy/tools/eedf/vibrationalTest.py"
       ],
-      "source_sha256": "f821408f226fdff011fae4ff7be6286be230aee92d1fae0a20f745ccea85e293",
+      "source_sha256": "2495dc00025ad81815df9575e1ddb0a1c723536d664d44b9ac7ffbb337fb5ba9",
       "file": "rmgpy/tools/eedf/integrity.py",
       "line": 247
     },
@@ -35055,7 +35079,7 @@
         "test/rmgpy/data/stateDataCensusTest.py",
         "test/rmgpy/tools/eedf/vibrationalTest.py"
       ],
-      "source_sha256": "b06e3837ab99566269e5a8887ebf7b3ef8588b6f94005378b1c31567582cf4c7",
+      "source_sha256": "d1bad183f145f3fca10127bcf00384ce0e00de142ba0cd9654b625133e871bf2",
       "file": "rmgpy/tools/eedf/integrity.py",
       "line": 259
     },
@@ -35172,7 +35196,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "117a2f9d86478cd9847608e2c7398878aa6c0b4fd2ac4f0b910a2cd6d712ebd8"
+      "source_sha256": "9de6089e24b6708b23ce00f014fba8f86bd8067cff7d22cf74c4c5adfeb1b36e"
     },
     "rmgpy/tools/eedf/loki.py:_require_exact_values": {
       "verdict": "carried",
