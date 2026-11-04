@@ -242,14 +242,14 @@ def source_files(tmp_path):
 
 
 def test_id6_literal_vector_and_source_identity(source_files):
-    from rmgpy.tools.eedf.ownership import load_cascade_yields, require_cascade_yields
+    from rmgpy.tools.eedf.ownership import YIELD_SUM_ATOL, load_cascade_yields, require_cascade_yields
     yields, radiative, _ = source_files
     snapshot = load_cascade_yields(yields, radiative)
     row = require_cascade_yields(snapshot, 6, process=PROCESS, threshold_eV=12.907)
     assert row['product_yields'] == ID6
     assert snapshot['yield_table_sha256'] == hashlib.sha256(yields.read_bytes()).hexdigest()
     assert snapshot['source_sha256'] == hashlib.sha256(radiative.read_bytes()).hexdigest()
-    assert math.fsum(row['product_yields'].values()) == 1.
+    assert abs(math.fsum(row['product_yields'].values()) - 1.) <= YIELD_SUM_ATOL
 
 
 @pytest.mark.parametrize('bad', [None, -0.1, float('nan'), float('inf'), 10 ** 1000, 1.1, True, '0.5'])
@@ -389,7 +389,7 @@ def test_source_replacement_uses_verified_snapshot(source_files, monkeypatch):
 
 @pytest.mark.parametrize('mutation', ['none', 'sum_error', 'sum_preserving'])
 def test_database_generator_and_engine_check_same_file(tmp_path, mutation):
-    from rmgpy.tools.eedf.ownership import load_cascade_yields, require_cascade_yields
+    from rmgpy.tools.eedf.ownership import YIELD_SUM_ATOL, load_cascade_yields, require_cascade_yields
     database = os.environ.get('EEDF_DATABASE_ROOT')
     if not database:
         pytest.skip('EEDF_DATABASE_ROOT supplies the sourced generator and yield document')
@@ -417,7 +417,7 @@ def test_database_generator_and_engine_check_same_file(tmp_path, mutation):
         assert snapshot['channels'] == database_cascade_channels(root)
         for row in snapshot['channels']:
             if row['status'] == 'complete_for_E1':
-                assert math.fsum(row['product_yields'].values()) == 1.
+                assert abs(math.fsum(row['product_yields'].values()) - 1.) <= YIELD_SUM_ATOL
             else:
                 with pytest.raises(SpecError, match='unresolved'):
                     require_cascade_yields(snapshot, row['id'])

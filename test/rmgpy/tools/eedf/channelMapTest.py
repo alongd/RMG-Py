@@ -1003,7 +1003,7 @@ def test_mixture_cli_loads_pinned_cascade_sources_and_converts_family(
 
 
 def test_i353_fixture_families_are_reported(tmp_path, monkeypatch):
-    """Use the real read-only library plus private branches, with no generation."""
+    """Complete cascades convert; an in-memory missing owner is reported exactly."""
     from rmgpy.tools.eedf.ownership import load_cascade_yields
     database = os.environ.get('EEDF_DATABASE_ROOT')
     spec_path = os.environ.get('EEDF_CHANNEL_MAP_BASE_SPEC')
@@ -1011,29 +1011,43 @@ def test_i353_fixture_families_are_reported(tmp_path, monkeypatch):
         pytest.skip('requires EEDF_DATABASE_ROOT and EEDF_CHANNEL_MAP_BASE_SPEC')
     root = Path(database) / 'input/eedf'
     snapshot = load_cascade_yields(root / 'argon_cascade_yields.yaml', root / 'argon_radiative_data.yaml')
-    # The live database may precede or include the argon cascade owners and
-    # channel-11 amendment. Verify bytes and independently regenerate the source.
     assert snapshot['yield_table_sha256'] == _file_hash(root / 'argon_cascade_yields.yaml')
     assert snapshot['channels'] == database_cascade_channels(Path(database))
     complete = [row['id'] for row in snapshot['channels'] if row['status'] == 'complete_for_E1']
     unresolved = [row['id'] for row in snapshot['channels'] if row['status'] == 'unresolved']
+    assert not unresolved
     library, hashes = adapter._load_library(database, tmp_path)
     collision_set = 'IST-Lisbon-Ar-2021'
     for channel_id in complete:
         row = next(row for row in snapshot['channels'] if row['id'] == channel_id)
         if any(getattr(entry.data, 'process', None) == row['process']
                for entry in library.entries.values()):
-            continue  # Exercise existing owners through native family validation.
+            continue
         for reaction in branch_reactions(snapshot, channel_id, collision_set):
             assert reaction.entry.index not in library.entries
             library.entries[reaction.entry.index] = reaction.entry
     monkeypatch.setattr(adapter, '_load_library', lambda *args: (library, hashes))
     frozen_path = root / 'argon_channel_map.yaml'
+    _, _, report = adapter.prepare_spec(
+        spec_path, frozen_path, _file_hash(frozen_path), database, collision_set)
+    assert [row['id'] for row in report['branch_families']] == list(range(6, 39))
+    assert report['missing_owners'] == []
+    assert report['shared_owners'] == []
+
+    missing_id = 16
+    missing_process = next(row['process'] for row in snapshot['channels'] if row['id'] == missing_id)
+    incomplete_library = copy.deepcopy(library)
+    removed = [index for index, entry in incomplete_library.entries.items()
+               if getattr(entry.data, 'process', None) == missing_process]
+    assert removed
+    for index in removed:
+        del incomplete_library.entries[index]
+    monkeypatch.setattr(adapter, '_load_library', lambda *args: (incomplete_library, hashes))
     with pytest.raises(adapter.MissingOwners) as caught:
         adapter.prepare_spec(spec_path, frozen_path, _file_hash(frozen_path), database, collision_set)
     report = caught.value.report
-    assert [row['id'] for row in report['branch_families']] == complete
-    assert [row['id'] for row in report['missing_owners']] == unresolved
+    assert [row['id'] for row in report['branch_families']] == [i for i in range(6, 39) if i != missing_id]
+    assert [row['id'] for row in report['missing_owners']] == [missing_id]
     assert report['shared_owners'] == []
     adapter._write_outputs(tmp_path / 'refusal', report)
     assert [path.name for path in (tmp_path / 'refusal').iterdir()] == ['conversion-report.json']
