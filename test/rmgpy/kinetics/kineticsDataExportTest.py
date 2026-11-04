@@ -165,7 +165,7 @@ def test_real_admitted_cantera_round_trip(tmp_path, admitted_export_reaction, wr
 
 
 @pytest.mark.parametrize('conflict_at', [None, 1, 2])
-def test_duplicate_merge_preserves_agreed_flux_pairs_and_refuses_conflicts(conflict_at):
+def test_duplicate_merge_preserves_agreed_flux_pairs_and_refuses_conflicts(conflict_at, caplog):
     from rmgpy.chemkin import _process_duplicate_reactions
     from rmgpy.data.kinetics.library import LibraryReaction
     from rmgpy.exceptions import ChemkinError
@@ -182,6 +182,7 @@ def test_duplicate_merge_preserves_agreed_flux_pairs_and_refuses_conflicts(confl
         leaves[conflict_at].pairs = []
         with pytest.raises(ChemkinError, match='Conflicting flux pairs for duplicate reaction'):
             _process_duplicate_reactions(leaves)
+        assert 'Conflicting flux pairs for duplicate reaction' in caplog.text
     else:
         _process_duplicate_reactions(leaves)
         assert len(leaves) == 1
