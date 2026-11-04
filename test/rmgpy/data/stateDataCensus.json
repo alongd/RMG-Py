@@ -36704,7 +36704,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "2534260acc79700e5cb94296fd4c1df218faa2292f4d388d831e402203c112c9"
+      "source_sha256": "733fea7577e8de12f4a5a145ecf05c572ffcfeebc4e02a109a064b4676fb245e"
     },
     "rmgpy/tools/eedf/channels.py:_validate_physical_map": {
       "verdict": "carried",
@@ -36712,7 +36712,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "73521c829731745520e4d835dc4eae480c984a04ec3232d3fc97aca87f0714bd"
+      "source_sha256": "1383fac830da9fdd82dc8ea80543224d34840069a1707545990fb91744f14398"
     },
     "rmgpy/tools/eedf/channels.py:_validate_physical_map.gas_value": {
       "verdict": "carried",
@@ -36769,7 +36769,7 @@
         "test/rmgpy/data/stateDataCensusTest.py",
         "test/rmgpy/tools/eedf/vibrationalTest.py"
       ],
-      "source_sha256": "a274adf3ac3e43a7535b0ff9bf775136f1f67a710006fd82ae1b613784181388",
+      "source_sha256": "bff4bb06acbf10133c9cc48f6a120363f3021da1d0ce8ec4ae029bb38381c45e",
       "file": "rmgpy/tools/eedf/integrity.py",
       "line": 321
     },
@@ -36818,7 +36818,7 @@
         "test/rmgpy/data/stateDataCensusTest.py",
         "test/rmgpy/tools/eedf/vibrationalTest.py"
       ],
-      "source_sha256": "1c9cebec7c84d43cdba82c81e24d7abfa6ae7e01bf3539551614ef88e8582e04",
+      "source_sha256": "5a865e5a5faea55ca1dd0e8dd1866ba99e7574438526a9d62013ed3475258b2b",
       "file": "rmgpy/tools/eedf/integrity.py",
       "line": 74
     },
@@ -36829,7 +36829,7 @@
         "test/rmgpy/data/stateDataCensusTest.py",
         "test/rmgpy/tools/eedf/vibrationalTest.py"
       ],
-      "source_sha256": "b30ecb279f8e4bfb66a4853891d91955039ba5054c3809111b2b921e08e18f43",
+      "source_sha256": "184e981dcab97520e22076b4010426cabec5c42c84a15d222ff2c234dfbe7563",
       "file": "rmgpy/tools/eedf/integrity.py",
       "line": 100
     },
@@ -36848,7 +36848,7 @@
         "test/rmgpy/data/stateDataCensusTest.py",
         "test/rmgpy/tools/eedf/vibrationalTest.py"
       ],
-      "source_sha256": "f7289fb44d91429e9f2922e37ea0f443a1e84a070b1def1ee4326b08c2b375e0",
+      "source_sha256": "f821408f226fdff011fae4ff7be6286be230aee92d1fae0a20f745ccea85e293",
       "file": "rmgpy/tools/eedf/integrity.py",
       "line": 247
     },
@@ -36859,7 +36859,7 @@
         "test/rmgpy/data/stateDataCensusTest.py",
         "test/rmgpy/tools/eedf/vibrationalTest.py"
       ],
-      "source_sha256": "40b48feb9e74162ce1d27c9207ca85477c694785db347bbefe9d47f513e84ac5",
+      "source_sha256": "b06e3837ab99566269e5a8887ebf7b3ef8588b6f94005378b1c31567582cf4c7",
       "file": "rmgpy/tools/eedf/integrity.py",
       "line": 259
     },
@@ -36877,7 +36877,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "210996a5eefd8d070c95bc54073208cad4e91270eaa3ed569bd82fd17f48cae5"
+      "source_sha256": "8da92fa4287997c7f4fa4c0b2d277e11945e60f838437728a83bbecd8d7b245f"
     },
     "rmgpy/tools/eedf/loki.py:_finite_scalar": {
       "verdict": "carried",
@@ -36909,7 +36909,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "d343678570ce66b639932a10df2f1506eb70220bc7c66533468985079e30ef6f"
+      "source_sha256": "a2b0364499c0894968ea089b0eb474e36fbed728a86f57787adc16939789f79e"
     },
     "rmgpy/tools/eedf/schema.py:_canonical_json": {
       "verdict": "carried",
@@ -37269,7 +37269,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/channelMapTest.py"
       ],
-      "source_sha256": "dded2702e0ee463a516437302cd12ac010ad0907cf18a30c88421aecf80b440b"
+      "source_sha256": "7dd167ac0431dc5d15904e27f910612a05228b4c0e3518a14669ac8c5070ad93"
     },
     "rmgpy/tools/eedf/channel_map.py:_convert_channel": {
       "verdict": "not-reachable-for-resolved",
@@ -37301,7 +37301,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/channelMapTest.py"
       ],
-      "source_sha256": "b7dd344cd5a3a43fac8f9b8832ec07c8a071799ba190c6a22a78fb6d455142e4"
+      "source_sha256": "e11ab4307c79d5b7a2dfe1622aed10c71023cd7a29e200bc98598ccfa19ffeac"
     },
     "rmgpy/tools/eedf/channel_map.py:_write_outputs": {
       "verdict": "not-reachable-for-resolved",
@@ -37317,7 +37317,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/channelMapTest.py"
       ],
-      "source_sha256": "5daedfd25451e9fa9a078f99b9f7edb9e307e314d36e9743d8c917298b1d1af9"
+      "source_sha256": "2ac0a01dbbce2982b271d966ebe068c9c043d1e374f2587c5d76e5ee30ea0c1e"
     },
     "rmgpy/tools/eedf/schema.py:_provider_kind": {
       "verdict": "excluded",
@@ -37741,7 +37741,7 @@
       "evidence": [
         "test/rmgpy/tools/n2VibrationalTest.py"
       ],
-      "source_sha256": "d97569c00cd5d9d1b32b1037a9a6111f5806f8f354a986d4705cd978f63c926a"
+      "source_sha256": "106fd3b6e0b5e8360c1145acaf11bec5e8e0e09a8119598cebbe3616d7fd3adb"
     },
     "rmgpy/tools/eedf/n2_vibrational.py:generate.<lambda1>": {
       "verdict": "not-reachable-for-resolved",
@@ -37797,7 +37797,7 @@
       ],
       "file": "rmgpy/tools/eedf/vibrational.py",
       "line": 107,
-      "source_sha256": "4ebd28fcd09eace223cec5645bc0fe96377f397e2287e7ab40a3c33d777f1aaf"
+      "source_sha256": "3f78c8bd2216270124a3eb0598c4e3ad29148c4b05514358159eb35861283910"
     },
     "rmgpy/tools/eedf/vibrational.py:qualify_ladder": {
       "verdict": "carried",
@@ -37847,7 +37847,7 @@
       ],
       "file": "rmgpy/tools/eedf/vibrational.py",
       "line": 173,
-      "source_sha256": "97698c1fd9ccc75302f2f7949c15955d56ebbb1bb28e66e506e58da994b146d9"
+      "source_sha256": "66c3d6e919b411bf603df3d92c96406e27d798f5a127d3a86963798aab60ecf2"
     },
     "rmgpy/tools/eedf/channel_map.py:convert_channel_maps": {
       "verdict": "not-reachable-for-resolved",
@@ -37855,7 +37855,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/channelMapTest.py"
       ],
-      "source_sha256": "8ab951dbe368913ae63a60a2f04abf599a88f37b95456f281c0fc72835781189"
+      "source_sha256": "44701dae56abc1c173ef622158aae8164b54b9e327b1b4407c5f0babc8d621fe"
     },
     "rmgpy/tools/eedf/channel_map.py:convert_channel_maps.<lambda1>": {
       "verdict": "not-reachable-for-resolved",
@@ -37879,7 +37879,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/channelMapTest.py"
       ],
-      "source_sha256": "237f53d0e164ce01f06056502826036af962d410c3f228ff718e71e54f680287"
+      "source_sha256": "ab0ef5e664f60e85d499c7424c5aa194b17e88844a67ee5877d0b9838cd2f065"
     },
     "rmgpy/tools/eedf/channel_map.py:prepare_mixture_spec": {
       "verdict": "not-reachable-for-resolved",
@@ -37887,7 +37887,71 @@
       "evidence": [
         "test/rmgpy/tools/eedf/channelMapTest.py"
       ],
-      "source_sha256": "17d3451255d6aac3064167832e621ea1c852d6c09c9f3b50cbdea4c149b36215"
+      "source_sha256": "16aaceaa18a4c2ca835801d9a4c582f06d6107e646697445e8ad8a01d497a800"
+    },
+    "rmgpy/tools/eedf/channel_map.py:_cascade_snapshot": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Adapts explicit frozen collision metadata and pinned file snapshots; no thermo acquisition, rate evaluation, or state transfer. Missing reaction ownership refuses.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/channelMapTest.py"
+      ],
+      "source_sha256": "9545a1b4f168e105e0bffe29e705af00c271690b1b5645cf726d6dd2eb725102"
+    },
+    "rmgpy/tools/eedf/channel_map.py:_declared_gases": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Adapts explicit frozen collision metadata and pinned file snapshots; no thermo acquisition, rate evaluation, or state transfer. Missing reaction ownership refuses.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/channelMapTest.py"
+      ],
+      "source_sha256": "c744b5d44f5d08f91b812711c44bcfaff815f2619731acfffaa20c05014d8fa8"
+    },
+    "rmgpy/tools/eedf/channel_map.py:_derived_elastic": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Adapts explicit frozen collision metadata and pinned file snapshots; no thermo acquisition, rate evaluation, or state transfer. Missing reaction ownership refuses.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/channelMapTest.py"
+      ],
+      "source_sha256": "4c7d756e8304d0348564b6e23138c6dfbcf0a49b1b3b99be91a9ab3147d6730d"
+    },
+    "rmgpy/tools/eedf/channel_map.py:_diagnostic_d6": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Adapts explicit frozen collision metadata and pinned file snapshots; no thermo acquisition, rate evaluation, or state transfer. Missing reaction ownership refuses.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/channelMapTest.py"
+      ],
+      "source_sha256": "d8e097d09ec4116f62216d44ad0110661b8d4e6d5043f2abb174a8d79cc19ac5"
+    },
+    "rmgpy/tools/eedf/channel_map.py:_target_gas": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Adapts explicit frozen collision metadata and pinned file snapshots; no thermo acquisition, rate evaluation, or state transfer. Missing reaction ownership refuses.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/channelMapTest.py"
+      ],
+      "source_sha256": "2af41a9488b7d8ea49483aede0eb5fd76edc8419c1e6b1996121b9780592e2fc"
+    },
+    "rmgpy/tools/eedf/channel_map.py:_upgrade_frozen_map": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Adapts explicit frozen collision metadata and pinned file snapshots; no thermo acquisition, rate evaluation, or state transfer. Missing reaction ownership refuses.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/channelMapTest.py"
+      ],
+      "source_sha256": "583615486e973893a8f78c4c1f37da63754bd4eed1fd6bb8783f336e6a4fafa7"
+    },
+    "rmgpy/tools/eedf/channel_map.py:_upgrade_frozen_map.<lambda1>": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Adapts explicit frozen collision metadata and pinned file snapshots; no thermo acquisition, rate evaluation, or state transfer. Missing reaction ownership refuses.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/channelMapTest.py"
+      ],
+      "source_sha256": "a6ef3031f1633297559ec45e62b7bb05e8d8187bc1563a752f54336eab4bd1e8"
+    },
+    "rmgpy/tools/eedf/loki.py:_partition_effective_elastic_power": {
+      "verdict": "carried",
+      "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
+      "evidence": [
+        "test/rmgpy/data/stateDataCensusTest.py"
+      ],
+      "source_sha256": "117a2f9d86478cd9847608e2c7398878aa6c0b4fd2ac4f0b910a2cd6d712ebd8"
     }
   }
 }
