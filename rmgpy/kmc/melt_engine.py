@@ -48,7 +48,17 @@ Propensities
   intrinsic weight, applied tentatively, ``phi`` of the PRODUCT pair is
   computed from the product components' own index entries, and the event is
   accepted with probability ``phi`` (else rolled back: a null proposal), so
-  ``K = k_act / k_diss = Kc`` is preserved.  A pair one of whose components is
+  ``K = k_act / k_diss = Kc`` is preserved.  The rows whose activation sums
+  into one ``phi`` are the pair's **encounter group** (``encounter_group``):
+  every MET-forward class row with one site on each of the two components,
+  over every ordered site pair and both role assignments, suppressed kind
+  pairs out, leak rows in and excluded rows split off.  It is a function of
+  the component pair alone, never of which row is the exact inverse of a
+  given reverse proposal: the forward pair and the thinning of any reverse
+  whose products are that pair read one ``phi``, so ``phi`` cancels in every
+  forward/reverse ratio even where competing rows make other products.  Both
+  thinning paths (``_fire`` and the open-segment estimate ``_fallback_phi``)
+  take that ``phi`` from one evaluator, ``_reverse_phi``.  A pair one of whose components is
   a declared small species (``spec.small_species``, ``monomer_product``, the
   built-ins H and H2) bypasses MET in both directions (``phi = 1``) and is
   counted.
@@ -1683,6 +1693,18 @@ class PairRate:
 
 
 @dataclass(frozen=True)
+class SelfPairRows:
+    """``MeltEngine.self_pair_rows``: one component's same-molecule MET rows
+    as ``pair_rate`` inputs (each ordered site pair once), and design I-297's
+    phi_self closure on them (recorded, never fired)."""
+    classes: Tuple[Tuple, ...]   # (class, T allowed, T leak[, override]), T = ordered site pairs / divisor
+    k_act: float                 # summed activation (m3/mol/s), allowed + leak, excluded classes out
+    k_act_allowed: float
+    k_d_self: float              # k_diffusion(T, L, L), L the component's MET length
+    phi_self: float              # k_d_self / (k_d_self + k_act); 1 for a declared small species
+
+
+@dataclass(frozen=True)
 class RunResult:
     time: float
     events: int
@@ -2358,8 +2380,28 @@ class MeltEngine:
         return frozenset(c for _b, c in ranked[:1] if c in new)
 
     # -- MET ------------------------------------------------------------------
-    def pair_rate(self, e0: _Entry, e1: _Entry, gel=None) -> Optional[PairRate]:
-        """MET pair rate of two components (None when no MET class pairs them)."""
+    def encounter_group(self, e0: _Entry, e1: _Entry) -> Optional[Tuple[Tuple, float]]:
+        """The encounter group of two distinct components: the MET class rows
+        whose activation sums into one escape factor, and the intrinsic
+        propensity (1/s) of the excluded rows split off from it; None when no
+        MET class pairs them.
+
+        A row is ``(class, T allowed, T leak[, override])``: per MET-forward
+        class (and per depository override of it), ``T`` counts every ordered
+        pair of a participant-0 site on one component and a participant-1 site
+        on the other, both role assignments (participant 0 on ``e0`` and on
+        ``e1``), suppressed kind pairs out, over the class's divisor; leak kind
+        pairs count in ``T leak`` (they are part of the encounter; the forward
+        is measured, never fired).  Excluded classes leave the group (their
+        intrinsic propensity is returned on its own).  The group is a function
+        of the two components alone: it does not ask which row is the inverse
+        of which, so a reverse proposal whose products are this pair is thinned
+        by the same escape factor as the pair's forward rows, whatever products
+        the competing rows make, and the escape factor cancels in every
+        forward/reverse ratio.  For two sites on ONE component this traversal
+        would count each ordered site pair twice (once per role assignment)
+        and keep pairs that share an atom; ``self_pair_rows`` is that case's
+        mapping."""
         c0 = {k: len(v) for k, v in e0.shape.sites.items() if self.classes[k[0]].met_forward}
         c1 = {k: len(v) for k, v in e1.shape.sites.items() if self.classes[k[0]].met_forward}
         if not c0 or not c1:
@@ -2377,7 +2419,13 @@ class MeltEngine:
                     slot[1 if _pair_leak(cls, k0, k1) else 0] += n0 * n1
         if not per:
             return None
-        # one row per class (and per override of it: (class, T, T leak, override))
+        return self._group_rows(per)
+
+    def _group_rows(self, per) -> Tuple[Tuple, float]:
+        """Rows of ``per`` ((class, override) -> [allowed count, leak count]),
+        one per class (and per override of it: (class, T, T leak, override)),
+        each count over the class's divisor; the excluded rows split off as
+        their intrinsic propensity (1/s)."""
         classes = tuple((ci, a / self.classes[ci].divisor, l / self.classes[ci].divisor)
                         + (() if o < 0 else (o,)) for (ci, o), (a, l) in sorted(per.items()))
         excluded = 0.0
@@ -2385,6 +2433,54 @@ class MeltEngine:
             excluded = math.fsum(self._row_weight(r) * (r[1] + r[2]) for r in classes
                                  if r[0] in self.excluded) / self.nav
             classes = tuple(r for r in classes if r[0] not in self.excluded)
+        return classes, excluded
+
+    def self_pair_rows(self, entry: _Entry) -> Optional[SelfPairRows]:
+        """The same-molecule MET rows of one component in ``pair_rate``'s
+        input form (phi_self of design I-297 §2; no firing path calls it).
+
+        Mapping: an ordered pair of a participant-0 site and a participant-1
+        site of class ``c`` on the component, sharing no atom (``_same_pairs``:
+        the measured ``same_molecule`` count), suppressed kind pairs out, is
+        ONE pair of ``c``'s row, over ``c``'s divisor, with its override
+        weight (``_pair_override``) and its allowed or leak kind pair
+        (``_pair_leak``); excluded classes leave the rows, as in
+        ``encounter_group``.  ``pair_rate(entry, entry)`` is not this: its
+        two role assignments (participant 0 on ``e0``, then on ``e1``) are the
+        same assignment when ``e0`` is ``e1``, so it counts every ordered site
+        pair twice, and it keeps the pairs whose two sites share an atom.
+        A role-swap class's two orders of one unordered pair are two ordered
+        pairs here, halved by its divisor, exactly as for two components.
+
+        ``k_d_self`` and ``phi_self`` are design §2's phi_self closure
+        (``k_diffusion(T, L, L)``, L the component's MET length; phi 1 for a
+        declared small species, which bypasses MET); the closure is the
+        owner's choice, recorded here, not fired."""
+        per = {}
+        for (ci, k0, k1), n in self._same_pairs(entry.shape).items():
+            cls = self.classes[ci]
+            if not cls.met_forward or not n:
+                continue
+            slot = per.setdefault((ci, self._pair_override(ci, k0, k1)), [0, 0])
+            slot[1 if _pair_leak(cls, k0, k1) else 0] += n
+        if not per:
+            return None
+        classes, _excluded = self._group_rows(per)
+        k_allowed = math.fsum(self._row_weight(r) * r[1] for r in classes)
+        k_act = k_allowed + math.fsum(self._row_weight(r) * r[2] for r in classes)
+        k_d = self.transport.k_diffusion(self.temperature, entry.met_length, entry.met_length)
+        bypass = entry.species is not None
+        phi = 1.0 if bypass or k_act <= 0.0 else escape_factor(k_act, k_d)
+        return SelfPairRows(classes, k_act, k_allowed, k_d, phi)
+
+    def pair_rate(self, e0: _Entry, e1: _Entry, gel=None) -> Optional[PairRate]:
+        """MET pair rate of two components (None when no MET class pairs
+        them): Collins-Kimball applied once to the summed activation of their
+        ``encounter_group``."""
+        group = self.encounter_group(e0, e1)
+        if group is None:
+            return None
+        classes, excluded = group
         k_allowed = math.fsum(self._row_weight(r) * r[1] for r in classes)
         k_leak = math.fsum(self._row_weight(r) * r[2] for r in classes)
         k_act = k_allowed + k_leak
@@ -2620,6 +2716,29 @@ class MeltEngine:
             raise EngineError(f"conservation broken: {old_comp} -> {new_comp}, backbone {old_bb} -> {new_bb}")
         self.conservation_checks += 1
 
+    def _reverse_phi(self, tr: EngineTransition, products) -> Tuple[float, bool]:
+        """(phi, bypass) at which a reverse proposal, applied tentatively
+        (``products``: its product components, inside the open transaction),
+        is accepted: the one evaluator of every path that thins a reverse
+        (``_fire``; ``_fallback_phi``'s exact or sampled mean).
+
+        Two products: the escape factor of their ``encounter_group``
+        (``pair_rate`` on partial entries, the gel read among the products),
+        so the reverse and the pair's forward rows share one phi; phi 1 when
+        no MET class pairs them (bypass when either is a declared small
+        species).  One product (a no-split reverse: no same-molecule law is
+        declared, counted ``reverse_no_pair`` by ``_fire``) or more than two:
+        phi 1, no bypass."""
+        if len(products) != 2:
+            return 1.0, False
+        # partial entries (phi only); an accepted event's index update scans
+        # the committed components in full
+        new = self._phi_scan(products)
+        rate = self.pair_rate(new[products[0]], new[products[1]], self._product_gel(new, tr.components))
+        if rate is None:
+            return 1.0, (new[products[0]].species is not None or new[products[1]].species is not None)
+        return rate.phi, rate.bypass
+
     def _fire(self, tr: EngineTransition, view, channel: str, thinning: bool,
               met_key: Optional[str] = None) -> Optional[Event]:
         if tr.leak:
@@ -2627,20 +2746,9 @@ class MeltEngine:
         tx, products = self._begin_apply(tr, view)
         if thinning:
             try:
-                phi, bypass = 1.0, False
-                if len(products) == 2:
-                    # partial entries (phi only); an accepted event's index
-                    # update scans the committed components in full
-                    new = self._phi_scan(products)
-                    rate = self.pair_rate(new[products[0]], new[products[1]],
-                                          self._product_gel(new, tr.components))
-                    if rate is None:
-                        bypass = (new[products[0]].species is not None
-                                  or new[products[1]].species is not None)
-                    else:
-                        phi, bypass = rate.phi, rate.bypass
-                    if not (math.isfinite(phi) and 0.0 < phi <= 1.0):
-                        raise EngineError(f"{tr.template}: escape factor {phi!r} outside (0, 1]")
+                phi, bypass = self._reverse_phi(tr, products)
+                if len(products) == 2 and not (math.isfinite(phi) and 0.0 < phi <= 1.0):
+                    raise EngineError(f"{tr.template}: escape factor {phi!r} outside (0, 1]")
                 accept = phi >= 1.0 or self.rng.random() < phi
             except BaseException:
                 if tx.open:
@@ -2842,12 +2950,7 @@ class MeltEngine:
         for tr in trs:
             tx, products = self._begin_apply(tr, _LocalView(self.state, list(tr.components)))
             try:
-                phi = 1.0
-                if len(products) == 2:
-                    new = self._phi_scan(products)
-                    rate = self.pair_rate(new[products[0]], new[products[1]],
-                                          self._product_gel(new, tr.components))
-                    phi = 1.0 if rate is None else rate.phi
+                phi, _bypass = self._reverse_phi(tr, products)
             finally:
                 tx.rollback()
             phis.append(phi)
@@ -3062,5 +3165,6 @@ class MeltEngine:
 __all__ = [
     "ComponentPairSampler", "DeclarationError", "EngineError", "EngineTransition", "Event",
     "EXCLUDED_DEFINITION", "LEAK_ESTIMATOR", "MET_SCHEMA", "MeltEngine", "PairRate", "PayloadCatalog", "Propensities", "RunResult",
+    "SelfPairRows",
     "SpeciesIdentity", "TransportLaw", "escape_factor", "pooled_leak_fraction", "refuse_initial_species_overlap",
 ]
