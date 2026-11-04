@@ -1303,9 +1303,10 @@ cpdef _process_duplicate_reactions(list reaction_list):
 
                     # Refuse conflicting metadata rather than silently losing flux pairs.
                     if (reaction.pairs or []) != (reaction2.pairs or []):
-                        raise ChemkinError(
-                            'Conflicting flux pairs for duplicate reaction {0}; '
-                            'cannot merge DUPLICATE leaves.'.format(reaction))
+                        message = ('Conflicting flux pairs for duplicate reaction {0}; '
+                                   'cannot merge DUPLICATE leaves.'.format(reaction))
+                        logging.error(message)
+                        raise ChemkinError(message)
 
                     duplicate_reactions_to_remove.append(reaction2)
                 elif reaction1.kinetics.is_pressure_dependent() == reaction2.kinetics.is_pressure_dependent():
