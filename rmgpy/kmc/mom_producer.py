@@ -128,7 +128,7 @@ from rmgpy.kmc.event_record import same_species
 from rmgpy.molecule import Molecule
 from rmgpy import species_identity as _species_identity
 from rmgpy.molecule.molecule import Bond
-from rmgpy.polymer_spec import DEFAULT_RESIDENCE
+from rmgpy.polymer_spec import DEFAULT_RESIDENCE, PolymerSpec
 from rmgpy.quantity import Quantity
 
 SCHEMA = "kmc-mom-producer/1"
@@ -159,6 +159,7 @@ RADICAL_POOL_SUFFIX = "_re"      # the explicit end-radical pool of kernel mode:
 ALKENE_POOL_SUFFIX = "_ut"       # the explicit terminal-alkene pool of kernel mode: <label>_ut
 INTERIOR_RADICAL_POOL_SUFFIX = "_rm"   # the explicit interior-radical pool of kernel mode: <label>_rm
 INTERIOR_ALKENE_POOL_SUFFIX = "_ui"    # the explicit internal-alkene pool of kernel mode: <label>_ui
+COPOLYMER_OBSERVABLE_RELATIVE = 1.0e-6   # polymer_spec.py v1 observable_relative_tolerance default
 
 QUANTITY_SOURCES = {
     "polymer_condensed_mass_g": (
@@ -344,7 +345,12 @@ def ancestry_elements(spec) -> Tuple[frozenset, frozenset]:
             if decl.hydrogens:
                 other.add(("H", None))
 
-    add(spec.repeat_unit, ms._backbone_keys(spec.repeat_unit))
+    if isinstance(spec, PolymerSpec):                 # a copolymer: each residue's entry-exit path
+        from rmgpy.kmc import melt_sequence as msq
+        for name, residue in spec.residues:
+            add(residue.graph, msq.residue_backbone_keys(spec, name))
+    else:
+        add(spec.repeat_unit, ms._backbone_keys(spec.repeat_unit))
     add(spec.head_end_group, frozenset())
     add(spec.tail_end_group, frozenset())
     graphs = {name: graph for name, graph, _d in spec.small_species}
@@ -602,11 +608,12 @@ def declared_species(spec) -> Dict[str, Tuple[Optional[str], Optional[str]]]:
     identity = me.SpeciesIdentity(spec)
     out = {}
     graphs = {name: graph for name, graph, _d in spec.small_species}
+    products = dict(me.monomer_product_species(spec))
     for name in mo.declared_species_names(spec, identity):
         if name in BUILTIN_STRUCTURES:
             out[name] = (None, BUILTIN_STRUCTURES[name])
-        elif name == "monomer_product":
-            out[name] = (spec.monomer_product.to_legacy_molecule({}).to_adjacency_list(), None)
+        elif name in products:
+            out[name] = (products[name].to_legacy_molecule({}).to_adjacency_list(), None)
         else:
             out[name] = (graphs[name].to_legacy_molecule({}).to_adjacency_list(), None)
     return out
@@ -643,12 +650,13 @@ def phase_kinetics(spec, species: Sequence[str], initial: Dict[str, float], gas:
     n / V_poly, its polymer volume), ``V_kMC / V_gas`` for a gas one (c = n /
     V_gas, the ideal-gas volume of the gas moles, 1 m^3 when there are none);
     kMC: c = n / V, V the melt volume of the declaration."""
-    init = spec.initialization()
+    init = me.declared_initialization(spec)
     v_kmc = init.volume_m3 * init.scale_factor
     n_gas = math.fsum(initial[k] for k in gas if k in initial)
     p_pa = Quantity(pressure[0], pressure[1]).value_si
     v_gas = constants.R * float(temperature) * n_gas / p_pa if n_gas > 0 else 1.0
-    tolerance = spec.observable_relative_tolerance
+    # a copolymer declaration (schema v2) carries no observable tolerance: v1's default
+    tolerance = getattr(spec, "observable_relative_tolerance", COPOLYMER_OBSERVABLE_RELATIVE)
     ratios = {name: v_kmc / (v_poly if residence.get(name, residence["*"]) == "melt" else v_gas)
               for name in species}
     return {"ratio_by_species": ratios, "V_kmc_m3": v_kmc, "V_poly_m3": v_poly, "V_gas_m3": v_gas,
@@ -3066,6 +3074,9 @@ def build_input(deck, context: dict, *, temperature: float, end: float, families
                 kernels: Optional[dict] = None) -> Tuple[str, dict]:
     """The MoM input text and the facts the conversion needs."""
     spec = deck.spec
+    if isinstance(spec, PolymerSpec):
+        return copolymer_input(deck, context, temperature=temperature, end=end, families=families,
+                               constraints=constraints, kernels=kernels)
     if deck.xs < 2:
         raise ProducerError(f"deck cutoff {deck.xs}: the MoM polymer() needs cutoff >= 2")
     label = mom_label(deck.label)
@@ -3364,6 +3375,167 @@ def build_input(deck, context: dict, *, temperature: float, end: float, families
     return "\n".join(lines) + "\n", facts
 
 
+def copolymer_input(deck, context: dict, *, temperature: float, end: float, families: Sequence[str],
+                    constraints: Optional[Dict[str, Any]] = None,
+                    kernels: Optional[dict] = None) -> Tuple[str, dict]:
+    """The MoM input of a linear statistical copolymer deck (``PolymerSpec``):
+    kernel mode only, from a ``copolymer_kernels`` table.  One chain pool
+    (``rmgpy.copolymer_pool``: one residue per unit of mean molar mass a =
+    Mbar0, its moments from the declaration) written in polymer-mom's legacy
+    arguments: its proxy unit as ``monomer``, the declared caps as
+    ``end_groups``, the seed's moments, and the unit's mass and exact element
+    counts as ``unit_molar_mass`` and ``unit_atoms`` (the proxy unit names the
+    pool and never enters a mass or a moment); the table's chain homolysis as its
+    ``kernel_homolysis`` (``copolymer_kernels.mom_homolysis_terms``) into an
+    end-radical pool ``<label>_re`` (``end_radical_site='primary'``, born
+    empty), whose chains carry one end group on average (e / 2).  The table's
+    limitations (``limited:composition_drift``) travel in the record and the
+    file's header flags."""
+    from rmgpy import copolymer_pool as cp
+    from rmgpy.kmc import copolymer_kernels as ck
+    spec = deck.spec
+    if kernels is None:
+        raise ProducerError("a copolymer deck (schema v2) is written in kernel mode only: a family run reads one "
+                            "repeat unit (--kernel-rates TABLE --kernel homolysis:substrate=chain)")
+    if deck.xs < 2:
+        raise ProducerError(f"deck cutoff {deck.xs}: the MoM polymer() needs cutoff >= 2")
+    table = kernels["table"]
+    if table.get("schema") != ck.SCHEMA:
+        raise ProducerError(f"a copolymer deck needs a {ck.SCHEMA} table (got {table.get('schema')!r})")
+    if float(table["temperature_K"]) != float(temperature):
+        raise ProducerError(f"the table is at temperature {table['temperature_K']!r} K, the run at {temperature!r} "
+                            "K: kernel mode is isothermal at the table's temperature")
+    bound = (table.get("catalog") or {}).get("chemistry_sha256")
+    if bound != kr.chemistry_sha256(spec):
+        raise ProducerError(f"the table's chemistry digest {bound!r} is not the deck's ({kr.chemistry_sha256(spec)})")
+    if sorted(set(kernels["ids"])) != [ck.HOMOLYSIS] or ck.HOMOLYSIS not in table["kernels"]:
+        raise ProducerError(f"a copolymer pool carries the kernel {ck.HOMOLYSIS} only (requested "
+                            f"{sorted(set(kernels['ids']))}, table {sorted(table['kernels'])})")
+    phi = kernels["phi"]
+    if isinstance(phi, bool) or not isinstance(phi, (int, float)) or not 0.0 <= phi <= 1.0:
+        raise ProducerError(f"phi {phi!r} must be in [0, 1]")
+    try:
+        seed = cp.copolymer_pool_seed(spec)
+    except cp.CopolymerPoolRefusal as error:
+        raise ProducerError(str(error)) from error
+    label = mom_label(deck.label)
+    radical_label = label + RADICAL_POOL_SUFFIX
+    a, e = float(seed.mean_residue_molar_mass), float(seed.end_molar_mass)
+    mu = list(seed.moments_mol)
+    init = me.declared_initialization(spec)
+    species = declared_species(spec)
+    generated = {f"{label}_melt"} | {p + s for p in (label, radical_label) for s in ("", "_mu0", "_mu1", "_mu2")}
+    clash = sorted((set(species) & generated) | ((set(species) | generated) & set(context["species"])))
+    if clash:
+        raise ProducerError(f"species labels {clash} collide with the MoM pool label {label!r}, its moment "
+                            "or phase labels, or another species of the deck")
+    mobile = {name: count * init.scale_factor / constants.Na for name, count in spec.initial_mobile_counts if count}
+    graphs = {name: graph for name, graph, _d in spec.small_species}
+    mobile_kg = {name: amount * graphs[name].composition.molar_mass_kg_mol() for name, amount in mobile.items()}
+    phase_mobile = sorted(mobile) if spec.density_basis == "whole_initial_mixture" else []
+    phase = [label, radical_label] + phase_mobile
+    initial = {label: mu[0]}
+    initial.update({name: amount for name, amount in sorted(mobile.items())})
+    initial.update({name: x * BATH_GAS_TOTAL_MOL for name, x in context["bath"].items()})
+    pressure = context["pressure"] or DEFAULT_PRESSURE
+    residence = species_residence(spec, sorted(species), sorted(context["bath"]))
+    v_poly = (a * mu[1] / 1000.0 + math.fsum(mobile_kg[n] for n in phase_mobile)) / spec.density_kg_m3
+    volume_ratio = (a * mu[1] / 1000.0 + math.fsum(mobile_kg[n] for n in phase_mobile)) / (
+        spec.initial_mass_kg + math.fsum(mobile_kg.values()))
+    homolysis = ck.mom_homolysis_terms(table, phi=float(phi), daughter=radical_label)
+    kernel = table["kernels"][ck.HOMOLYSIS]
+    record = {"kernels": [ck.HOMOLYSIS], "excluded_kernels": [], "temperature_K": float(table["temperature_K"]),
+              "phi": float(phi), "moment_unit": table["moment_unit"], "volume_ratio_mom_over_kmc": volume_ratio,
+              "chemistry_sha256": bound, "table_schema": ck.SCHEMA,
+              "refused": table["refused"], "limitations": table["limitations"],
+              "residue_selective": kernel["residue_selective"], "per_residue_rate": kernel["per_residue_rate"],
+              # a cut fragment carries one of the two end groups: e / 2 per radical-pool chain on average
+              "pool_end_mass_g_mol": {label: e, radical_label: e / 2.0},
+              "pool_family": {label: "chain", radical_label: "radical_end"},
+              "declared_species_by_pool": {label: [], radical_label: []}}
+    record.update(kernels["source"])
+    terms = {"homolysis": homolysis, "recombination": [], "transfer": {}, "move": {}, "record": record}
+    proxy = cp.proxy_unit(spec).to_adjacency_list()
+    head, tail = cp.legacy_end_groups(spec)
+    unit = ("    unit_molar_mass=" + repr(a) + ",\n    unit_atoms="
+            + repr({element: str(n) for element, n in cp.mean_residue_atoms(spec)}) + ",")
+    constraints = dict(constraints or {})
+    if constraints:
+        constraints.setdefault("allowed", ["input species"])
+    lines = [
+        "# RMG method-of-moments input written by rmgpy.kmc.mom_producer from the kMC deck",
+        f"# {deck.path} (sha256 {deck.sha256}); conventions: ../conventions.json",
+        "database(",
+        f"    thermoLibraries={list(context['thermo_libraries'])!r},",
+        "    reactionLibraries=[],",
+        "    seedMechanisms=[],",
+        "    kineticsDepositories='default',",
+        "    kineticsFamilies='none',",
+        "    kineticsEstimator='rate rules',",
+        ")",
+    ]
+    lines += [context["species"][k] for k in sorted(context["species"])]
+    for name in sorted(species):
+        adjacency, smiles = species[name]
+        lines.append(_species_statement(name, adjacency, smiles))
+    lines += [
+        "polymer(",
+        f"    label={label!r},",
+        f"    monomer=\"\"\"{proxy}\"\"\",",
+        f"    end_groups=[{head.to_smiles()!r}, {tail.to_smiles()!r}],",
+        f"    cutoff={deck.xs},",
+        f"    moments=[{mu[0]!r}, {mu[1]!r}, {mu[2]!r}],",
+        f"    initial_mass={a * mu[1] / 1000.0!r},",
+        unit,
+        f"    kernel_homolysis={homolysis!r},",
+        ")",
+        "polymer(",
+        f"    label={radical_label!r},",
+        f"    monomer=\"\"\"{proxy}\"\"\",",
+        f"    end_groups=[{head.to_smiles()!r}, {tail.to_smiles()!r}],",
+        f"    cutoff={deck.xs},",
+        "    moments=[0.0, 0.0, 0.0],",
+        "    initial_mass=0.0,",
+        unit,
+        "    end_radical_site='primary',",
+        ")",
+        f"phase = polymer_phase(label={label + '_melt'!r}, species={phase!r}, solvent={label!r}, "
+        f"density=({spec.density_kg_m3!r}, 'kg/m^3'), residence={residence!r})",
+        "hybridPolymerReactor(",
+        f"    temperature=({float(temperature)!r}, 'K'),",
+        f"    pressure=({pressure[0]!r}, {pressure[1]!r}),",
+        f"    initialMoles={initial!r},",
+        "    polymerPhase=phase,",
+        f"    terminationTime=({float(end)!r}, 's'),",
+        "    constant_gas_volume=False,",
+        ")",
+        "model(toleranceMoveToCore=0.1, toleranceInterruptSimulation=0.1)",
+        f"simulator(atol={SIMULATOR_ATOL!r}, rtol={SIMULATOR_RTOL!r})",
+        "options(units='si', generateOutputHTML=False, generatePlots=False, saveSimulationProfiles=True, "
+        "saveEdgeSpecies=False)",
+    ]
+    if constraints:
+        args = ", ".join(f"{k}={v!r}" for k, v in sorted(constraints.items()))
+        lines.append(f"generatedSpeciesConstraints({args})")
+    facts = {"label": label, "a_g_mol": a, "e_g_mol": e, "moments_mol": mu,
+             "initial_mass_g": spec.initial_mass_kg * 1000.0, "species": sorted(species),
+             "species_structures": {k: list(v) for k, v in sorted(species.items())},
+             "end_groups": [head.to_smiles(), tail.to_smiles()],
+             "phase_species": phase, "initial_moles": initial, "bath": sorted(context["bath"]),
+             "pressure": list(pressure), "constraints": constraints, "families": sorted(set(families)),
+             "volume_ratio_mom_over_kmc": volume_ratio, "residence": residence,
+             "phase_kinetics": phase_kinetics(spec, sorted(species), initial, sorted(context["bath"]), temperature,
+                                              pressure, v_poly=v_poly, residence=residence),
+             "kernels": terms, "radical_pool": radical_label, "alkene_pool": None, "interior_radical_pool": None,
+             "interior_alkene_pool": None,
+             "copolymer": {"mean_residue_molar_mass_g_mol": str(seed.mean_residue_molar_mass),
+                           "end_molar_mass_g_mol": str(seed.end_molar_mass),
+                           "composition": {name: str(x) for name, x in seed.composition},
+                           "periods_per_residue": seed.backbone_atoms_per_residue,
+                           "proxy_word": list(seed.proxy_word)}}
+    return "\n".join(lines) + "\n", facts
+
+
 def conventions(deck, facts: dict, *, temperature: float, family: dict, database: Tuple[str, str],
                 flags: dict) -> dict:
     """``conventions.json``: every MoM setting or definition that is not the
@@ -3479,6 +3651,20 @@ def conventions(deck, facts: dict, *, temperature: float, family: dict, database
          "time takes the row); derived quantities from the interpolated columns; outside the profile "
          "refused"),
     ]
+    if "copolymer" in facts:
+        rows += [
+            ("copolymer_pool", facts["copolymer"],
+             "a linear statistical copolymer as one pool (rmgpy.copolymer_pool): one residue per unit of mean "
+             "molar mass a = sum x_i M_i (exact), moments in residues from the declared ensemble, the pool "
+             "in polymer-mom's legacy polymer() arguments under the MoM label: the proxy unit as monomer (it "
+             "names the pool and never enters a mass or a moment), the declared caps as end_groups, the "
+             "seed's moments, a as unit_molar_mass and the mean residue's exact element counts as "
+             "unit_atoms; the chain homolysis of "
+             "copolymer_kernels (sites weighted by word_frequencies, the uniform cut at the mean rate per "
+             "position) into the end-radical pool, whose chains carry e / 2 of end groups on average; "
+             "composition is not a pool quantity: a residue-selective table's limited:composition_drift "
+             "withholds it, never corrected"),
+        ]
     if "kernels" in facts:
         record = facts["kernels"]["record"]
         rows += [
@@ -4824,7 +5010,8 @@ def convert(rmg_dir, times: Sequence[float], facts: dict, classes: KmcClasses) -
     bath_first, _m = mass_of(first, list(bath.values()))
     species_mass = {name: m.get_molecular_weight() * 1000.0 for name, m in species_structures(facts).items()}
     candidates = pool_species_candidates(pools, species_structures(facts), species_mass,
-                                         classes.observer.spec.legacy_molecules()[0],
+                                         None if isinstance(classes.observer.spec, PolymerSpec)
+                                         else classes.observer.spec.legacy_molecules()[0],
                                          kernel_record=(facts.get("kernels") or {}).get("record"))
     light_pools = {}
     for r in pool_doc.get("reactions") or ():
@@ -5088,6 +5275,9 @@ def produce(deck_path, *, checkout, temperature: float, end: float, snapshots: i
         flags["kinetics_not_comparable"] = {
             "ratio_by_species": {n: kinetics["ratio_by_species"][n] for n in kinetics["not_comparable"]},
             "tolerance": kinetics["tolerance"]}
+    # a copolymer table's named limitations (limited:composition_drift): what one pool cannot follow
+    for limitation in ((facts.get("kernels") or {}).get("record") or {}).get("limitations") or ():
+        flags[limitation["name"]] = limitation
     manifest = {"schema": SCHEMA, "status": "written", "mode": mode,
                 "deck": {"path": deck.path, "sha256": deck.sha256, **deck.digests()},
                 "catalogs": [{"path": str(p), "sha256": _sha256(Path(p).read_bytes())} for p in catalogs],

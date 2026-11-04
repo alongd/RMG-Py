@@ -86,6 +86,12 @@ DEFINITIONS = {
                                                       "term moves mu_k out of the participant's family (mol/s)",
     "law_exact_mol_s.<template>.S<slot>.mu<k>": "diagnostic: the exact counterpart of law_attribution_mol_s",
 }
+# a copolymer's rows (their documents only: a v1 document's definitions are unchanged)
+COPOLYMER_DEFINITIONS = {
+    "composition_fraction.<residue>": "a copolymer's polymer-derived residue mole fraction: the residue's atoms (by "
+                                      "origin) in polymer-derived molecules over its atom count, normalized over "
+                                      "the residues (melt_observables composition.polymer_derived)",
+}
 ROW_FIELDS = ("time_s", "row", "producer", "kind", "value", "stderr", "lower", "upper", "seeds", "basis",
               "reason")
 JOIN_COLUMNS = ("time_s", "row", "status", "a", "stderr_a", "lower_a", "upper_a", "b", "stderr_b", "lower_b",
@@ -109,8 +115,17 @@ def length_interval(backbone: int, nbb: int) -> Tuple[int, int]:
 
 def geometry(spec) -> Tuple[int, int]:
     """(periods per declared unit, backbone atoms per period) of a declaration
-    (``declared_chain.ChainGeometry``, the kernel tables' moment unit)."""
+    (``declared_chain.ChainGeometry``, the kernel tables' moment unit); of a
+    copolymer (``PolymerSpec``), one residue of one backbone atom per period
+    (``copolymer_kernels``)."""
     from rmgpy.kmc.declared_chain import ChainGeometry
+    from rmgpy.polymer_spec import PolymerSpec
+    if isinstance(spec, PolymerSpec):
+        from rmgpy.copolymer_pool import CopolymerPoolRefusal, copolymer_pool_seed
+        try:
+            return copolymer_pool_seed(spec).backbone_atoms_per_residue, 1
+        except CopolymerPoolRefusal as error:
+            raise ComparisonRowsError(str(error)) from error
     g = ChainGeometry.of(spec)
     ppu = g.d_rep // g.period
     if ppu < 1 or g.d_rep % g.period or len(g.backbone_keys) % ppu:
@@ -177,8 +192,11 @@ def _withheld_time(time_s, producer, names, reason) -> List[dict]:
 
 
 def _document(kind, source, binding, geometry_, withheld_families, rows, **extra) -> dict:
+    definitions = DEFINITIONS
+    if any(r["row"].startswith("composition_fraction.") for r in rows):
+        definitions = dict(DEFINITIONS, **COPOLYMER_DEFINITIONS)
     doc = {"schema": SCHEMA, "producer": dict({"kind": kind}, **source), "binding": binding,
-           "geometry": geometry_, "definitions": DEFINITIONS, "withheld_families": withheld_families,
+           "geometry": geometry_, "definitions": definitions, "withheld_families": withheld_families,
            "rows": rows}
     doc.update(extra)
     return doc
@@ -194,7 +212,7 @@ def _observation_lines(path: Path) -> List[dict]:
 def _kmc_values(obs: dict, first: dict, ppu: int, nbb: int, cut: int) -> Tuple[dict, dict, dict]:
     """({row: (lower, upper)}, {family: basis}, {family: withheld reason}) of
     one observation; ``first`` is the same seed's t = 0 observation."""
-    from rmgpy.kmc.melt_observables import mom_reported_quantities
+    from rmgpy.kmc.melt_observables import mom_reported_quantities, whole_ensemble_quantities
     u = obs["scale_factor"] / obs["avogadro"]
     t1 = obs["tier1"]
 
@@ -235,7 +253,13 @@ def _kmc_values(obs: dict, first: dict, ppu: int, nbb: int, cut: int) -> Tuple[d
                                "[d ppu, (d + 1) ppu] periods")
         withheld["mwd_mol"] = "the observation carries no length distribution (observables schema before 7)"
     values.update(_length_bins(molecules, cut, u, distribution is not None))
-    quantities = mom_reported_quantities(obs)
+    if obs.get("length_rule") == "mean_residue_molar_mass":       # a copolymer: no tail keys, its composition
+        quantities = whole_ensemble_quantities(obs)
+        for name, x in obs["composition"]["polymer_derived"].items():
+            values[f"composition_fraction.{name}"] = (x,) * 2
+        basis["composition_fraction"] = "composition.polymer_derived (residue atoms by origin)"
+    else:
+        quantities = mom_reported_quantities(obs)
     for key in _WHOLE:
         values[key] = (quantities[key],) * 2
     return values, basis, withheld
@@ -392,6 +416,9 @@ def reference_rows(path, producer: str) -> dict:
 MOM_NO_INVENTORY = ("the --mom file carries no element or total inventory (only the quantities of "
                     "melt_observables.mom_reported_quantities)")
 MOM_MOMENTS_ONLY = "MoM reports moments: its pools hold no length distribution"
+MOM_NO_COMPOSITION = ("one copolymer pool carries no composition: its unit is the mean residue "
+                      "(rmgpy.copolymer_pool), the residues are not tracked")
+COMPOSITION_DRIFT = "limited:composition_drift"
 
 
 def mom_rows(path, deck) -> dict:
@@ -401,6 +428,7 @@ def mom_rows(path, deck) -> dict:
     from rmgpy.kmc import run as kr
     from rmgpy.kmc.melt_engine import SpeciesIdentity
     from rmgpy.kmc.melt_observables import declared_species_names
+    from rmgpy.polymer_spec import PolymerSpec
     path = Path(path)
     raw = path.read_bytes()
     doc = json.loads(raw)
@@ -440,6 +468,11 @@ def mom_rows(path, deck) -> dict:
     cut = declared.xs * ppu
     names = declared_species_names(declared.spec, SpeciesIdentity(declared.spec))
     ladder = not_produced.get("explicit_dp_mol") or MOM_MOMENTS_ONLY
+    residues, composition = [], MOM_NO_COMPOSITION
+    if isinstance(declared.spec, PolymerSpec):
+        residues = [name for name, _r in declared.spec.residues]
+        if COMPOSITION_DRIFT in (header.get("flags") or {}):
+            composition += f"; {COMPOSITION_DRIFT}: the chemistry is residue-selective, so the composition drifts"
     rows = []
     times = sorted(float(e["time_s"]) for e in entries)
     for entry in sorted(entries, key=lambda e: float(e["time_s"])):
@@ -466,6 +499,7 @@ def mom_rows(path, deck) -> dict:
             if diagnostics_at.get(t, {}).get(key) is not None:
                 rows.append(_row(t, name, "mom", "diagnostic", value=float(diagnostics_at[t][key])))
         rows += [_row(t, f"ladder_mol.{p}", "mom", "withheld", reason=ladder) for p in range(1, cut + 1)]
+        rows += [_row(t, f"composition_fraction.{r}", "mom", "withheld", reason=composition) for r in residues]
     binding = {"deck_sha256": declared.sha256, "chemistry_sha256": kr.chemistry_sha256(declared.spec),
                "temperature_K": float((header.get("run") or {}).get("temperature_K")), "times_s": times,
                "pass": PASS_WELL_MIXED}
