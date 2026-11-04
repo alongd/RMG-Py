@@ -22551,7 +22551,7 @@
       "evidence": [
         "test/rmgpy/rmg/inputTest.py"
       ],
-      "source_sha256": "fd3b365c49ec9ea68a1502b5ff9f2677b8764f3ba0164640f7cc1140bdf740d1",
+      "source_sha256": "c72dde8e5e011d4e468a0628f61444ec3493c49668222ab33265f362c6e1ba66",
       "file": "rmgpy/rmg/input.py",
       "line": 2996
     },
@@ -22629,12 +22629,13 @@
       "line": 3097
     },
     "rmgpy/rmg/input.py:save_input_file": {
-      "source_sha256": "bde695c6788d06ad45288cf00e92274d95c6e980e046550216afab44d7e72a59",
+      "source_sha256": "e7dcc4a81a2ba68f61890a6764f528b60859bfdcb2cae63c573ada27f5238fa0",
       "verdict": "carried",
       "reason": "The existing supported header-free declaration keeps its original graph and vibrationalManifold DSL line by stripping the marker only from the serialization copy; explicit resolved input remains refused.",
       "evidence": [
         "test/rmgpy/data/excitedThermoSourceTest.py",
-        "test/rmgpy/yaml_writer/vibrationalManifoldExportTest.py"
+        "test/rmgpy/yaml_writer/vibrationalManifoldExportTest.py",
+        "test/rmgpy/rmg/inputTest.py"
       ],
       "file": "rmgpy/rmg/input.py",
       "line": 3442
@@ -22888,9 +22889,10 @@
       "verdict": "carried",
       "reason": "Model/configuration administration retains explicit species/reaction objects. Scientific acquisition delegates to original-species thermo/transport/statmech, opted-in family/exact library and refusing QM/ML/default-transfer boundaries.",
       "evidence": [
-        "test/rmgpy/rmg/mainTest.py"
+        "test/rmgpy/rmg/mainTest.py",
+        "test/rmgpy/i167CanteraExportPathTest.py"
       ],
-      "source_sha256": "5c48e2ed683489f872b396d70ff30121f0c7d33a081d514d94c5aeaab73aaaa4"
+      "source_sha256": "d4f4a40572db4e65fc3759bf8f76be0c1679bfcb4197eb11f114052816498d18"
     },
     "rmgpy/rmg/main.py:RMG.execute": {
       "verdict": "carried",
@@ -22922,9 +22924,10 @@
       "evidence": [
         "test/rmgpy/data/excitedThermoSourceTest.py",
         "test/rmgpy/rmg/mainTest.py",
-        "test/rmgpy/diagnosticModeTest.py"
+        "test/rmgpy/diagnosticModeTest.py",
+        "test/rmgpy/i167CanteraExportPathTest.py"
       ],
-      "source_sha256": "b21aa6189b0d9326721f5b7b29e42c273644457557c8e6d841503bab73b4390c"
+      "source_sha256": "7999e5b776d723cef61818a6a85cb3d33ce13eeb38be364790dce797a11c8935"
     },
     "rmgpy/rmg/main.py:RMG.get_git_commit": {
       "verdict": "carried",

@@ -5149,7 +5149,7 @@
   {
     "site": "rmgpy/rmg/input.py::read_input_file::reaction-io",
     "kind": "reader-exporter",
-    "line": 3159,
+    "line": 3163,
     "source": "def read_input_file(path, rmg0):",
     "verdict": "not-reachable-for-resolved",
     "reason": "Job input reads/writes settings, species, reactor conditions and library references, without building or serializing executable Reaction rates. Actual library resolution is separately guarded.",
@@ -5160,7 +5160,7 @@
   {
     "site": "rmgpy/rmg/input.py::read_thermo_input_file::reaction-io",
     "kind": "reader-exporter",
-    "line": 3268,
+    "line": 3272,
     "source": "def read_thermo_input_file(path, rmg0):",
     "verdict": "not-reachable-for-resolved",
     "reason": "Job input reads/writes settings, species, reactor conditions and library references, without building or serializing executable Reaction rates. Actual library resolution is separately guarded.",
@@ -5171,7 +5171,7 @@
   {
     "site": "rmgpy/rmg/input.py::save_input_file::reaction-io",
     "kind": "reader-exporter",
-    "line": 3442,
+    "line": 3446,
     "source": "def save_input_file(path, rmg):",
     "verdict": "refused",
     "reason": "The job-input writer refuses resolved species identities before creating its state-blind settings file; it never serializes executable Reaction rates.",
@@ -5182,7 +5182,7 @@
   {
     "site": "rmgpy/rmg/main.py::RMG.check_model::is_isomorphic#1",
     "kind": "direction",
-    "line": 1928,
+    "line": 1931,
     "source": "if spc.is_isomorphic(spc2):",
     "verdict": "guarded",
     "reason": "Database/model imports validate original library or Chemkin declarations; final output delegates to guarded converters.",
@@ -5194,7 +5194,7 @@
   {
     "site": "rmgpy/rmg/main.py::RMG.check_model::is_isomorphic#2",
     "kind": "direction",
-    "line": 1938,
+    "line": 1941,
     "source": "if spc.is_isomorphic(spc2):",
     "verdict": "guarded",
     "reason": "Database/model imports validate original library or Chemkin declarations; final output delegates to guarded converters.",
@@ -5206,7 +5206,7 @@
   {
     "site": "rmgpy/rmg/main.py::RMG.check_model::to_chemkin#1",
     "kind": "reader-exporter",
-    "line": 1981,
+    "line": 1984,
     "source": "rxn_string = violator[0].to_chemkin(self.reaction_model.core.species)",
     "verdict": "guarded",
     "reason": "Database/model imports validate original library or Chemkin declarations; final output delegates to guarded converters.",
@@ -5218,7 +5218,7 @@
   {
     "site": "rmgpy/rmg/main.py::RMG.generate_end_of_run_cantera_files::to_chemkin#1",
     "kind": "reader-exporter",
-    "line": 1556,
+    "line": 1559,
     "source": "s_name = s.to_chemkin()",
     "verdict": "guarded",
     "reason": "Database/model imports validate original library or Chemkin declarations; final output delegates to guarded converters.",
@@ -5230,7 +5230,7 @@
   {
     "site": "rmgpy/rmg/main.py::RMG.initialize::is_isomorphic#1",
     "kind": "direction",
-    "line": 862,
+    "line": 863,
     "source": "if spec.is_isomorphic(O2Singlet):",
     "verdict": "guarded",
     "reason": "Database/model imports validate original library or Chemkin declarations; final output delegates to guarded converters.",
@@ -5242,7 +5242,7 @@
   {
     "site": "rmgpy/rmg/main.py::RMG.load_database::reaction-io",
     "kind": "reader-exporter",
-    "line": 516,
+    "line": 517,
     "source": "def load_database(self):",
     "verdict": "guarded",
     "reason": "Database/model imports validate original library or Chemkin declarations; final output delegates to guarded converters.",
@@ -5254,7 +5254,7 @@
   {
     "site": "rmgpy/rmg/main.py::RMG.load_input::reaction-io",
     "kind": "reader-exporter",
-    "line": 297,
+    "line": 298,
     "source": "def load_input(self, path=None):",
     "verdict": "guarded",
     "reason": "Database/model imports validate original library or Chemkin declarations; final output delegates to guarded converters.",
@@ -5266,7 +5266,7 @@
   {
     "site": "rmgpy/rmg/main.py::RMG.load_thermo_input::reaction-io",
     "kind": "reader-exporter",
-    "line": 328,
+    "line": 329,
     "source": "def load_thermo_input(self, path=None):",
     "verdict": "guarded",
     "reason": "Database/model imports validate original library or Chemkin declarations; final output delegates to guarded converters.",
@@ -5278,7 +5278,7 @@
   {
     "site": "rmgpy/rmg/main.py::RMG.save_everything::reaction-io",
     "kind": "reader-exporter",
-    "line": 2605,
+    "line": 2608,
     "source": "def save_everything(self):",
     "verdict": "guarded",
     "reason": "Database/model imports validate original library or Chemkin declarations; final output delegates to guarded converters.",
