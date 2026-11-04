@@ -31,5 +31,134 @@ def test_non_arrhenius_table_is_refused_when_fit_error_exceeds_25_percent():
         Tmin=(300, "K"), Tmax=(800, "K"),
     )
 
+    import pickle
+    before = pickle.dumps(table)
     with pytest.raises(ValueError, match="exceeds 25%"):
         fit_kinetics_data_for_export(table, n_gas=2)
+    assert pickle.dumps(table) == before
+
+
+def test_positive_sum_fit_is_deterministic_bounded_and_preserves_source_bytes():
+    import pickle
+    import numpy as np
+    from rmgpy.kinetics import Arrhenius, MultiArrhenius
+    temperatures = np.linspace(300., 3500., 65)
+    terms = [Arrhenius(A=(2e-12, 'm^3/(mol*s)'), n=1.2, Ea=(1000., 'J/mol')),
+             Arrhenius(A=(1e-5, 'm^3/(mol*s)'), n=-0.5, Ea=(40000., 'J/mol'))]
+    values = [sum(term.get_rate_coefficient(float(t)) for term in terms) for t in temperatures]
+    table = KineticsData(Tdata=(temperatures, 'K'), kdata=(values, 'm^3/(mol*s)'))
+    before = pickle.dumps(table)
+    fit = fit_kinetics_data_for_export(table, 2)
+    assert isinstance(fit, MultiArrhenius)
+    assert len(fit.arrhenius) == 2
+    assert repr(fit_kinetics_data_for_export(table, 2)) == repr(fit)
+    assert pickle.dumps(table) == before
+    assert all(term.A.value_si > 0 for term in fit.arrhenius)
+    assert all((term.Tmin.value_si, term.Tmax.value_si) == (300., 3500.) for term in fit.arrhenius)
+    assert max(abs(fit.get_rate_coefficient(float(t)) / k - 1) for t, k in zip(temperatures, values)) <= .1
+
+
+@pytest.fixture(params=[30, 0])
+def admitted_export_reaction(monkeypatch, request):
+    """Native writer/reader coverage: V-V single term and V-T DUPLICATE sum."""
+    index = request.param
+    from pathlib import Path
+    import pickle
+    from rmgpy import settings
+    import rmgpy.data.rmg as data_module
+    from rmgpy.data.rmg import RMGDatabase
+    from rmgpy.data.kinetics.database import KineticsDatabase
+    from rmgpy.data.thermo import ThermoDatabase
+    from rmgpy.data.solvation import SolvationDatabase
+    from rmgpy.rmg.model import CoreEdgeReactionModel
+    from rmgpy.species import Species
+    from rmgpy.kinetics import MultiArrhenius
+    from rmgpy.thermo.thermoengine import process_thermo_data
+
+    database_path = Path(settings['database.directory'])
+    hub = RMGDatabase()
+    hub.kinetics = KineticsDatabase()
+    hub.kinetics.load_libraries(str(database_path / 'kinetics/libraries'), ['N2HeavyParticleRelaxation'])
+    hub.thermo = ThermoDatabase()
+    hub.thermo.load_libraries(str(database_path / 'thermo/libraries'), ['N2Vibrational'])
+    hub.solvation = SolvationDatabase()
+    monkeypatch.setattr(data_module, 'database', hub)
+    model = CoreEdgeReactionModel()
+    model.declare_vibrational_manifold(Species(label='N2').from_smiles('N#N'))
+    reaction = hub.kinetics.libraries['N2HeavyParticleRelaxation'].get_library_reactions()[index]
+    for species in reaction.reactants + reaction.products:
+        model._apply_vibrational_manifold(species)
+        species.thermo = hub.thermo.get_thermo_data(species)
+    reaction, _ = model.make_new_reaction(reaction, generate_thermo=False)
+    species_list = list(dict.fromkeys(reaction.reactants + reaction.products))
+    for species in species_list:
+        species.thermo = process_thermo_data(species, species.thermo)
+    reaction.generate_pairs()
+    assert reaction.pairs
+    return index, reaction, species_list
+
+
+def test_real_admitted_annotated_chemkin_round_trip_with_flux_pairs(tmp_path, admitted_export_reaction):
+    import pickle
+    from rmgpy.kinetics import MultiArrhenius
+    from rmgpy.chemkin import save_chemkin_file, save_species_dictionary, load_chemkin_file
+    index, reaction, species_list = admitted_export_reaction
+    snapshot = pickle.dumps(reaction.kinetics)
+    fit = fit_kinetics_data_for_export(reaction.kinetics, 2)
+    if index == 0:
+        assert isinstance(fit, MultiArrhenius)
+    mechanism, dictionary = tmp_path / 'chem.inp', tmp_path / 'dictionary.txt'
+    save_chemkin_file(str(mechanism), species_list, [reaction])
+    save_species_dictionary(str(dictionary), species_list)
+    text = mechanism.read_text()
+    assert 'Flux pairs:' in text and 'Output-only' in text
+    if index == 0:
+        assert 'DUPLICATE' in text
+    loaded_species, loaded_reactions = load_chemkin_file(str(mechanism), str(dictionary))
+    assert loaded_species and len(loaded_reactions) == 1
+    assert loaded_reactions[0].pairs
+    if index == 0:
+        assert isinstance(loaded_reactions[0].kinetics, MultiArrhenius)
+    for temperature in (300., 1000., 3500.):
+        assert loaded_reactions[0].get_rate_coefficient(temperature) == pytest.approx(
+            fit.get_rate_coefficient(temperature), rel=.01, abs=0)
+    assert pickle.dumps(reaction.kinetics) == snapshot
+
+
+@pytest.mark.parametrize('writer', ['cantera1', 'cantera2'])
+def test_real_admitted_cantera_round_trip(tmp_path, admitted_export_reaction, writer):
+    import pickle
+    import cantera as ct
+    import math
+    from rmgpy.rmg.model import ReactionModel
+    from rmgpy.data.transport import TransportDatabase
+    from rmgpy.yaml_cantera1 import write_cantera
+    from rmgpy.yaml_cantera2 import save_cantera_model
+    from rmgpy import settings
+    from pathlib import Path
+    index, reaction, species_list = admitted_export_reaction
+    transport = TransportDatabase()
+    transport.load(str(Path(settings['database.directory']) / 'transport'), ['PrimaryTransportLibrary'])
+    # Writer1 requires gas transport entries; request them from the loaded DB.
+    for species in species_list:
+        species.transport_data = transport.get_transport_properties(species)[0]
+    model = ReactionModel(species=species_list, reactions=[reaction])
+    path = tmp_path / 'chem.yaml'
+    snapshot = pickle.dumps(reaction.kinetics)
+    if writer == 'cantera1':
+        write_cantera(species_list, [reaction], model.get_elements(), path=str(path))
+    else:
+        save_cantera_model(model, str(path))
+    gas = ct.Solution(str(path))
+    fit = fit_kinetics_data_for_export(reaction.kinetics, 2)
+    assert gas.n_reactions == len(getattr(fit, 'arrhenius', [fit]))
+    for temperature in (300., 1000., 3500.):
+        gas.TP = temperature, 1e5
+        # RMG and Cantera use slightly different numerical gas constants.
+        # Compare the emitted Arrhenius parameters using Cantera's own R.
+        expected = sum(term.A.value_si * (temperature / term.T0.value_si) ** term.n.value_si
+                       * math.exp(-term.Ea.value_si * 1000. / (ct.gas_constant * temperature))
+                       for term in getattr(fit, 'arrhenius', [fit])) * 1000.
+        assert sum(gas.forward_rate_constants) == pytest.approx(expected, rel=1e-10, abs=0)
+    assert 'The source table is the record' in path.read_text()
+    assert pickle.dumps(reaction.kinetics) == snapshot
