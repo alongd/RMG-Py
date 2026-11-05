@@ -60,6 +60,9 @@ Pinned policies
 ``generate_reactions_from_families`` pipeline) for comparison only.
 """
 
+import marshal
+import sys
+import zlib
 from collections import Counter, OrderedDict, defaultdict
 from dataclasses import dataclass
 from typing import Callable, Dict, Iterable, Optional, Sequence, Tuple
@@ -562,11 +565,29 @@ def status_counts(moves: Iterable[Move]) -> Dict[str, int]:
 # ---------------------------------------------------------------------------
 # bridge: product identity modulo resonance (RMG resonance + isomorphism)
 # ---------------------------------------------------------------------------
-DEFAULT_KEY_CACHE_ENTRIES = 4096
+DEFAULT_KEY_CACHE_ENTRIES = 65536
 
 
 def _aromatic_bonds(molecule) -> int:
     return sum(1 for bond in molecule.get_all_edges() if bond.is_benzene())
+
+
+def _pack(sig: Tuple) -> bytes:
+    """An exact compact encoding of a signature (~1/30 of its tuples' memory).
+    Values are normalised first (int ids and electrons, float bond orders), so
+    two signatures pack equal exactly when they compare equal (1 == 1.0)."""
+    norm = tuple((int(a[0]), sys.intern(str(a[1])), None if a[2] is None else int(a[2]),
+                  int(a[3]), int(a[4]), int(a[5]),
+                  tuple((int(j), float(o) + 0.0) for j, o in a[6]))   # + 0.0: -0.0 -> 0.0
+                 for a in sig)
+    # marshal version 2 has no object back-references (versions >= 3 do, so
+    # their bytes depend on which objects happen to be shared); its only
+    # references are to interned strings, and every string here is interned.
+    return zlib.compress(marshal.dumps(norm, 2), 1)
+
+
+def _unpack(packed: bytes) -> Tuple:
+    return marshal.loads(zlib.decompress(packed))
 
 
 class ProductKeys:
@@ -578,7 +599,15 @@ class ProductKeys:
     aromatic form (see ``component``).  Every form generated is cached under
     the same key; ``cache=False`` recomputes every time.  The cache holds at most
     ``max_entries`` signatures, least recently used evicted first (a miss only
-    recomputes, so eviction never changes a key)."""
+    recomputes, so eviction never changes a key).
+
+    Entries are stored packed (``_pack``: exact; ~2 KB for a 160-atom product
+    against ~58 KB as tuples), so the default bound holds the keys of many
+    large channel sets.  Witness frames are canonical (one structure carries
+    the same atom ids on every record), so this is what keeps a structure that
+    recurs across records cheap.  ``_rooted`` maps a root whose forms were
+    generated to the key they give (same bound), so a root shared by several
+    inputs (Kekule variants of spectator rings) is generated once."""
 
     def __init__(self, cache: bool = True, max_entries: int = DEFAULT_KEY_CACHE_ENTRIES):
         if isinstance(max_entries, bool) or not isinstance(max_entries, int) or max_entries < 1:
@@ -586,15 +615,20 @@ class ProductKeys:
         self.cache = cache
         self.max_entries = max_entries
         self._known = OrderedDict()
+        self._rooted = OrderedDict()
         self.computed = 0
 
+    def _put(self, table, packed: bytes, value: bytes):
+        if packed in table:
+            table.move_to_end(packed)
+        table[packed] = value
+        while len(table) > self.max_entries:
+            table.popitem(last=False)
+
     def _remember(self, sig, key):
-        known = self._known
-        if sig in known:
-            known.move_to_end(sig)
-        known[sig] = key
-        while len(known) > self.max_entries:
-            known.popitem(last=False)
+        """Cache ``key`` under ``sig`` (each a signature or its ``_pack``)."""
+        self._put(self._known, sig if isinstance(sig, bytes) else _pack(sig),
+                  key if isinstance(key, bytes) else _pack(key))
 
     def forms(self, rows: Dict[int, Tuple]) -> Tuple[Molecule, ...]:
         mol = molecule_from_rows(rows)
@@ -610,9 +644,10 @@ class ProductKeys:
 
     def component(self, rows: Dict[int, Tuple]) -> Tuple:
         sig = _signature(rows)
-        if self.cache and sig in self._known:
-            self._known.move_to_end(sig)
-            return self._known[sig]
+        packed = _pack(sig) if self.cache else None
+        if self.cache and packed in self._known:
+            self._known.move_to_end(packed)
+            return _unpack(self._known[packed])
         self.computed += 1
         forms = self.forms(rows)
         sigs = [(_signature(molecule_rows(f)), bool(f.reactive)) for f in forms]
@@ -625,17 +660,30 @@ class ProductKeys:
         aromatic = max(_aromatic_bonds(f) for f in forms)
         root = min(s for (s, _r), f in zip(sigs, forms) if _aromatic_bonds(f) == aromatic)
         seen = list(sigs)
-        if root != sig:
-            rooted = self.forms(dict((r[0], r[1:]) for r in root))
-            sigs = [(_signature(molecule_rows(f)), bool(f.reactive)) for f in rooted]
-            seen += sigs
-        reactive = [s for s, r in sigs if r] or [s for s, _r in sigs]
-        key = min(reactive)
+        # The key is a function of the generating rows alone: of the input when
+        # it is its own root, else of the root.  _rooted holds exactly that
+        # function's values for rows whose forms were generated, so a root
+        # met again gives its key without generating its forms again.
+        generator = packed if root == sig else (_pack(root) if self.cache else None)
+        key_packed = self._rooted.get(generator) if (self.cache and root != sig) else None
+        if key_packed is not None:
+            self._rooted.move_to_end(generator)
+            key = _unpack(key_packed)
+        else:
+            if root != sig:
+                rooted = self.forms(dict((r[0], r[1:]) for r in root))
+                sigs = [(_signature(molecule_rows(f)), bool(f.reactive)) for f in rooted]
+                seen += sigs
+            reactive = [s for s, r in sigs if r] or [s for s, _r in sigs]
+            key = min(reactive)
+            if self.cache:
+                key_packed = _pack(key)
+                self._put(self._rooted, generator, key_packed)
         if self.cache:
             for s, _r in seen:
                 if s != sig:
-                    self._remember(s, key)
-            self._remember(sig, key)
+                    self._remember(s, key_packed)
+            self._remember(packed, key_packed)
         return key
 
     def __call__(self, item) -> Tuple:
