@@ -62,11 +62,11 @@ def test_source_entry_index_provenance(tmp_path, provenance, source_index, auto_
         'external': format_external_library_provenance('Toy', str(tmp_path)),
     }
     descriptions['both'] = descriptions['textual'] + '\n' + descriptions['external']
-    for shape in ('textual', 'external'):
-        descriptions[shape + '_rate_rule'] = descriptions[shape] + '\nEstimated using rate rule [X]\nfamily: H_Abstraction'
-    description = descriptions[provenance]
+    description = descriptions[provenance.replace('_rate_rule', '')]
     if source_index is not None:
         description += '\nOriginal reaction library entry index: {0}'.format(source_index)
+    if provenance.endswith('_rate_rule'):
+        description += '\nEstimated using rate rule [X]\nfamily: H_Abstraction'
     from rmgpy.reaction import Reaction
     library = KineticsLibrary(label='Ordinary', auto_generated=auto_generated)
     library.entries = {7: Entry(index=7, item=Reaction(reactants=[], products=[]),
@@ -96,6 +96,35 @@ def test_loader_refuses_invalid_source_indices(indices):
         long_desc='Originally from reaction library: Toy\nOriginal reaction library entry index: ' + indices)}
     with pytest.raises(DatabaseError, match='source entry ind'):
         library.get_library_reactions()
+
+
+@pytest.mark.parametrize('description', [
+    'Historical prose\nOriginally from reaction library: Toy\nOriginal reaction library entry index: 23',
+    'Originally from reaction library: Toy\n\nOriginal reaction library entry index: 23',
+    'Originally from reaction library: Toy\nRate commentary\nOriginal reaction library entry index: 23',
+])
+def test_free_text_cannot_complete_legacy_seed_identity(description):
+    library = KineticsLibrary(label='seed', auto_generated=True)
+    library.load_entry(index=7, label='H2 => H + H', kinetics=Arrhenius(), longDesc=description)
+    assert library.get_library_reactions()[0].source_identity is None
+
+
+@pytest.mark.parametrize('identity', [None, ('Toy', 0)])
+def test_explicit_seed_identity_ignores_description_and_rate_comments(identity):
+    description = ('Originally from reaction library: Archived\n'
+                   'Original reaction library entry index: 17\n'
+                   'Original reaction library entry index: 23')
+    library = KineticsLibrary(label='seed', auto_generated=True)
+    library.load_entry(index=7, label='H2 => H + H', kinetics=Arrhenius(comment=description),
+                       longDesc=description, sourceIdentity=identity)
+    assert library.get_library_reactions()[0].source_identity == identity
+
+
+@pytest.mark.parametrize('identity', [('Toy', True), ('Toy', '23'), ('', 23), ('Toy',), 23])
+def test_loader_refuses_invalid_explicit_seed_identity(identity):
+    library = KineticsLibrary(label='seed', auto_generated=True)
+    with pytest.raises(DatabaseError, match='source identity'):
+        library.load_entry(index=7, label='H2 => H + H', kinetics=Arrhenius(), sourceIdentity=identity)
 
 
 class TestLibrary:

@@ -309,6 +309,8 @@ def save_entry(f, entry, declarations=None):
 
     f.write('entry(\n')
     f.write('    index = {0:d},\n'.format(entry.index))
+    if hasattr(entry, 'source_identity'):
+        f.write('    sourceIdentity = {0!r},\n'.format(entry.source_identity))
     if label != '':
         f.write('    label = "{0}",\n'.format(label))
 
@@ -375,8 +377,9 @@ def save_entry(f, entry, declarations=None):
     if entry.short_desc.strip() != '':
         f.write(f'    shortDesc = """{entry.short_desc.strip()}""",\n')
     if entry.long_desc.strip() != '':
-        if parse_external_library_provenance(entry.long_desc):
+        if _EXTERNAL_PROVENANCE_START.rstrip() in entry.long_desc:
             # repr preserves JSON escapes through the Python library-file reader.
+            # Quoting prose must not interpret historical records as provenance.
             f.write('    longDesc = {!r},\n'.format(entry.long_desc.strip()))
         else:
             f.write(f'    longDesc = \n"""\n{entry.long_desc.strip()}\n""",\n')

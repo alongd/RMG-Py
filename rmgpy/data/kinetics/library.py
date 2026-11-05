@@ -72,6 +72,31 @@ from rmgpy.util import get_reaction_collider, write_files_atomically
 
 ################################################################################
 
+_SOURCE_IDENTITY_UNSET = object()
+
+
+def _leading_library_provenance(description):
+    """Return only the contiguous legacy provenance header, never trailing prose.
+
+    Legacy seeds put a library declaration first, followed by source indices and
+    optional external-library records. A blank or non-record line ends the header.
+    """
+    lines = (description or '').strip().splitlines()
+    if not lines or not (lines[0].strip().startswith((
+            'Originally from reaction library: ', 'Seed provenance: Originally from reaction library: ',
+            '[RMG external library provenance v1]'))):
+        return ''
+    header = []
+    for line in lines:
+        if not line.strip().startswith((
+                'Originally from reaction library: ', 'Seed provenance: Originally from reaction library: ',
+                'Original reaction library entry index: ', 'External library source: ',
+                '[RMG external library provenance v1]')):
+            break
+        header.append(line)
+    return '\n'.join(header)
+
+
 def _template_from_rate_rule_comment(long_desc):
     """Return the last bracketed template after ``rate rule`` in a seed comment.
 
@@ -457,30 +482,42 @@ class KineticsLibrary(Database):
             # being written to a library ("family: <label>"), and it is the only carrier
             # when the kinetics comment has been stripped. Constructing the reaction
             # without it discards that provenance at the one point it is still in hand.
-            provenance = parse_external_library_provenance(entry.long_desc) if self.auto_generated else None
-            if self.auto_generated and (provenance or (entry.long_desc and 'Originally from reaction library: ' in entry.long_desc)):
+            header = _leading_library_provenance(entry.long_desc) if self.auto_generated else ''
+            provenance = parse_external_library_provenance(header) if self.auto_generated else None
+            explicit_identity = getattr(entry, 'source_identity', _SOURCE_IDENTITY_UNSET)
+            if self.auto_generated and ((explicit_identity is not _SOURCE_IDENTITY_UNSET
+                                         and explicit_identity is not None) or provenance
+                                        or 'Originally from reaction library: ' in header):
                 declarations = [line.strip().replace('Originally from reaction library: ', '', 1)
-                                for line in entry.long_desc.splitlines()
+                                for line in header.splitlines()
                                 if line.strip().startswith('Originally from reaction library: ')]
-                if provenance:
+                if explicit_identity is not _SOURCE_IDENTITY_UNSET:
+                    # The dedicated field is authoritative, including explicit None.
+                    # Description and rate comments cannot supply either component.
+                    identity = explicit_identity
+                    lib = (identity[0] if identity is not None else
+                           provenance['label'] if provenance else
+                           declarations[0] if declarations else self.label)
+                elif provenance:
                     lib = provenance['label']
                     if any(declared != lib for declared in declarations):
                         raise DatabaseError('Conflicting external library provenance labels.')
                 else:
-                    lib = [line for line in entry.long_desc.split('\n') if 'Originally from reaction library: ' in line]
+                    lib = [line for line in header.split('\n') if 'Originally from reaction library: ' in line]
                     lib = lib[0].replace('Originally from reaction library: ', '').strip()
-                # Select both identity components here, under the same provenance
-                # predicate. An incomplete seed must never inherit its local index.
-                prefix = 'Original reaction library entry index: '
-                indices = [line.strip()[len(prefix):] for line in entry.long_desc.splitlines()
-                           if line.strip().startswith(prefix)]
-                try:
-                    values = {int(index) for index in indices}
-                except ValueError:
-                    raise DatabaseError('Invalid source entry index in seed library provenance.')
-                if len(values) > 1:
-                    raise DatabaseError('Conflicting source entry indices in seed library provenance.')
-                identity = (lib, values.pop()) if values else None
+                if explicit_identity is _SOURCE_IDENTITY_UNSET:
+                    # Legacy recovery is limited to the writer's leading record.
+                    # Keep the conflict guard within that authoritative record.
+                    prefix = 'Original reaction library entry index: '
+                    indices = [line.strip()[len(prefix):] for line in header.splitlines()
+                               if line.strip().startswith(prefix)]
+                    try:
+                        values = {int(index) for index in indices}
+                    except ValueError:
+                        raise DatabaseError('Invalid source entry index in seed library provenance.')
+                    if len(values) > 1:
+                        raise DatabaseError('Conflicting source entry indices in seed library provenance.')
+                    identity = (lib, values.pop()) if values else None
                 # Clean up any leading indents in kinetics comment
                 entry.data.comment = '\n'.join([line.strip() for line in entry.data.comment.split('\n')])
                 rxn = LibraryReaction(reactants=entry.item.reactants[:], products=entry.item.products[:],
@@ -821,11 +858,20 @@ class KineticsLibrary(Database):
                    metal=None,
                    site=None,
                    facet=None,
+                   sourceIdentity=_SOURCE_IDENTITY_UNSET,
                    ):
         """
         Method for parsing entries in database files.
         Note that these argument names are retained for backward compatibility.
+        ``sourceIdentity`` is the seed's attached (library, index) pair or explicit
+        None. Omission alone enables recovery from a legacy provenance header.
         """
+
+        if sourceIdentity is not _SOURCE_IDENTITY_UNSET and sourceIdentity is not None:
+            if (not isinstance(sourceIdentity, tuple) or len(sourceIdentity) != 2
+                    or not isinstance(sourceIdentity[0], str) or not sourceIdentity[0]
+                    or type(sourceIdentity[1]) is not int):
+                raise DatabaseError('Invalid source identity in seed library provenance.')
 
         # reactants = [Species(label=reactant1.strip().splitlines()[0].strip(), molecule=[Molecule().from_adjacency_list(reactant1)])]
         # if reactant2 is not None: reactants.append(Species(label=reactant2.strip().splitlines()[0].strip(), molecule=[Molecule().from_adjacency_list(reactant2)]))
@@ -856,6 +902,8 @@ class KineticsLibrary(Database):
             site=site,
             facet=facet,
         ), "KineticsLibrary.load_entry")
+        if sourceIdentity is not _SOURCE_IDENTITY_UNSET:
+            self.entries[index].source_identity = sourceIdentity
 
     def save(self, path, provenance_source=None):
         """

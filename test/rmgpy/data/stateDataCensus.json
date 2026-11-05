@@ -4876,7 +4876,7 @@
       "evidence": [
         "test/rmgpy/data/kinetics/kineticsTest.py"
       ],
-      "source_sha256": "f035e55910deaf64f8ae4a51670c6505595aa7e37dbfd88b7fad58bdd9a78758"
+      "source_sha256": "b6b5d37b372618f677d5460956a92bc8e8c2914f3d4b345835f83e9a4586674d"
     },
     "rmgpy/data/kinetics/common.py:save_entry.sort_efficiencies": {
       "verdict": "carried",
@@ -6487,7 +6487,7 @@
       "evidence": [
         "test/rmgpy/data/kinetics/libraryTest.py"
       ],
-      "source_sha256": "409107c3492f73f05b0860c3ab266aa66e30256adbc9c20f25281a560295ed3d"
+      "source_sha256": "15becfd8d1ab305a910c72d2aaad88ff4ccd77f56d6f944636a7080cfa3a9861"
     },
     "rmgpy/data/kinetics/library.py:KineticsLibrary.load": {
       "verdict": "carried",
@@ -6503,7 +6503,7 @@
       "evidence": [
         "test/rmgpy/data/kinetics/libraryTest.py"
       ],
-      "source_sha256": "d618c3bc89cb8d15666a9d652c83294193c908fb8e8a7673f3b55b09053d0e1f"
+      "source_sha256": "63a1572c7322a37b6761b34f7e87e60de5e6bbaa9eeff3821e89f0446670919c"
     },
     "rmgpy/data/kinetics/library.py:KineticsLibrary.load_old": {
       "verdict": "carried",
@@ -6667,6 +6667,15 @@
         "test/rmgpy/data/kinetics/libraryTest.py"
       ],
       "source_sha256": "bdaf3b1d54e57caf48ebb8a9fb22e3d204411b2248e7c12f903ceab549c33c30"
+    },
+    "rmgpy/data/kinetics/library.py:_leading_library_provenance": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Bounds legacy seed provenance text to its leading record; does not read or change molecular state or acquire thermochemistry.",
+      "evidence": [
+        "test/rmgpy/data/kinetics/libraryTest.py",
+        "test/rmgpy/solver/plasmaEnergyBalanceTest.py"
+      ],
+      "source_sha256": "7271aceb8ee1fec9bd755348c1478b875489d2f9dca29a14787cd6257518f2f6"
     },
     "rmgpy/data/kinetics/library.py:_template_from_rate_rule_comment": {
       "verdict": "not-reachable-for-resolved",
@@ -23487,7 +23496,7 @@
         "test/rmgpy/rmg/mainTest.py",
         "test/rmgpy/diagnosticModeTest.py"
       ],
-      "source_sha256": "ccc5d0e66a8bf00399e4bd2d64cdb2368f3832850632f315f81e3202fcc95af1"
+      "source_sha256": "36d43f6a65332e4b25496de483dd17dea9b4fbe3137d1df06d7a6b8a1c524bf8"
     },
     "rmgpy/rmg/main.py:RMG.make_species_labels_independent": {
       "verdict": "carried",

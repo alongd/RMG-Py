@@ -65,6 +65,14 @@ Run by restarting from a seed mechanism::
 
     python rmg.py -r path/to/seed/ input.py
 
+Generated seed library entries store their original library and entry index in
+``sourceIdentity``. An explicit ``None`` preserves unknown identity across further
+restarts; rate comments and descriptive prose cannot supply or override it.
+Older seeds without this field remain readable: only their leading contiguous
+textual or external-library provenance record can restore an original identity.
+Missing indices remain unknown, and conflicting indices in that record are refused.
+Ordinary reaction libraries continue to use their own library name and entry index.
+
 Run with CPU time profiling::
 
     python rmg.py -p input.py

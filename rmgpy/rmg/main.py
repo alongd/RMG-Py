@@ -2096,6 +2096,7 @@ class RMG(util.Subject):
                     data=reaction.kinetics,
                 )
 
+                entry.source_identity = getattr(reaction, 'source_identity', None)
                 if getattr(reaction, 'source_identity', None) is not None or getattr(reaction, 'library', None):
                     identity = getattr(reaction, 'source_identity', None)
                     source_library, source_index = identity if identity is not None else (reaction.library, None)
@@ -2109,7 +2110,7 @@ class RMG(util.Subject):
                         entry.long_desc += "Original reaction library entry index: {0}\n".format(source_index)
                     if library_source:
                         entry.long_desc += format_external_library_provenance(source_library, library_source) + "\n"
-                    entry.long_desc += reaction.kinetics.comment
+                    entry.long_desc += "\n" + reaction.kinetics.comment
                 else:
                     entry.long_desc = reaction.kinetics.comment
 
@@ -2126,6 +2127,7 @@ class RMG(util.Subject):
                     item=reaction,
                     data=reaction.kinetics,
                 )
+                entry.source_identity = getattr(reaction, 'source_identity', None)
                 try:
                     identity = getattr(reaction, 'source_identity', None)
                     source_library, source_index = identity if identity is not None else (reaction.library, None)
@@ -2139,7 +2141,7 @@ class RMG(util.Subject):
                         entry.long_desc += "Original reaction library entry index: {0}\n".format(source_index)
                     if library_source:
                         entry.long_desc += format_external_library_provenance(source_library, library_source) + "\n"
-                    entry.long_desc += reaction.kinetics.comment
+                    entry.long_desc += "\n" + reaction.kinetics.comment
                 except AttributeError:
                     entry.long_desc = reaction.kinetics.comment
                 warn_if_seed_loses_placement(reaction, entry, "edge")

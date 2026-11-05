@@ -1123,6 +1123,9 @@ def _seed_restart(tmp_path, core, reactions, edge=False, legacy=False, external_
         from rmgpy.data.kinetics.common import format_external_library_provenance
 
         for entry in library.entries.values():
+            # Convert the new dedicated record to an actual pre-field seed.
+            if hasattr(entry, 'source_identity'):
+                del entry.source_identity
             if legacy == 'external':
                 entry.long_desc = format_external_library_provenance('Toy', str(tmp_path))
             else:
@@ -1272,6 +1275,98 @@ def test_library_identity_energy_matrix(tmp_path, monkeypatch, case):
         np.testing.assert_allclose(r.energy_threshold[:2], expected[:2])
         r.initialize_model(core, reactions, [], [])
         np.testing.assert_allclose(r.energy_threshold, expected)
+
+
+@pytest.mark.parametrize('edge', [False, True])
+@pytest.mark.parametrize('case', ['ordinary_comments', 'unknown_comments', 'thermal_comments'])
+def test_seed_comment_identity_matrix(tmp_path, monkeypatch, edge, case):
+    """Historical rate comments cannot contradict or complete disk seed identity.
+
+    Port of the disk-comment review probe: assertions use physical channels and
+    independently checked archive isomorphism, across three real seed generations.
+    """
+    from types import SimpleNamespace
+    from rmgpy.data.kinetics.database import KineticsDatabase
+    from rmgpy.data.kinetics.library import KineticsLibrary
+
+    db = KineticsDatabase()
+    monkeypatch.setattr(rmg_data_module, 'database', SimpleNamespace(kinetics=db))
+    thermal = case == 'thermal_comments'
+    if thermal:
+        h = Species(label='H').from_smiles('[H]')
+        h2 = Species(label='H2').from_smiles('[H][H]')
+        core = [h, h2]
+        for species in core:
+            species.thermo = _thermo(0.)
+        original = [Reaction(reactants=[h2], products=[h, h], reversible=False,
+                             kinetics=Arrhenius(A=(1., 's^-1'), n=0, Ea=(0., 'J/mol')))]
+    else:
+        reactor, core, original = _build(metastable=True)
+        energies = np.array([E_IZ_EV, E_EX_EV, -E_EX_EV]) * EV_J_PER_MOL
+        reactor.energy_declared = {('Toy', i): energy for i, energy in enumerate(energies)}
+    monkeypatch.setattr(ToyLibraryReactor, '_declared_entry', PlasmaReactor._declared_entry)
+
+    def disk_library(label, items, comments=None, description='', generated=False):
+        library = KineticsLibrary(label=label, auto_generated=generated)
+        for i, reaction in enumerate(items):
+            reaction.duplicate = True
+            rate = copy.deepcopy(reaction.kinetics)
+            if comments:
+                rate.comment = comments[i]
+            library.entries[i] = Entry(index=i, item=reaction, data=rate, long_desc=description)
+        directory = tmp_path / label
+        directory.mkdir()
+        if not thermal:
+            core[2].label = 'Arp'
+        library.save(str(directory / 'reactions.py'))
+        if not thermal:
+            core[2].label = 'Ar+'
+        loaded = KineticsLibrary(label=label)
+        loaded.load(str(directory / 'reactions.py'), db.local_context, db.global_context)
+        db.libraries[label] = loaded
+        return loaded
+
+    archive_indices = [1] if thermal else [1, 0, 2]
+    if not thermal:
+        archive = disk_library('Archived', [original[1], original[0], original[2]])
+    comments = ['Originally from reaction library: Archived\n'
+                'Original reaction library entry index: ' + str(i) for i in archive_indices]
+    source = disk_library('Toy', original, comments)
+    reactions = source.get_library_reactions()
+    if not thermal:
+        for reaction, index in zip(reactions, archive_indices):
+            assert reaction.is_isomorphic(archive.get_library_reactions()[index])
+    unknown = case == 'unknown_comments'
+    if unknown:
+        legacy = disk_library('Legacy', [original[1], original[0], original[2]],
+                              ['Original reaction library entry index: ' + str(i) for i in range(3)],
+                              'Originally from reaction library: Toy', generated=True)
+        reactions = legacy.get_library_reactions()
+
+    for generation in range(4):
+        assert len(reactions) == (1 if thermal else 3)
+        for reaction in reactions:
+            for side in (reaction.reactants, reaction.products):
+                side[:] = [next(s for s in core if s.is_isomorphic(loaded)) for loaded in side]
+        if unknown:
+            assert all(reaction.source_identity is None for reaction in reactions)
+            with pytest.raises(PlasmaStateError, match='missing source entry index provenance'):
+                reactor.initialize_model(core, reactions, [], [])
+        else:
+            assert [reaction.source_identity for reaction in reactions] == [
+                ('Toy', i) for i in range(len(original))]
+            if thermal:
+                assert reactions[0].is_isomorphic(original[0])
+                assert reactions[0].kinetics.get_rate_coefficient(1000.) == pytest.approx(1.)
+            else:
+                reactor.initialize_model(core, reactions, [], [])
+                np.testing.assert_allclose(reactor.energy_threshold, energies)
+                assert reactor.energy_threshold[0] > reactor.energy_threshold[1] > 0
+                assert reactor.energy_threshold[2] < 0
+        if generation < 3:
+            directory = tmp_path / str(generation)
+            directory.mkdir()
+            reactions, _ = _seed_restart(directory, core, reactions, edge=edge)
 
 
 @pytest.mark.parametrize("edge", [False, True])
