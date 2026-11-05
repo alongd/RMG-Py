@@ -359,10 +359,94 @@ def _branch_family(row, library, collision_set, cascade_yields):
     if (declared['status'] in ('present', 'present_lumped')
             and declared.get('index') not in [owner[1] for owner in branched]):
         raise SpecError('cascade family overlaps the frozen ordinary owner')
+    if 'branch_indices' in declared:
+        indices = declared['branch_indices']
+        if (not isinstance(indices, list) or any(type(i) is not int for i in indices)
+                or len(indices) != len(branched)
+                or set(indices) != {owner[1] for owner in branched}):
+            raise SpecError('cascade branch indices differ from the frozen family')
     if cascade_yields is None:
         raise SpecError('cascade family requires a sourced yield table')
     return make_branch_family(cascade_yields, row['id'], row['loki_process'],
                               row['threshold_eV'], collision_set, branched)
+
+
+def _paired_inverse(row, physical, library, collision_set):
+    """Verify both directional entries; a thermodynamic reverse is never an owner."""
+    inverse = row.get('inverse')
+    if not isinstance(inverse, dict) or inverse.get('status') != 'paired':
+        return None
+    if (set(inverse) != {'status', 'library', 'index', 'reaction'}
+            or inverse['library'] != row['rmg']['library']
+            or ' <-> ' not in physical['description']
+            or physical.get('kind') != 'excitation'
+            or 'statistical_weight_ratio' not in physical):
+        raise SpecError('paired inverse requires a physical reversible excitation')
+    reverse_row = {'id': row['id'], 'rmg': dict(inverse, status='present')}
+    problem = _owner_problem(reverse_row, library)
+    if problem:
+        raise SpecError('paired sup owner: ' + problem)
+    forward = library.entries[row['rmg']['index']]
+    reverse = library.entries[inverse['index']]
+    if (forward.item.reversible or reverse.item.reversible
+            or Counter(s.label for s in forward.item.reactants) != Counter(s.label for s in reverse.item.products)
+            or Counter(s.label for s in forward.item.products) != Counter(s.label for s in reverse.item.reactants)):
+        raise SpecError('paired sup owner must reverse the irreversible ine equation')
+    for entry, side in ((forward, 'ine'), (reverse, 'sup')):
+        marker = getattr(entry, 'data', None) or getattr(entry.item, 'kinetics', None)
+        if (not getattr(marker, 'uses_eedf', False) or marker.side != side
+                or marker.process != row['loki_process'] or marker.collision_set != collision_set
+                or marker.branch_product is not None):
+            raise SpecError('paired ' + side + ' owner has a different collision identity')
+    return {'id': row['id'], 'library': row['rmg']['library'],
+            'ine': row['rmg']['index'], 'sup': inverse['index']}
+
+
+def _reviewed_inverse(row, spec, cascade_yields):
+    """Validate a declared elimination; its omitted owner remains in the report."""
+    record = row.get('inverse')
+    if record is None or isinstance(record, dict) and record.get('status') == 'paired':
+        return None
+    if not isinstance(record, dict):
+        raise SpecError('invalid inverse declaration')
+    source = re.match(r'^e \+ Ar\((1S0|3P2|3P1|3P0|1P1)\) -> ', row['loki_process'])
+    ground = source is not None and source[1] == '1S0'
+    expected = 'eliminated-upper-level' if ground else 'eliminated-upper-level-4s-redistribution'
+    if (source is None or record.get('status') != expected
+            or set(record) != {'status', 'electron_density_max_m3', 'field_range_Td',
+                               'field_node_count', 'bounds_sha256', 'levels'}
+            or record['electron_density_max_m3'] != 1e18
+            or record['field_range_Td'] != [4., 25.] or record['field_node_count'] != 33
+            or re.fullmatch('[0-9a-f]{64}', str(record['bounds_sha256'])) is None):
+        raise SpecError('invalid reviewed argon inverse exception')
+    for key, maximum in (('argon_elimination_electron_density_max_m3', 1e18), ('excited_fraction_max', 1e-5)):
+        value = spec.get(key)
+        if type(value) not in (int, float) or not math.isfinite(value) or not 0 < value <= maximum:
+            raise SpecError('reviewed inverse requires table validity declaration: ' + key)
+    from rmgpy.tools.eedf.ownership import require_cascade_yields
+    if cascade_yields is None:
+        raise SpecError('reviewed inverse requires sourced cascade levels')
+    source_row = require_cascade_yields(cascade_yields, row['id'], process=row['loki_process'],
+                                       threshold_eV=row['threshold_eV'])
+    ids = source_row.get('upper_nist_ids', [source_row.get('upper_nist_id')])
+    if not isinstance(record['levels'], dict) or set(record['levels']) != set(ids):
+        raise SpecError('reviewed inverse does not bound every sourced upper level')
+    for bound in record['levels'].values():
+        fields = {'A_total_s_1', 'k_sup_max_m3_s', 'EN_Td_at_max', 'ratio_at_ne_max'}
+        if not ground:
+            fields.add('ratio_per_electron_density_m3')
+        if (not isinstance(bound, dict) or set(bound) != fields
+                or any(type(v) not in (int, float) or not math.isfinite(v) or v < 0 for v in bound.values())
+                or bound['A_total_s_1'] <= 0):
+            raise SpecError('invalid reviewed inverse bound values')
+        ratio = 1e18 * bound['k_sup_max_m3_s'] / bound['A_total_s_1']
+        if (not math.isclose(ratio, bound['ratio_at_ne_max'], rel_tol=1e-12)
+                or not 4 <= bound['EN_Td_at_max'] <= 25 or ground and ratio > 1e-3):
+            raise SpecError('invalid reviewed inverse ratio')
+        if not ground and not math.isclose(bound['ratio_per_electron_density_m3'], ratio/1e18, rel_tol=1e-12):
+            raise SpecError('invalid reviewed 4s redistribution slope')
+    return {'id': row['id'], 'process': row['loki_process'], 'classification': 'A',
+            'status': expected, 'ruled_exception': True, 'inverse': copy.deepcopy(record)}
 
 
 def convert_channel_maps(spec, gas_maps, libraries, collision_set, cascade_yields=None,
@@ -471,7 +555,7 @@ def convert_channel_maps(spec, gas_maps, libraries, collision_set, cascade_yield
     report = {'outcome': 'converted', 'selected_channel_count': len(selected),
               'class_counts': dict(sorted(Counter(row['class'] for row in selected).items())),
               'selected_ids': sorted(row['id'] for row in selected),
-              'missing_owners': [], 'shared_owners': [], 'branch_families': []}
+              'missing_owners': [], 'shared_owners': [], 'branch_families': [], 'paired_owners': []}
     shared = defaultdict(list)
     gas_properties, _ = _physical_properties(spec)
     mass_entry = spec['input_files'].get(gas_properties.get('mass'))
@@ -487,6 +571,8 @@ def convert_channel_maps(spec, gas_maps, libraries, collision_set, cascade_yield
             try:
                 family = _branch_family(row, library, collision_set, cascade_yields)
                 problem = None if family is not None else _owner_problem(row, libraries)
+                exception = _reviewed_inverse(row, spec, cascade_yields) if problem is None else None
+                pair = _paired_inverse(row, physical, library, collision_set) if problem is None else None
             except (SpecError, FingerprintMismatch) as error:
                 family, problem = None, str(error)
             if problem:
@@ -498,6 +584,11 @@ def convert_channel_maps(spec, gas_maps, libraries, collision_set, cascade_yield
                     'class_a_gaps_status': row['rmg']['status'],
                     'requested_owner': copy.deepcopy(row['rmg']), 'reason': problem})
                 continue
+            if exception is not None:
+                report['missing_owners'].append(exception)
+            if pair is not None:
+                report['paired_owners'].append(pair)
+                shared[(pair['library'], pair['sup'])].append(row['id'])
             if family is not None:
                 channel = copy.deepcopy(physical)
                 channel.update(classification='A', reaction=family)
@@ -525,10 +616,11 @@ def convert_channel_maps(spec, gas_maps, libraries, collision_set, cascade_yield
             converted.append(derived)
     report['missing_owners'].sort(key=lambda row: row['id'])
     report['branch_families'].sort(key=lambda row: row['id'])
+    report['paired_owners'].sort(key=lambda row: row['id'])
     report['shared_owners'] = [
         {'library': library_name, 'index': index, 'ids': sorted(ids)}
         for (library_name, index), ids in sorted(shared.items()) if len(ids) > 1]
-    if report['missing_owners']:
+    if any(not row.get('ruled_exception', False) for row in report['missing_owners']):
         report['outcome'] = 'refused'
         raise MissingOwners(report)
     _validate_map(converted)

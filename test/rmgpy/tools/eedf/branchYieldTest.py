@@ -56,7 +56,11 @@ PROCESS = 'e + Ar(1S0) -> e + Ar(4p[1/2]1), Excitation'
 def database_cascade_channels(root):
     """Independent source regeneration supports both pre/post cascade databases."""
     generator = runpy.run_path(str(root / 'scripts/gen_argon_cascades.py'))
-    channels = generator['generate']((root / 'input/eedf/argon_radiative_data.yaml').read_bytes())['channels']
+    import inspect
+    args = [(root / 'input/eedf/argon_radiative_data.yaml').read_bytes()]
+    if 'channel_map_raw' in inspect.signature(generator['generate']).parameters:
+        args.append((root / 'input/eedf/argon_channel_map.yaml').read_bytes())
+    channels = generator['generate'](*args)['channels']
     assert channels and any(row['status'] == 'complete_for_E1' for row in channels)
     return channels
 
@@ -429,3 +433,28 @@ def test_database_generator_and_engine_check_same_file(tmp_path, mutation):
         if mutation == 'sum_error':
             with pytest.raises(SpecError, match='sum'):
                 load_cascade_yields(candidate, source)
+
+
+@pytest.mark.parametrize('state,product', [
+    ('3P2', 'Ar(1s5)'), ('3P1', 'Ar(1s4)'),
+    ('3P0', 'Ar(1s3)'), ('1P1', 'Ar(1s2)'),
+])
+def test_four_s_cascade_matches_molecular_source_at_binding_and_runtime(branch_fixture, state, product):
+    from rmgpy.tools.eedf.ownership import validate_bound_branch
+    snapshot, _, _ = branch_fixture
+    snapshot['channels'][0]['process'] = PROCESS.replace('Ar(1S0)', 'Ar(' + state + ')')
+    reactions = branch_reactions(snapshot)
+    source = next(r.products[1] for r in reactions if r.kinetics.branch_product == product)
+    source.label = 'source-alias'
+    for reaction in reactions:
+        reaction.reactants[1] = source
+    family = family_from_reactions(snapshot, reactions)
+    assert family['process'] == snapshot['channels'][0]['process']
+    for reaction in reactions:
+        assert validate_bound_branch(family, reaction) == reaction.kinetics.branch_product
+    wrong_source = next(r.products[1] for r in reactions if r.kinetics.branch_product != product)
+    reactions[0].reactants[1] = wrong_source
+    with pytest.raises(SpecError, match='source'):
+        family_from_reactions(snapshot, reactions)
+    with pytest.raises(SpecError, match='source'):
+        validate_bound_branch(family, reactions[0])

@@ -867,7 +867,7 @@ def test_complete_family_converts_from_absent_placeholder(cascade_conversion, tm
 
 
 @pytest.mark.parametrize('problem', ['missing', 'extra', 'unweighted', 'source', 'unresolved',
-                                     'wrong_product', 'stale_yield', 'ordinary_overlap'])
+                                     'wrong_product', 'stale_yield', 'ordinary_overlap', 'stale_indices'])
 def test_converter_refuses_incomplete_or_unmatched_family(cascade_conversion, problem):
     from rmgpy.data.base import Entry
     from rmgpy.kinetics import EEDFChannel
@@ -886,6 +886,8 @@ def test_converter_refuses_incomplete_or_unmatched_family(cascade_conversion, pr
         snapshot['channels'][0].update(status='unresolved', product_yields=None)
     elif problem == 'wrong_product':
         entry.item.products[1].molecule[0].electronic_state = '3P1'
+    elif problem == 'stale_indices':
+        frozen['channels'][0]['rmg']['branch_indices'] = [9000]
     elif problem == 'stale_yield':
         snapshot['channels'][0]['product_yields']['Ar(1s5)'] += .001
         snapshot['channels'][0]['product_yields']['Ar(1s4)'] -= .001
@@ -1082,3 +1084,96 @@ def test_mixture_builder_refuses_supplied_owner_d6(conversion_inputs, prepare):
         else:
             adapter.build_mixture_spec(spec, manifest, [])
     assert manifest == original
+
+
+def reviewed_inverse():
+    return {'status': 'eliminated-upper-level', 'electron_density_max_m3': 1.e18,
+            'field_range_Td': [4., 25.], 'field_node_count': 33, 'bounds_sha256': 'a' * 64,
+            'levels': {'018001.000006': {'A_total_s_1': 3.e7, 'k_sup_max_m3_s': 3.e-16,
+                                        'EN_Td_at_max': 25., 'ratio_at_ne_max': 1.e-5}}}
+
+
+def test_reviewed_inverse_is_reported_without_hiding_missing_owners(cascade_conversion):
+    spec, frozen, library, snapshot, family = cascade_conversion
+    frozen['channels'][0]['inverse'] = reviewed_inverse()
+    spec.update(excited_fraction_max=1.e-5, argon_elimination_electron_density_max_m3=1.e18)
+    converted, report = adapter.convert_channel_map(spec, frozen, library, 'test-Ar', snapshot)
+    assert len(converted) == 1
+    assert report['outcome'] == 'converted'
+    assert len(report['missing_owners']) == 1
+    assert report['missing_owners'][0]['status'] == 'eliminated-upper-level'
+    assert report['missing_owners'][0]['ruled_exception'] is True
+    assert report['missing_owners'][0]['inverse'] == reviewed_inverse()
+    library.entries.pop(next(iter(library.entries)))
+    with pytest.raises(adapter.MissingOwners) as error:
+        adapter.convert_channel_map(spec, frozen, library, 'test-Ar', snapshot)
+    assert any(not row.get('ruled_exception', False) for row in error.value.report['missing_owners'])
+
+
+@pytest.mark.parametrize('problem', ['unbounded_table', 'unknown_status', 'bad_ratio', 'wrong_level'])
+def test_reviewed_inverse_refuses_unchecked_declarations(cascade_conversion, problem):
+    spec, frozen, library, snapshot, _ = cascade_conversion
+    inverse = reviewed_inverse()
+    frozen['channels'][0]['inverse'] = inverse
+    spec.update(excited_fraction_max=1.e-5, argon_elimination_electron_density_max_m3=1.e18)
+    if problem == 'unbounded_table':
+        del spec['argon_elimination_electron_density_max_m3']
+    elif problem == 'unknown_status':
+        inverse['status'] = 'ignore'
+    elif problem == 'bad_ratio':
+        inverse['levels']['018001.000006']['ratio_at_ne_max'] = 1.e-6
+    else:
+        inverse['levels']['018001.999999'] = inverse['levels'].pop('018001.000006')
+    with pytest.raises((adapter.MissingOwners, SpecError)):
+        adapter.convert_channel_map(spec, frozen, library, 'test-Ar', snapshot)
+
+
+@pytest.fixture
+def paired_conversion(conversion_inputs):
+    from rmgpy.kinetics import EEDFChannel
+    spec, frozen, library = conversion_inputs
+    row = frozen['channels'][0]
+    process = row['loki_process'].replace(' -> ', ' <-> ')
+    source = Path(spec['input_files']['Ar_LXCat.txt']['path'])
+    source.write_text(source.read_text().replace(' -> ', ' <-> '))
+    spec['input_files']['Ar_LXCat.txt']['sha256'] = _file_hash(source)
+    frozen['loki_files']['Ar_LXCat.txt'] = _file_hash(source)
+    mapping = Path(spec['channel_map']['path'])
+    physical = json.loads(mapping.read_text())[0]
+    physical.update(description=process, flux_group=process, statistical_weight_ratio=.2)
+    mapping.write_text(json.dumps([physical]))
+    spec['channel_map']['sha256'] = _file_hash(mapping)
+    spec['state_properties']['population'].append('Ar(3P2) = 0')
+    spec['state_properties']['statisticalWeight'] = ['Ar(1S0) = 1', 'Ar(3P2) = 5']
+    row.update(loki_process=process, superelastic_in_set=True,
+               inverse={'status': 'paired', 'library': 'PlasmaArgon', 'index': 201,
+                        'reaction': 'Ars + e- => Ar + e-'})
+    library.entries[87].data = EEDFChannel(process=process, collision_set='test-Ar', side='ine')
+    reverse = copy.deepcopy(library.entries[87].item)
+    reverse.reactants, reverse.products = reverse.products, reverse.reactants
+    library.entries[201] = SimpleNamespace(item=reverse,
+        data=EEDFChannel(process=process, collision_set='test-Ar', side='sup'))
+    return spec, frozen, library
+
+
+def test_converter_reports_both_directional_owners(paired_conversion):
+    spec, frozen, library = paired_conversion
+    converted, report = adapter.convert_channel_map(spec, frozen, library, 'test-Ar')
+    assert report['missing_owners'] == []
+    assert report['paired_owners'] == [{'id': 2, 'library': 'PlasmaArgon', 'ine': 87, 'sup': 201}]
+    assert converted[0]['reaction']['index'] == 87
+    assert converted[0]['statistical_weight_ratio'] == .2
+
+
+@pytest.mark.parametrize('problem', ['absent', 'wrong_process', 'wrong_products'])
+def test_converter_refuses_missing_or_wrong_sup_owner(paired_conversion, problem):
+    from rmgpy.kinetics import EEDFChannel
+    spec, frozen, library = paired_conversion
+    if problem == 'absent':
+        del library.entries[201]
+    elif problem == 'wrong_process':
+        library.entries[201].data = EEDFChannel(process='other', collision_set='test-Ar', side='sup')
+    else:
+        library.entries[201].item.products = library.entries[201].item.reactants
+    with pytest.raises(adapter.MissingOwners):
+        adapter.convert_channel_map(spec, frozen, library, 'test-Ar')

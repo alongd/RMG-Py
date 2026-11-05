@@ -300,7 +300,7 @@ def _argon_identity(species):
     return identities.pop()
 
 
-def reaction_product_state(reaction):
+def reaction_product_state(reaction, process=None):
     """Check collision stoichiometry and return the actual Paschen product.
 
     Display aliases (notably Ars for 1s5) carry no identity authority.
@@ -312,8 +312,17 @@ def reaction_product_state(reaction):
         if len(side) != 2 or sum(species.is_electron() for species in side) != 1:
             raise SpecError('cascade branch requires one electron and one argon on each side')
         heavy.append(next(species for species in side if not species.is_electron()))
-    if _argon_identity(heavy[0]) not in (('', 1), ('1S0', 1)):
-        raise SpecError('cascade reactant must be ground-state argon')
+    if process is None:
+        process = getattr(reaction.kinetics, 'process', None)
+    source = re.match(r'^e \+ Ar\((1S0|3P2|3P1|3P0|1P1)\) -> ', process or '')
+    if source is None:
+        raise SpecError('cascade process requires a resolved argon source state')
+    actual_source = _argon_identity(heavy[0])
+    if source[1] == '1S0':
+        if actual_source not in (('', 1), ('1S0', 1)):
+            raise SpecError('cascade source reactant must be ground-state argon')
+    elif actual_source != (source[1], 1 if source[1] == '1P1' else 3):
+        raise SpecError('cascade source differs from molecular reactant state')
     state = _argon_identity(heavy[1])
     for product, identity in ARGON_STATES.items():
         if state == identity:
@@ -330,7 +339,7 @@ def make_branch_family(snapshot, channel_id, process, threshold_eV, collision_se
     row = require_cascade_yields(snapshot, channel_id, process=process, threshold_eV=threshold_eV)
     branches = []
     for library, index, reaction, marker in owners:
-        product = reaction_product_state(reaction)
+        product = reaction_product_state(reaction, process)
         if (not getattr(marker, 'uses_eedf', False)
                 or marker.branch_product != product):
             raise SpecError('branch marker product differs from molecular product')
@@ -346,7 +355,7 @@ def make_branch_family(snapshot, channel_id, process, threshold_eV, collision_se
 
 def validate_bound_branch(family, reaction):
     """Match a runtime reaction to a previously validated family snapshot."""
-    product = reaction_product_state(reaction)
+    product = reaction_product_state(reaction, family['process'])
     marker = reaction.kinetics
     entry = getattr(reaction, 'entry', None)
     actual = dict(product=product, library=getattr(reaction, 'library', None),
