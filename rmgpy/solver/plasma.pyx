@@ -3098,6 +3098,33 @@ cdef class PlasmaReactor(ReactionSystem):
                     "EEDF envelope quantity 'Ar4s_total' cannot resolve any neutral "
                     'argon 4s electronic-state species from molecular identity')
             self.eedf_envelope_species['Ar4s_total'] = tuple(indices)
+        if 'excited_fraction_max' in self.eedf_provider.runtime_metadata:
+            ground_indices, excited_indices = [], []
+            for spc in core_species:
+                index = self.species_index[spc]
+                if self.species_charges[index] != 0 or not spc.molecule:
+                    continue
+                if spc.molecule[0].get_formula() != 'Ar':
+                    continue
+                identities = set()
+                for molecule in spc.molecule:
+                    if (len(molecule.atoms) != 1 or molecule.get_formula() != 'Ar'
+                            or molecule.get_net_charge() != 0
+                            or molecule.vibrational_level != -1):
+                        raise PlasmaStateError('excited_fraction_max requires neutral monatomic argon identity')
+                    identities.add((molecule.electronic_state, molecule.multiplicity))
+                if len(identities) != 1:
+                    raise PlasmaStateError('excited_fraction_max found inconsistent argon molecular states')
+                identity = identities.pop()
+                if identity in {('', 1), ('1S0', 1)}:
+                    ground_indices.append(index)
+                elif identity in {('3P2', 3), ('3P1', 3), ('3P0', 3), ('1P1', 1), ('', 3)}:
+                    # The blank triplet is the historical Ar(3P2) representation.
+                    excited_indices.append(index)
+            if not ground_indices:
+                raise PlasmaStateError('excited_fraction_max requires an Ar ground-state denominator')
+            self.eedf_envelope_species['argon_ground_validity'] = tuple(ground_indices)
+            self.eedf_envelope_species['argon_4s_validity'] = tuple(excited_indices)
         self.eedf_provider.bind_qualification_state(self._eedf_qualification_state)
 
     def _eedf_qualification_state(self, y, t, record_path=None,
@@ -4097,6 +4124,29 @@ cdef class PlasmaReactor(ReactionSystem):
         self._check_accepted_plasma_domain(y)
         return self._compute_electronegative_wall_jacobian(y)
 
+    def _check_argon_elimination_validity(self, y, volume=None):
+        """Apply optional table declarations to accepted states, never Newton trials."""
+        if not self.eedf_mode or self.eedf_provider is None:
+            return
+        metadata = self.eedf_provider.runtime_metadata
+        if 'excited_fraction_max' in metadata:
+            ground = sum(float(y[j]) for j in self.eedf_envelope_species['argon_ground_validity'])
+            excited = sum(float(y[j]) for j in self.eedf_envelope_species['argon_4s_validity'])
+            fraction = excited / ground if ground > 0. else float('inf')
+            limit = metadata['excited_fraction_max']
+            if not np.isfinite(fraction) or not 0. <= fraction <= limit:
+                raise PlasmaStateError(
+                    'argon excited_fraction_max bound {0:g} (total Ar(4s)/Ar ground), '
+                    'observed {1:g}'.format(limit, fraction))
+        if 'argon_elimination_electron_density_max_m3' in metadata:
+            current_volume = self.compute_volume(y) if volume is None else volume
+            density = float(y[self.electron_index]) * constants.Na / current_volume
+            limit = metadata['argon_elimination_electron_density_max_m3']
+            if not np.isfinite(density) or not 0. <= density <= limit:
+                raise PlasmaStateError(
+                    'argon eliminated-upper-level convention: electron-density bound '
+                    '{0:g} m^-3, observed {1:g} m^-3'.format(limit, density))
+
     def _check_accepted_plasma_domain(self, y, volume=None, evaluated_rate=None, evaluated_law=None):
         """The single domain gate for acceptance, publication and public values.
 
@@ -4134,6 +4184,7 @@ cdef class PlasmaReactor(ReactionSystem):
             self._sync_electron_temperature(y)
         else:
             self._refresh_electron_temperature_rates()
+        self._check_argon_elimination_validity(y, volume)
         self._check_plasma_rate_parameters()
         if self._radiation_operator is not None:
             self._radiation_evaluation(y,self.compute_volume(y))

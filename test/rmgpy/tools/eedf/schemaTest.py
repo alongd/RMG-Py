@@ -144,3 +144,29 @@ def test_generator_only_helpers_are_not_public_entries():
     }
     for module, names in retired.items():
         assert all(not hasattr(module, name) for name in names)
+
+
+def test_argon_validity_is_preserved_in_generation_inputs(tmp_path):
+    import json
+    import os
+    from rmgpy.tools.eedf.schema import load_spec, SpecError
+    from rmgpy.tools.eedf.generate import model_inputs
+
+    spec = json.loads(Path(os.environ['EEDF_REAL_SPEC']).read_text())
+    limits = {'excited_fraction_max': 1.e-5,
+              'argon_elimination_electron_density_max_m3': 1.e18}
+    spec.update(limits)
+    path = tmp_path / 'spec.json'
+    path.write_text(json.dumps(spec))
+    loaded = load_spec(path)
+    inputs = model_inputs(loaded)
+    for key, value in limits.items():
+        assert loaded[key] == value
+        assert inputs[key] == value
+
+    for key in limits:
+        for invalid in (0., -1., True, '1e-5', None):
+            broken = dict(spec, **{key: invalid})
+            path.write_text(json.dumps(broken))
+            with pytest.raises(SpecError, match=key):
+                load_spec(path)

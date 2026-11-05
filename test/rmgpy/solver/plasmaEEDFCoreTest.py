@@ -69,7 +69,7 @@ def species_and_reaction():
 def artifact(tmp_path, marker, composition=True, cold_mean=False, accepted=True,
              reaction_owned=True, gases=None, pressure=PRESSURE,
              epsilon_k_eV=None, include_ar4s_envelope=True,
-             variable_epsilon=False, family=None):
+             variable_epsilon=False, family=None, argon_validity=None):
     gases = list(gases or ['Ar'])
     axes = {'u': [0., 1., 2., 3.]}
     if composition:
@@ -123,6 +123,7 @@ def artifact(tmp_path, marker, composition=True, cold_mean=False, accepted=True,
         'solver_options': {'growth': 'temporal'},
         'interpolant': _interpolant_identity(), 'state_populations': {'Ar': 1.},
     }
+    model.update(argon_validity or {})
     envelopes = {
         'Tg_K': {'min': TGAS, 'max': TGAS, 'reference': TGAS},
         'P_Pa': {'min': pressure, 'max': pressure, 'reference': pressure},
@@ -155,6 +156,7 @@ def artifact(tmp_path, marker, composition=True, cold_mean=False, accepted=True,
                          'classification': 'B', 'reaction': None, 'mass_ratio': 1.e-5}],
         'energy_eV': [.5], 'energy_edges_eV': [0., 1.],
     }
+    manifest.update(argon_validity or {})
     if family is not None:
         manifest['channel_map'][0].update(kind='excitation', threshold_eV=family['threshold_eV'])
     path = _write_artifact(tmp_path, manifest, {'branch_0': rows}, [])
@@ -165,12 +167,32 @@ def build_reactor(tmp_path, composition=True, extra_reaction=None, empirical_law
                   reaction_index=1, entry_index=1, power_w=.5, cold_mean=False,
                   extra_species=None, electron_energies=None, accepted=True,
                   development=False, excited_label=None, operating_branch=None,
-                  extra_on_edge=False):
+                  extra_on_edge=False, argon_validity=None, excited_fraction=None,
+                  electron_fraction=1.e-6, excited_state=None):
     core, reaction = species_and_reaction()
+    if excited_state is not None:
+        multiplicity, radicals, pairs = (1, 0, 4) if excited_state == '1P1' else (3, 2, 3)
+        core[3].from_adjacency_list(
+            f'multiplicity {multiplicity}\nelectronicstate {excited_state}\n1 Ar u{radicals} p{pairs} c0')
+        from types import SimpleNamespace
+        from rmgpy.data.thermo import ThermoDatabase, ThermoLibrary
+        database = ThermoDatabase()
+        library = ThermoLibrary(label='ArgonValidityFixture')
+        library.thermo_convention = 'ion'
+        for i, species in enumerate(core[1:]):
+            species.thermo.Cp0 = (20., 'J/(mol*K)')
+            species.thermo.CpInf = (20., 'J/(mol*K)')
+            library.entries[i] = Entry(index=i, label=species.label,
+                                       item=species.molecule[0].copy(deep=True),
+                                       data=copy.deepcopy(species.thermo))
+        database.libraries = {library.label: library}
+        database.library_order = [library.label]
+        rmg_data_module.database = SimpleNamespace(thermo=database, solvation=None)
     if excited_label is not None:
         core[3].label = excited_label
     path = artifact(tmp_path, reaction.kinetics, composition=composition,
-                    cold_mean=cold_mean, accepted=accepted)
+                    cold_mean=cold_mean, accepted=accepted, argon_validity=argon_validity,
+                    include_ar4s_envelope=excited_state is None)
     reaction.index = reaction_index
     reaction.entry.index = entry_index
     config = {
@@ -182,6 +204,10 @@ def build_reactor(tmp_path, composition=True, extra_reaction=None, empirical_law
         config['operating_branch'] = operating_branch
     initial = {core[0]: 1.e-6, core[2]: 1.e-6, core[3]: .1 if composition else 0.,
                core[1]: .899998 if composition else .999998}
+    if excited_fraction is not None:
+        initial[core[3]] = excited_fraction
+    initial[core[0]] = initial[core[2]] = electron_fraction
+    initial[core[1]] = 1. - initial[core[3]] - 2. * electron_fraction
     if extra_species is not None:
         core.append(extra_species)
         initial[extra_species] = 0.
@@ -191,13 +217,16 @@ def build_reactor(tmp_path, composition=True, extra_reaction=None, empirical_law
                       'sheath': 'floating_wall'}
     if electron_energies is not None:
         energy_balance['electron_energies'] = copy.deepcopy(electron_energies)
+    radiation = ({'resonance_radiation': {'model': 'complete', 'geometryModel': 'infiniteCylinder'},
+                  'radiation_chamber_geometry': {'shape': 'cylinder', 'radius': .05, 'length': .30}}
+                 if excited_state is not None else {})
     reactor = PlasmaReactor(
         (TGAS, 'K'), (PRESSURE, 'Pa'), initial, (TGAS, 'K'), termination=[],
         diffusion_length=(LAMBDA, 'm'), ion_reduced_mobility=(MU0, 'm^2/(V*s)'),
         wall_single_bath_approximation=extra_species is not None,
         wall_neutralization_products={'Ar+': 'Ar'},
         electron_energy_balance=energy_balance,
-        electron_kinetics=config, thermo_source_assertions={'Ar+': 'ion'})
+        electron_kinetics=config, thermo_source_assertions={'Ar+': 'ion'}, **radiation)
     core_reactions = reactions[:1] if extra_on_edge else reactions
     edge_reactions = reactions[1:] if extra_on_edge else []
     if development:

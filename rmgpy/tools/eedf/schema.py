@@ -258,6 +258,27 @@ def _file_hash(path):
     return digest.hexdigest()
 
 
+ARGON_VALIDITY_FIELDS = ('excited_fraction_max',
+                         'argon_elimination_electron_density_max_m3')
+
+
+def _argon_validity_declarations(document, error=SpecError):
+    """Validate optional limits for a ground-population argon EEDF table.
+
+    The excited fraction is total neutral Ar(4s) / neutral Ar ground; the
+    electron-density limit applies to radiatively eliminated upper levels.
+    Absence preserves tables that do not use this elimination convention.
+    """
+    result = {}
+    for key in ARGON_VALIDITY_FIELDS:
+        if key in document:
+            value = document[key]
+            if type(value) not in (int, float) or not np.isfinite(value) or value <= 0:
+                raise error(key + ' must be finite and positive')
+            result[key] = value
+    return result
+
+
 def _check_model(manifest, current, relative_tolerance):
     """Check all row inputs. Repository SHAs belong only to provenance.
 
@@ -267,6 +288,11 @@ def _check_model(manifest, current, relative_tolerance):
     stored = manifest['row_inputs']
     if _content_hash(stored) != manifest['fingerprint']:
         raise FingerprintMismatch('manifest fingerprint')
+    declarations = _argon_validity_declarations(manifest, FingerprintMismatch)
+    recorded = _argon_validity_declarations(stored, FingerprintMismatch)
+    for key in ARGON_VALIDITY_FIELDS:
+        if declarations.get(key) != recorded.get(key):
+            raise FingerprintMismatch(key + ' differs from row_inputs fingerprint')
     from rmgpy.tools.eedf.ownership import is_branch_family, validate_family
     mapped = [channel['reaction'] for channel in manifest.get('channel_map', [])
               if channel.get('reaction') is not None]
@@ -312,12 +338,14 @@ def _validate_spec(spec):
                 'working_conditions', 'solver_options', 'tolerances', 'floors',
                 'held_out', 'repositories', 'output_root', 'scratch_root',
                 'omp_threads', 'max_parallel', 'timeout_s', 'refinement'}
-    optional = {'engine_state_map', 'qualification_quantity_rules', 'vibrational_ladders'}
+    optional = {'engine_state_map', 'qualification_quantity_rules', 'vibrational_ladders',
+                *ARGON_VALIDITY_FIELDS}
     if (not isinstance(spec, dict) or not required <= set(spec) or
             set(spec) - required - optional):
         fields = ((required - set(spec or {})) |
                   (set(spec or {}) - required - optional))
         raise SpecError('spec fields: ' + str(fields))
+    _argon_validity_declarations(spec)
     if 'vibrational_ladders' in spec:
         from rmgpy.tools.eedf.vibrational import validate_ladders
         validate_ladders(spec['vibrational_ladders'])
@@ -473,6 +501,7 @@ def _row_inputs(spec):
         'arm', 'Tg_K', 'P_Pa', 'loki_commit', 'axes', 'gas_properties',
         'state_properties', 'working_conditions', 'solver_options', 'screen', 'envelopes',
         'floors', 'tolerances', 'held_out', 'refinement')}
+    result.update(_argon_validity_declarations(spec))
     if 'engine_state_map' in spec:
         result['engine_state_map'] = copy.deepcopy(spec['engine_state_map'])
     if 'vibrational_ladders' in spec:
