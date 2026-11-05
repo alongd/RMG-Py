@@ -952,6 +952,7 @@ def prepare_mixture_spec(base_spec, gas_maps, database, collision_set,
     report['provenance'] = provenance
     if ladder_spec is None:
         ladder_spec = build_mixture_spec(spec, ladder_manifest, bindings,
+                                         tv_axis=tv_axis, tv_values=tv_values,
                                          production=production)
     if generated_input_files:
         ladder_spec['_generated_input_files'] = generated_input_files

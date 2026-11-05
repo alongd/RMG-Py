@@ -431,9 +431,10 @@ def test_prepare_mixture_spec_uses_real_59_level_source_manifest(
                           'library': label})
     prepared, converted, conversion_report, mixture = adapter.prepare_mixture_spec(
         'unused', map_paths, database, 'mix-Ar-N2', manifest,
-        production=production)
+        production=production, tv_values=(300., 3000.))
     assert len(mixture['vibrational_ladders'][0]['levels']) == 59
     assert mixture['vibrational_ladders'][0]['K'] == 10
+    assert mixture['axes']['Tv_K'] == [300., 3000.]
     if production:
         ladder_policy = mixture['vibrational_ladders'][0]['D6']
         assert all(ladder_policy[key] == value
