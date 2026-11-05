@@ -1018,6 +1018,18 @@ def test_i353_fixture_families_are_reported(tmp_path, monkeypatch):
     complete = [row['id'] for row in snapshot['channels'] if row['status'] == 'complete_for_E1']
     unresolved = [row['id'] for row in snapshot['channels'] if row['status'] == 'unresolved']
     assert not unresolved
+    # The frozen map now owns the reversible 4s realization. Refresh legacy
+    # specs through the source-checked production path; never relax its pins.
+    from rmgpy.tools.eedf.argon import refresh_spec
+    realization = os.environ.get('EEDF_ARGON_REALIZATION')
+    assert realization, 'set EEDF_ARGON_REALIZATION to the pinned argon realization directory'
+    original_spec = Path(spec_path).read_bytes()
+    refreshed = tmp_path / 'refreshed'
+    refresh_report = refresh_spec(spec_path, database, realization, refreshed)
+    spec_path = refreshed / 'pure-ar-spec.json'
+    exceptions = refresh_report['missing_owners']
+    assert [row['id'] for row in exceptions] == complete
+    assert all(row['ruled_exception'] for row in exceptions)
     library, hashes = adapter._load_library(database, tmp_path)
     collision_set = 'IST-Lisbon-Ar-2021'
     for channel_id in complete:
@@ -1032,8 +1044,8 @@ def test_i353_fixture_families_are_reported(tmp_path, monkeypatch):
     frozen_path = root / 'argon_channel_map.yaml'
     _, _, report = adapter.prepare_spec(
         spec_path, frozen_path, _file_hash(frozen_path), database, collision_set)
-    assert [row['id'] for row in report['branch_families']] == list(range(6, 39))
-    assert report['missing_owners'] == []
+    assert [row['id'] for row in report['branch_families']] == complete
+    assert report['missing_owners'] == exceptions
     assert report['shared_owners'] == []
 
     missing_id = 16
@@ -1048,8 +1060,12 @@ def test_i353_fixture_families_are_reported(tmp_path, monkeypatch):
     with pytest.raises(adapter.MissingOwners) as caught:
         adapter.prepare_spec(spec_path, frozen_path, _file_hash(frozen_path), database, collision_set)
     report = caught.value.report
-    assert [row['id'] for row in report['branch_families']] == [i for i in range(6, 39) if i != missing_id]
-    assert [row['id'] for row in report['missing_owners']] == [missing_id]
+    assert [row['id'] for row in report['branch_families']] == [i for i in complete if i != missing_id]
+    assert [row['id'] for row in report['missing_owners']
+            if not row.get('ruled_exception')] == [missing_id]
+    assert [row for row in report['missing_owners']
+            if row.get('ruled_exception')] == [row for row in exceptions if row['id'] != missing_id]
+    assert Path(os.environ['EEDF_CHANNEL_MAP_BASE_SPEC']).read_bytes() == original_spec
     assert report['shared_owners'] == []
     adapter._write_outputs(tmp_path / 'refusal', report)
     assert [path.name for path in (tmp_path / 'refusal').iterdir()] == ['conversion-report.json']
