@@ -2345,36 +2345,115 @@ def _exact_component_match(graph, members, product, pins) -> bool:
     from rmgpy.kmc.state import _order
     if len(members) != len(product):
         return False
+    # I-303: atoms are placed in connectivity order from the pins, so every atom
+    # but a component seed is drawn from its image's neighbours.  A candidate must
+    # also agree on its neighbour multiset (signature, degree, bond order); this is
+    # a necessary condition, used only when every neighbour is a member.
+    # Interchangeable product leaves (degree 1, same signature, same neighbour and
+    # order: an automorphism fixing everything else, pins included) are tried
+    # once.  The verdict is the plain search's: each pruning drops only candidates
+    # that no bijection can use, or candidates equivalent to one kept.  With every
+    # heavy atom pinned (rewrite_problems) the search never backtracks, and the
+    # work is linear in the bonds.  With heavy atoms unpinned it is still a
+    # backtracking search, pruned as above but not guaranteed polynomial.
+    g_edges = {a: {n: _order(o) for n, o in graph[a]["edges"].items()} for a in members}
+    p_edges = {t: {n: _order(o) for n, o in node["edges"].items()} for t, node in product.items()}
+    p_sig = {t: _runtime_signature(node) for t, node in product.items()}
+    g_sig = {a: _runtime_signature(graph[a]) for a in members}
+
+    def p_key(t):
+        return (p_sig[t], len(p_edges[t]))
+
+    def g_key(a):
+        return (g_sig[a], len(g_edges[a]))
+
+    def p_shell(t):
+        return sorted((p_key(n), o) for n, o in p_edges[t].items())
+
+    def g_shell(a):
+        return sorted((g_key(n), o) for n, o in g_edges[a].items())
+
+    closed = {a for a in members if all(n in members for n in g_edges[a])}
     pinned = set(pins.values())
-    candidates = {}
+    buckets = {}
+    for t in product:
+        if t not in pinned:
+            buckets.setdefault(p_key(t), []).append(t)
+    shells = {}
+    allowed = {}
     for src in members:
-        node = graph[src]
-        options = [pins[src]] if src in pins else [t for t in product if t not in pinned]
-        candidates[src] = [t for t in options if t in product
-                           and _runtime_signature(product[t]) == _runtime_signature(node)
-                           and len(product[t]["edges"]) == len(node["edges"])]
-        if not candidates[src]:
+        if src in pins:
+            options = [pins[src]] if pins[src] in product and p_key(pins[src]) == g_key(src) else []
+        else:
+            options = buckets.get(g_key(src), [])
+        if src in closed:
+            shell = g_shell(src)
+            options = [t for t in options
+                       if (shells[t] if t in shells else shells.setdefault(t, p_shell(t))) == shell]
+        if not options:
             return False
-    order = sorted(members, key=lambda a: (len(candidates[a]), a))
+        allowed[src] = set(options)
 
-    def visit(position, matched, used):
-        if position == len(order):
-            return True
-        src = order[position]
-        for target in candidates[src]:
-            if target in used:
+    # placement order: the pins, then breadth first; an unreached remainder is
+    # seeded at its atom of fewest candidates
+    order, anchor, placed = [], {}, set()
+    queue = sorted(a for a in members if a in pins)
+    placed.update(queue)
+    while len(order) < len(members):
+        if not queue:
+            seed = min((a for a in members if a not in placed), key=lambda a: (len(allowed[a]), a))
+            placed.add(seed)
+            queue = [seed]
+        nxt = []
+        for a in queue:
+            order.append(a)
+            for n in sorted(g_edges[a]):
+                if n in members and n not in placed:
+                    placed.add(n)
+                    anchor[n] = a
+                    nxt.append(n)
+        queue = nxt
+
+    matched, used = {}, set()
+
+    def candidates(src):
+        if src in pins:
+            pool = [pins[src]]
+        elif src in anchor:
+            pool = sorted(t for t in p_edges[matched[anchor[src]]] if t in allowed[src])
+        else:
+            pool = sorted(allowed[src])
+        out, twins = [], set()
+        for t in pool:
+            if t in used or any(p_edges[t].get(matched[n]) != o
+                                for n, o in g_edges[src].items() if n in matched):
                 continue
-            if all(_order(product[target]["edges"].get(matched[n])) == _order(o)
-                   for n, o in graph[src]["edges"].items() if n in matched):
-                matched[src] = target
-                used.add(target)
-                if visit(position + 1, matched, used):
-                    return True
-                del matched[src]
-                used.discard(target)
-        return False
+            if len(p_edges[t]) == 1:
+                (neighbour, o), = p_edges[t].items()
+                twin = (p_sig[t], neighbour, o)
+                if twin in twins:
+                    continue
+                twins.add(twin)
+            out.append(t)
+        return iter(out)
 
-    return visit(0, {}, set())
+    # iterative depth-first search (no recursion limit on large products)
+    stack = [candidates(order[0])] if order else []
+    while stack:
+        position = len(stack) - 1
+        src = order[position]
+        if src in matched:
+            used.discard(matched.pop(src))
+        target = next(stack[-1], None)
+        if target is None:
+            stack.pop()
+            continue
+        matched[src] = target
+        used.add(target)
+        if position + 1 == len(order):
+            return True
+        stack.append(candidates(order[position + 1]))
+    return not order
 
 
 def _normalisation_problems(graph, members) -> list:
