@@ -47,6 +47,25 @@ from rmgpy.kinetics import Arrhenius, Troe, PDepArrhenius
 from rmgpy.kinetics.model import PDepKineticsModel
 
 
+@pytest.mark.parametrize('provenance', ['ordinary', 'textual', 'inline_textual', 'external'])
+@pytest.mark.parametrize('source_index', [None, 0, 23])
+def test_source_entry_index_provenance(tmp_path, provenance, source_index):
+    from rmgpy.data.base import Entry
+    from rmgpy.data.kinetics.common import format_external_library_provenance
+
+    descriptions = {
+        'ordinary': 'An ordinary source entry.',
+        'textual': 'Originally from reaction library: Toy',
+        'inline_textual': 'Seed provenance: Originally from reaction library: Toy',
+        'external': format_external_library_provenance('Toy', str(tmp_path)),
+    }
+    description = descriptions[provenance]
+    if source_index is not None:
+        description += '\nOriginal reaction library entry index: {0}'.format(source_index)
+    reaction = LibraryReaction(library='Toy', entry=Entry(index=7, long_desc=description))
+    assert reaction.get_source_entry_index() == (7 if provenance == 'ordinary' else source_index)
+
+
 class TestLibrary:
     @classmethod
     def setup_class(cls):

@@ -6645,7 +6645,7 @@
     "rmgpy/data/kinetics/library.py:LibraryReaction.get_source_entry_index": {
       "file": "rmgpy/data/kinetics/library.py",
       "line": 144,
-      "source_sha256": "168943fb1680504269c6f883cc7206c3c229e4adb6201a25f81ad04781c07d55",
+      "source_sha256": "ef0dea793b1255d8a7d63cbb85b7c4bc82e7f198be7ffef8d8b1926a50353bb3",
       "verdict": "carried",
       "reason": "Reads original library entry provenance from a reloaded seed without using seed-local numbering; missing source indices remain unknown and binding refuses.",
       "evidence": [

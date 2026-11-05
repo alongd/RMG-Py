@@ -149,8 +149,10 @@ class LibraryReaction(Reaction):
         """
         if self.entry is None:
             return None
-        lines = [line.strip() for line in (self.entry.long_desc or '').splitlines()]
-        if not any(line.startswith('Originally from reaction library: ') for line in lines):
+        description = self.entry.long_desc or ''
+        lines = [line.strip() for line in description.splitlines()]
+        if not (parse_external_library_provenance(description)
+                or 'Originally from reaction library: ' in description):
             return self.entry.index
         prefix = 'Original reaction library entry index: '
         indices = [line[len(prefix):] for line in lines if line.startswith(prefix)]

@@ -1114,10 +1114,15 @@ def _seed_restart(tmp_path, core, reactions, edge=False, legacy=False):
     library = KineticsLibrary(label="seed", auto_generated=True)
     library.load(str(seed_path), database.local_context, database.global_context)
     if legacy:
+        from rmgpy.data.kinetics.common import format_external_library_provenance
+
         for entry in library.entries.values():
-            entry.long_desc = "\n".join(
-                line for line in entry.long_desc.splitlines()
-                if not line.startswith("Original reaction library entry index: "))
+            if legacy == 'external':
+                entry.long_desc = format_external_library_provenance('Toy', str(tmp_path))
+            else:
+                entry.long_desc = "\n".join(
+                    line for line in entry.long_desc.splitlines()
+                    if not line.startswith("Original reaction library entry index: "))
         library.save(str(seed_path))
         library.load(str(seed_path), database.local_context, database.global_context)
     restored = library.get_library_reactions()
@@ -1160,10 +1165,20 @@ def test_energy_binding_survives_reordered_seed_restart(tmp_path, edge, source_i
 
 
 @pytest.mark.parametrize("edge", [False, True])
-def test_energy_binding_refuses_legacy_seed_without_source_index(tmp_path, edge):
+@pytest.mark.parametrize("provenance", ['textual', 'external'])
+def test_energy_binding_refuses_legacy_seed_without_source_index(tmp_path, edge, provenance):
     r, core, reactions = _build(metastable=True)
+    # Overlap all seed-local indices so fallback would silently swap energies,
+    # rather than failing later on an unmatched declaration.
+    expected = np.array(r.energy_threshold, copy=True)
+    ToyLibraryReactor.toy_entries = dict(enumerate(ToyLibraryReactor.toy_entries.values()))
+    r.energy_declared = {('Toy', index): energy for index, energy in enumerate(expected)}
+    for index, reaction in enumerate(reactions):
+        reaction.entry.index = index
     restored, _ = _seed_restart(tmp_path, core, [reactions[1], reactions[0], reactions[2]],
-                               edge=edge, legacy=True)
+                               edge=edge, legacy=provenance)
+    assert [reaction.library for reaction in restored] == ['Toy'] * 3
+    assert [reaction.entry.index for reaction in restored] == [0, 1, 2]
     with pytest.raises(PlasmaStateError, match="missing source entry index provenance"):
         r.initialize_model(core, restored, [], [])
     # Writing a legacy reload again must never bless its seed-local indices.

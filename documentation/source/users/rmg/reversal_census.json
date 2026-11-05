@@ -2473,7 +2473,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::KineticsLibrary.check_for_duplicates::is_same_reaction#1",
     "kind": "direction",
-    "line": 571,
+    "line": 573,
     "source": "if reaction0 is not reaction and reaction0.is_same_reaction(reaction):",
     "verdict": "guarded",
     "reason": "Uses shared direction-aware channel identity.",
@@ -2484,7 +2484,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::KineticsLibrary.convert_duplicates_to_multi::check_resolved_species_reversibility#1",
     "kind": "reverse",
-    "line": 642,
+    "line": 644,
     "source": "entry0.item.check_resolved_species_reversibility(kinetics=entry0.data)",
     "verdict": "guarded",
     "reason": "Forward-only channel identity and equal reversibility are required before combining marked duplicates.",
@@ -2495,7 +2495,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::KineticsLibrary.convert_duplicates_to_multi::is_same_reaction#1",
     "kind": "direction",
-    "line": 603,
+    "line": 605,
     "source": "if reaction0.is_same_reaction(reaction, either_direction=False):",
     "verdict": "guarded",
     "reason": "Forward-only channel identity and equal reversibility are required before combining marked duplicates.",
@@ -2506,7 +2506,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::KineticsLibrary.convert_duplicates_to_multi::reaction-io",
     "kind": "reader-exporter",
-    "line": 584,
+    "line": 586,
     "source": "def convert_duplicates_to_multi(self):",
     "verdict": "guarded",
     "reason": "Forward-only channel identity and equal reversibility are required before combining marked duplicates.",
@@ -2517,7 +2517,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::KineticsLibrary.get_library_reactions::LibraryReaction#1",
     "kind": "builder",
-    "line": 488,
+    "line": 490,
     "source": "rxn = LibraryReaction(reactants=entry.item.reactants[:], products=entry.item.products[:],",
     "verdict": "guarded",
     "reason": "Checks original entry.data and carries its irreversible flag into each constructed LibraryReaction.",
@@ -2528,7 +2528,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::KineticsLibrary.get_library_reactions::LibraryReaction#2",
     "kind": "builder",
-    "line": 531,
+    "line": 533,
     "source": "rxn = LibraryReaction(reactants=entry.item.reactants[:], products=entry.item.products[:],",
     "verdict": "guarded",
     "reason": "Checks original entry.data and carries its irreversible flag into each constructed LibraryReaction.",
@@ -2539,7 +2539,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::KineticsLibrary.get_library_reactions::TemplateReaction#1",
     "kind": "builder",
-    "line": 514,
+    "line": 516,
     "source": "rxn = TemplateReaction(reactants=entry.item.reactants[:], products=entry.item.products[:],",
     "verdict": "guarded",
     "reason": "Checks original entry.data and carries its irreversible flag into each constructed LibraryReaction.",
@@ -2550,7 +2550,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::KineticsLibrary.get_library_reactions::reaction-io",
     "kind": "reader-exporter",
-    "line": 462,
+    "line": 464,
     "source": "def get_library_reactions(self):",
     "verdict": "guarded",
     "reason": "Checks original entry.data and carries its irreversible flag into each constructed LibraryReaction.",
@@ -2561,7 +2561,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::KineticsLibrary.load::check_for_duplicates#1",
     "kind": "direction",
-    "line": 804,
+    "line": 806,
     "source": "self.check_for_duplicates()",
     "verdict": "guarded",
     "reason": "Checks each original library declaration before returning the library.",
@@ -2572,7 +2572,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::KineticsLibrary.load::check_resolved_species_reversibility#1",
     "kind": "reverse",
-    "line": 792,
+    "line": 794,
     "source": "rxn.check_resolved_species_reversibility(kinetics=entry.data)",
     "verdict": "guarded",
     "reason": "Checks each original library declaration before returning the library.",
@@ -2583,7 +2583,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::KineticsLibrary.load::convert_duplicates_to_multi#1",
     "kind": "direction",
-    "line": 805,
+    "line": 807,
     "source": "self.convert_duplicates_to_multi()",
     "verdict": "guarded",
     "reason": "Checks each original library declaration before returning the library.",
@@ -2594,7 +2594,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::KineticsLibrary.load::reaction-io",
     "kind": "reader-exporter",
-    "line": 650,
+    "line": 652,
     "source": "def load(self, path, local_context=None, global_context=None):",
     "verdict": "guarded",
     "reason": "Checks each original library declaration before returning the library.",
@@ -2605,7 +2605,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::KineticsLibrary.load_entry::Reaction#1",
     "kind": "builder",
-    "line": 839,
+    "line": 841,
     "source": "rxn = Reaction(reactants=[], products=[], degeneracy=degeneracy, duplicate=duplicate, reversible=reversible,",
     "verdict": "guarded",
     "reason": "Copies explicit reversible metadata and checks original entry kinetics before library admission.",
@@ -2616,7 +2616,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::KineticsLibrary.load_entry::reaction-io",
     "kind": "reader-exporter",
-    "line": 807,
+    "line": 809,
     "source": "def load_entry(self,",
     "verdict": "guarded",
     "reason": "Copies explicit reversible metadata and checks original entry kinetics before library admission.",
@@ -2627,7 +2627,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::KineticsLibrary.load_old::check_for_duplicates#1",
     "kind": "direction",
-    "line": 949,
+    "line": 951,
     "source": "self.check_for_duplicates()",
     "verdict": "guarded",
     "reason": "The old reader constructs rates supported by its thermal format; get_library_reactions validates them with current species state.",
@@ -2638,7 +2638,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::KineticsLibrary.load_old::convert_duplicates_to_multi#1",
     "kind": "direction",
-    "line": 950,
+    "line": 952,
     "source": "self.convert_duplicates_to_multi()",
     "verdict": "guarded",
     "reason": "The old reader constructs rates supported by its thermal format; get_library_reactions validates them with current species state.",
@@ -2649,7 +2649,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::KineticsLibrary.load_old::mark_valid_duplicates#1",
     "kind": "direction",
-    "line": 933,
+    "line": 935,
     "source": "self.mark_valid_duplicates(reactions, pdep_reactions)",
     "verdict": "guarded",
     "reason": "The old reader constructs rates supported by its thermal format; get_library_reactions validates them with current species state.",
@@ -2660,7 +2660,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::KineticsLibrary.load_old::reaction-io",
     "kind": "reader-exporter",
-    "line": 906,
+    "line": 908,
     "source": "def load_old(self, path):",
     "verdict": "guarded",
     "reason": "The old reader constructs rates supported by its thermal format; get_library_reactions validates them with current species state.",
@@ -2671,7 +2671,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::KineticsLibrary.mark_valid_duplicates::reaction-io",
     "kind": "reader-exporter",
-    "line": 542,
+    "line": 544,
     "source": "def mark_valid_duplicates(self, reactions1, reactions2):",
     "verdict": "guarded",
     "reason": "Only the same oriented equation is marked; opposite irreversible declarations remain distinct.",
@@ -2682,7 +2682,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::KineticsLibrary.save_old::check_resolved_species_reversibility#1",
     "kind": "reverse",
-    "line": 1000,
+    "line": 1002,
     "source": "entry.item.check_resolved_species_reversibility(kinetics=entry.data, reversible=True)",
     "verdict": "refused",
     "reason": "The legacy library identity boundary refuses resolved species before this downstream reversal check or any state-blind file write.",
@@ -2693,7 +2693,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::KineticsLibrary.save_old::is_isomorphic#1",
     "kind": "direction",
-    "line": 1020,
+    "line": 1022,
     "source": "if any(spc.is_isomorphic(molecule) for spc in species_dict.values()):",
     "verdict": "refused",
     "reason": "The legacy library validates dictionary identities and refuses resolved species before any state-blind file write.",
@@ -2704,7 +2704,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::KineticsLibrary.save_old::reaction-io",
     "kind": "reader-exporter",
-    "line": 966,
+    "line": 968,
     "source": "def save_old(self, path):",
     "verdict": "refused",
     "reason": "The legacy library refuses resolved species identity before writing reactions, so neither direction nor kinetics can be erased by the old format.",
@@ -2728,7 +2728,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::LibraryReaction.__reduce__::reaction-io",
     "kind": "reader-exporter",
-    "line": 167,
+    "line": 169,
     "source": "def __reduce__(self):",
     "verdict": "guarded",
     "reason": "Library reaction metadata retains explicit directions; executable library entry serialization checks original entry kinetics.",
@@ -2741,7 +2741,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::LibraryReaction.__reduce__::reaction_state#1",
     "kind": "reader-exporter",
-    "line": 178,
+    "line": 180,
     "source": "return (LibraryReaction, (), reaction_state(self, _NOT_REPRODUCED,",
     "verdict": "guarded",
     "reason": "Library reaction metadata retains explicit directions; executable library entry serialization checks original entry kinetics.",
@@ -2754,7 +2754,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::LibraryReaction.__repr__::check_resolved_species_reversibility#1",
     "kind": "reverse",
-    "line": 223,
+    "line": 225,
     "source": "self.check_resolved_species_reversibility()",
     "verdict": "guarded",
     "reason": "Library reaction metadata retains explicit directions; executable library entry serialization checks original entry kinetics.",
@@ -2767,7 +2767,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::LibraryReaction.__repr__::reaction-io",
     "kind": "reader-exporter",
-    "line": 218,
+    "line": 220,
     "source": "def __repr__(self):",
     "verdict": "guarded",
     "reason": "Library reaction metadata retains explicit directions; executable library entry serialization checks original entry kinetics.",
@@ -2780,7 +2780,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::LibraryReaction.__setstate__::apply_reaction_state#1",
     "kind": "reader-exporter",
-    "line": 186,
+    "line": 188,
     "source": "apply_reaction_state(self, state)",
     "verdict": "guarded",
     "reason": "Library reaction metadata retains explicit directions; executable library entry serialization checks original entry kinetics.",
@@ -2793,7 +2793,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::LibraryReaction.copy::copy_reaction#1",
     "kind": "reader-exporter",
-    "line": 205,
+    "line": 207,
     "source": "return copy_reaction(self, _NOT_COPIED_BY_REFERENCE)",
     "verdict": "guarded",
     "reason": "Library reaction metadata retains explicit directions; executable library entry serialization checks original entry kinetics.",
@@ -2806,7 +2806,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::LibraryReaction.generate_high_p_limit_kinetics::check_resolved_species_reversibility#1",
     "kind": "reverse",
-    "line": 264,
+    "line": 266,
     "source": "self.check_resolved_species_reversibility(reversible=True)",
     "verdict": "guarded",
     "reason": "Library reaction metadata retains explicit directions; executable library entry serialization checks original entry kinetics.",
@@ -2819,7 +2819,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::LibraryReaction.generate_high_p_limit_kinetics::reaction-io",
     "kind": "reader-exporter",
-    "line": 249,
+    "line": 251,
     "source": "def generate_high_p_limit_kinetics(self):",
     "verdict": "guarded",
     "reason": "Library reaction metadata retains explicit directions; executable library entry serialization checks original entry kinetics.",
