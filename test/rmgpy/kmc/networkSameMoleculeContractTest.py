@@ -880,7 +880,7 @@ def _chords(closed, radicals):
 
 @contract
 @law("A", "B_R")
-def test_the_nested_closure_rates_are_path_independent(monkeypatch):
+def test_the_nested_closure_rates_are_path_independent():
     """The c_eff half of Kolmogorov's criterion, forward rates only (the
     reversible one-catalog check at finite phi is
     ``test_the_closed_reaction_cycle_satisfies_kolmogorovs_criterion``; this
@@ -892,9 +892,8 @@ def test_the_nested_closure_rates_are_path_independent(monkeypatch):
     A and B_R hold it (design §3: tau(G+e) = tau(G)(1 + R/w_e)); B_sp, C_sp,
     C_R and C_img miss it by 0.641, 0.807, 1.063 and 0.816 on this cycle
     (probe_cycle_nested)."""
-    from rmgpy.kmc import window_matcher as wm
-    # benzylic radicals on a 4-ring chain exceed the matcher's 64 resonance forms
-    monkeypatch.setattr(wm._component_subs, "__defaults__", (4096,))
+    # benzylic radicals on a 4-ring chain: more than 64 forms over the component's independent
+    # subsystems, each of them within the bound (I-298: the bound is per subsystem)
     rate = {}
     for key, closed, radicals in (("A|G0", (), "A"), ("B|GA", ("A",), "B"),
                                   ("B|G0", (), "B"), ("A|GB", ("B",), "A")):

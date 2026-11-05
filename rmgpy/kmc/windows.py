@@ -4113,7 +4113,7 @@ def diagnostics(witness, atoms, policy=None) -> dict:
                 row = part[a]
                 return row[0], row[2], row[4], row[3], dict(row[5])
             try:
-                _subs, total = wm._component_subs(sorted(part), value)
+                _subs, total = wm._component_subs(sorted(part), value, whole=True)
                 out["resonance"].append({"side": side, "first_atom": min(part), "forms": total})
             except wm.ConjugatedRingError as error:
                 out["resonance"].append({"side": side, "first_atom": min(part),

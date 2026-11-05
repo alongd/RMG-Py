@@ -21,12 +21,16 @@ Matching is pure and deterministic: ``match(templates, state)``.
   conjugated subsystems (atoms with free valence, joined by bonds).  Forms move
   radicals and pi bonds inside a subsystem (allyl shifts, alternating-cycle
   flips); charges and lone pairs never move.  A six-cycle whose pi bonds
-  alternate is written as an aromatic sextet (all 1.5).  At most
-  ``RESONANCE_FORM_LIMIT`` forms per component (checked while exploring) and no
-  conjugated ring larger than ``CONJUGATED_RING_LIMIT``; either overflow raises.
-  A window touches only the subsystems that contain its atoms; the forms of the
-  other subsystems multiply the embedding count but cannot change the outcome,
-  so they are counted, not re-evaluated.
+  alternate is written as an aromatic sextet (all 1.5).  A window touches
+  only the subsystems that contain its atoms; the forms of the other
+  subsystems multiply the embedding count but cannot change the outcome, so
+  they are counted (an exact integer), not enumerated.  The bound
+  ``RESONANCE_FORM_LIMIT`` applies to what is enumerated: the forms of one
+  subsystem (checked while exploring), the joint forms one window evaluates
+  over the subsystems it touches, and the forms a caller iterates from
+  ``component_forms`` (factorized, built on demand); never to the product
+  over a component's independent subsystems.  No conjugated ring may be
+  larger than ``CONJUGATED_RING_LIMIT``.  Any overflow raises.
 * A transition's identity is (template class, the touched components, the
   complete mapped product of those components with every conjugated subsystem
   written in its first form).  It is stored as the difference from the
@@ -52,7 +56,9 @@ Rates are not part of this module: every template carries a caller-given
 weight.
 """
 
+import itertools
 import math
+import operator
 import weakref
 from dataclasses import dataclass
 from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
@@ -704,19 +710,26 @@ def _sub_shape(group, free, value):
     return bonds, shape
 
 
-def _component_subs(members, value, limit=RESONANCE_FORM_LIMIT):
-    """Subsystems of one component with their forms, enforcing the
-    per-component bound while exploring."""
+def _component_subs(members, value, limit=RESONANCE_FORM_LIMIT, *, whole=False):
+    """Subsystems of one component with their forms and the exact (integer)
+    product of their form counts.
+
+    The bound applies to each subsystem's own forms: the product over
+    independent subsystems is counted, never enumerated here, so it is not
+    bounded (a window evaluates the subsystems it touches, ``_finish``).
+    ``whole``: bound the product instead, as a report of the component's
+    whole form count does (``windows.diagnostics``: a count, or its overflow
+    cutoff)."""
     subs, product = [], 1
     for group, free in _subsystems(members, value):
         bonds, shape = _sub_shape(group, free, value)
-        budget = limit // product
+        budget = limit // product if whole else limit
         try:
             forms = _shape_forms(shape, budget)
         except ConjugatedRingError:
             raise
         except ResonanceLimitError as error:
-            count = product * (budget + 1) if error.count is not None else None
+            count = (product if whole else 1) * (budget + 1) if error.count is not None else None
             raise ResonanceLimitError(
                 f"component at atom {members[0]}: more than {limit} resonance forms "
                 f"(stopped at form {count})", count) from None
@@ -889,9 +902,70 @@ class Form:
     radicals: Tuple[Tuple[int, int], ...]
 
 
-def component_forms(state, cid) -> Tuple[Form, ...]:
-    """Every supported resonance form of a component, first form first.  The
-    list does not depend on the form the state stores."""
+class ComponentForms:
+    """Every supported resonance form of a component, first form first,
+    factorized over its conjugated subsystems: form ``i`` takes from each
+    subsystem the form of index ``i``'s mixed-radix digit (the last
+    subsystem's digit varies fastest), so the order is the cartesian
+    product's.  The forms are built on demand: ``size`` is the exact
+    product of the subsystems' form counts (``len`` too, below
+    ``sys.maxsize``) and indexing builds one form, so a component with many
+    independent subsystems is never materialized; iterating enumerates them
+    and stops with ResonanceLimitError past ``RESONANCE_FORM_LIMIT``, the
+    bound on any enumeration of forms."""
+
+    __slots__ = ("subsystems", "size", "_first_atom")
+
+    def __init__(self, first_atom, subsystems):
+        self._first_atom = first_atom
+        self.subsystems = tuple(subsystems)
+        size = 1
+        for sub in self.subsystems:
+            size *= len(sub.forms)
+        self.size = size
+
+    def __len__(self):
+        return self.size
+
+    def _form(self, choice):
+        bonds, radicals = [], []
+        for sub, k in zip(self.subsystems, choice):
+            orders, r = sub.forms[k]
+            bonds.extend((a, b, o) for (a, b), o in zip(sub.bonds, orders))
+            radicals.extend(zip(sub.atoms, r))
+        return Form(tuple(sorted(bonds)), tuple(sorted(radicals)))
+
+    def __getitem__(self, index):
+        if isinstance(index, slice):
+            return tuple(self[i] for i in range(*index.indices(self.size)))
+        index = operator.index(index)
+        if index < 0:
+            index += self.size
+        if not 0 <= index < self.size:
+            raise IndexError("component form index out of range")
+        choice = []
+        for sub in reversed(self.subsystems):
+            index, k = divmod(index, len(sub.forms))
+            choice.append(k)
+        return self._form(reversed(choice))
+
+    def __iter__(self):
+        for n, choice in enumerate(itertools.product(*(range(len(s.forms)) for s in self.subsystems))):
+            if n == RESONANCE_FORM_LIMIT:
+                raise ResonanceLimitError(
+                    f"component at atom {self._first_atom}: more than {RESONANCE_FORM_LIMIT} resonance "
+                    f"forms enumerated (stopped at form {n + 1} of {self.size})", n + 1)
+            yield self._form(choice)
+
+    def __repr__(self):
+        return (f"ComponentForms({self.size} forms over {len(self.subsystems)} subsystems, "
+                f"component at atom {self._first_atom})")
+
+
+def component_forms(state, cid) -> ComponentForms:
+    """Every supported resonance form of a component, first form first
+    (``ComponentForms``).  The list does not depend on the form the state
+    stores."""
     members = state.components.atoms(cid)
     nodes = state.atoms
 
@@ -900,12 +974,7 @@ def component_forms(state, cid) -> Tuple[Form, ...]:
         return n.element, n.charge, n.lone_pairs, n.radical, n.edges
 
     subs, _total = _component_subs(members, value)
-    forms = [((), ())]
-    for sub in subs:
-        forms = [(bonds + tuple((a, b, o) for (a, b), o in zip(sub.bonds, orders)),
-                  rads + tuple(zip(sub.atoms, r)))
-                 for bonds, rads in forms for orders, r in sub.forms]
-    return tuple(Form(tuple(sorted(b)), tuple(sorted(r))) for b, r in forms)
+    return ComponentForms(members[0], subs)
 
 
 def form_rows(state, cid, form) -> Dict[int, Tuple]:
@@ -1229,6 +1298,7 @@ def _finish(view, template, cid, mapping):
         return None
     touched = sorted(groups)
     consistent = []
+    joint = 1
     for s in touched:
         sub = view.subs[s]
         ok = [k for k, form in enumerate(sub.forms)
@@ -1236,6 +1306,16 @@ def _finish(view, template, cid, mapping):
         if not ok:
             return None
         consistent.append([(s, k) for k in ok])
+        joint *= len(ok)
+    # the bound on what a window evaluates: the joint forms of the subsystems
+    # it touches that its atoms allow (the other subsystems' forms are
+    # counted in ``rest``, never enumerated)
+    if joint > RESONANCE_FORM_LIMIT:
+        raise ResonanceLimitError(
+            f"component at atom {view.state.components.atoms(cid)[0]}: more than {RESONANCE_FORM_LIMIT} "
+            f"resonance forms over the {len(touched)} subsystems one window of {template.name} touches "
+            f"({joint} joint forms its atoms allow, the subsystems at atoms "
+            f"{[view.subs[s].atoms[0] for s in touched]})", joint)
     rest = view.comp_forms[cid]
     for s in touched:
         rest //= len(view.subs[s].forms)
