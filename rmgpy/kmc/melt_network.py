@@ -120,9 +120,12 @@ def observe(spec, state, identity=None) -> dict:
     }
 
 
-def observed_run(engine, times: Iterable[float]) -> List[dict]:
+def observed_run(engine, times: Iterable[float], loop_share: Optional[int] = None) -> List[dict]:
     """Run ``engine`` (a network ``MeltEngine``) through ``times`` (ascending)
-    and record the observables and the leak per class at each."""
+    and record the observables and the leak per class at each.  With
+    ``loop_share`` (a sample count) and a declared same-molecule law, each row
+    also carries ``MeltEngine.loop_share`` at that time (a diagnostic: the
+    run's events are those of the run without it)."""
     _require_network(engine.spec)
     rows = []
     for t in sorted(float(x) for x in times):
@@ -131,5 +134,7 @@ def observed_run(engine, times: Iterable[float]) -> List[dict]:
         row = {"time": t, "events": engine.events_fired, "leak_num": engine.leak_num,
                "leak_by_class": dict(engine.leak_by_class)}
         row.update(observe(engine.spec, engine.state, engine.identity))
+        if loop_share is not None:
+            row["loop_share"] = engine.loop_share(samples=loop_share)
         rows.append(row)
     return rows

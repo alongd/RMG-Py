@@ -129,7 +129,8 @@ declared linearity rule and adds two leak classes, measured and never fired
 * **same_molecule**: a bimolecular pair whose two sites lie on one component
   (ordered site pairs sharing no atom, per class and kind pair, suppressed
   pairs and excluded classes out) at the class's intrinsic weight,
-  ``w n / (divisor N_A V)``; such pairs were never channels (``P`` above);
+  ``w n / (divisor N_A V)``; such pairs are no channel (``P`` above) unless
+  the network declares a same-molecule law (below);
 * **gel_mobility**: the gel (``gel_component``: the component with the most
   backbone-origin atoms, least id on a tie) never moves as a whole, so a MET
   pair with it uses ``k_D`` of its partner's diffusivity alone
@@ -137,6 +138,41 @@ declared linearity rule and adds two leak classes, measured and never fired
   dissociation reads the gel among its products, ``_product_gel``); what the
   gel's own diffusivity would add, ``(phi_full - phi) k_allowed / N_A V``, is
   the class's propensity (``PairRate.mobility``).
+
+**Same-molecule law** (``transport_model["same_molecule"]``, schema
+``SAME_MOLECULE_SCHEMA``: ``{law: well_mixed, escape_factor: segment}``, design
+I-297 law A with phi_seg; ``SameMoleculeLaw``).  Every component's
+same-molecule pairs are a table (``self_table``, built when the entry is
+indexed, on the committed state only):
+
+* R1: each pair is checked by declared linearity on its own edits
+  (``DeclaredLinearity.leak_reason``; a kind pair cannot see the cycle a pair
+  on one molecule closes): refused pairs are ``short_cycle`` /
+  ``undeclared_link`` leak, never fired; ``same_molecule`` stays 0;
+* R3: a pair whose product, atom by atom (``atom_resolved_product``), an
+  active unimolecular transition of the component makes (allowed, not
+  excluded, positive weight; a deferred one is the class's it defers to) is
+  that transition's: neither channel nor leak.  An owner that does not fire
+  owns nothing;
+* law A: an allowed pair of class ``c`` fires at ``f w / (divisor N_A V)``
+  (channel ``("self", c)``, exact, no thinning), ``f = 1`` for a non-MET class
+  and phi_seg ``= k_D(1) / (k_D(1) + k_act)`` for a MET class:
+  ``k_D(1) = 4 pi N_A s 2 D0 sigma`` (``TransportLaw.k_diffusion_segment``)
+  and ``k_act`` the molecule's own encounter group (every same-molecule MET
+  row, allowed and leak, owned pairs and excluded classes out, each over its
+  divisor, at its override weight), the group the forward rows and every
+  reverse into the molecule read alike;
+* R2: a no-split reverse (one product) is thinned in ``_reverse_phi`` at the
+  product molecule's phi_seg (``reverse_self_accepted``); phi 1 when an active
+  unimolecular transition of the product is its exact inverse
+  (``inverse_product``; ``reverse_unimolecular_owner``) or no MET row is left
+  (``reverse_no_pair``);
+* R4: every component, sol or gel;
+* R5: a tentative product's phi is evaluated inside ``_reverse_phi`` and never
+  stored; a table is read on the committed state only.
+
+Loop entropy is not modelled; ``loop_share`` reports the share the
+shortest-strand Gaussian term would add (``LOOP_SHARE_DEFINITION``), never fired.
 
 The declared-linearity leak is split by reason: **short_cycle** (a
 unimolecular transition whose only refused bond closes a cycle shorter than
@@ -265,6 +301,21 @@ LEAK_DEFINITION = (
 EXCLUDED_DEFINITION = (
     "excluded_num = int of the intrinsic propensity (allowed and leak transitions, no escape factor) of the "
     "excluded templates dt; they never fire and are no part of k_act, so it is outside leak_num and leak_den")
+LOOP_SHARE_DEFINITION = (
+    "loop_share (a diagnostic, never fired): the propensity share the shortest-strand Gaussian loop term "
+    "(design I-297 option C_sp) would add over law A's background, at the current state: sum_p a_p x_p / "
+    "sum_p a_p over the allowed same-molecule pairs p, a_p the pair's law-A propensity (phi held at its "
+    "law-A value) and x_p = c_sp / c_bg, c_sp = (3 / (2 pi r2))^(3/2) / N_A with r2 = <R^2>/M x M_d, M_d the "
+    "least united-atom strand mass (g/mol) between the pair's anchors (each atom of a formed cross bond, a "
+    "transferred H replaced by its heavy neighbour, the least over anchor pairs; a bond weighs the mean of "
+    "its two atoms' united-atom masses) and c_bg = 1 / (N_A V).  Exact over every pair when there are at "
+    "most `samples` of them; otherwise the mean of x over `samples` pairs drawn with probability a_p / "
+    "sum a (its own seeded generator: the engine's draws are untouched), with the standard error of that "
+    "mean.  A pair whose anchors coincide (M_d = 0) has no finite loop term: counted in `unbounded`, out "
+    "of the share; a radical-increasing (thinned) class's pairs are out too (`thinned_pairs_out`).  Limits: an instantaneous share at one state; it does not bound the trajectory error of "
+    "omitting loop entropy, which is unquantified (trajectories under C_sp diverge after the first event "
+    "that differs, and on a sol molecule a background event fires as a ring closure where the physical "
+    "event may join two replicas)")
 SPIN_FACTOR_RANGE = (0.25, 1.0)
 # Component scans kept for reuse (``MeltEngine._scan``; least recently used
 # evicted first).  A bound on memory, not a tuning knob: a kept scan is only
@@ -444,6 +495,15 @@ class TransportLaw:
         radius = max(self.contact_radius_m, 2.0 * rg)
         return 4.0 * math.pi * constants.Na * self.spin_factor * self.diffusivity(temperature, moving) * radius
 
+    def k_diffusion_segment(self, temperature: float) -> float:
+        """The segment encounter of two sites on one molecule (design I-297
+        section 2, phi_seg): ``4 pi N_A s (D(1) + D(1)) sigma``, the declared law at
+        n = 1 (closure D(1) = D0) and the declared contact radius (closure: the
+        2 Rg floor of whole coils is not applied to a segment).  Both closures
+        are the owner's (``SAME_MOLECULE_LAW``)."""
+        return (4.0 * math.pi * constants.Na * self.spin_factor
+                * 2.0 * self.diffusivity(temperature, 1) * self.contact_radius_m)
+
     def met_length(self, backbone_atoms: int, molar_mass_g_mol=None) -> int:
         """The MET length of a component: ``floor(B_c / b)``, or for a
         copolymer ``floor(M_c / Mbar0)`` (``molar_mass_g_mol``, exact)."""
@@ -484,6 +544,55 @@ def escape_factor(k_act: float, k_d: float) -> float:
 # --------------------------------------------------------------------------
 # catalog
 # --------------------------------------------------------------------------
+SAME_MOLECULE_SCHEMA = "kmc-same-molecule/1"
+# the declared same-molecule law (``transport_model["same_molecule"]``): the
+# implemented option of design I-297 and its declaration names
+SAME_MOLECULE_LAW = {"law": {"well_mixed": "A"}, "escape_factor": {"segment": "seg"}}
+
+
+@dataclass(frozen=True)
+class SameMoleculeLaw:
+    """The declared law of a bimolecular pair whose two sites lie on one
+    molecule (a network only; ``transport_model["same_molecule"]``).
+
+    ``law`` ``A`` (declared ``well_mixed``): the pair reacts as if its two
+    sites were on two molecules in the same volume, at the per-pair
+    concentration ``1 / (N_A V)`` of the two-molecule law.  ``phi`` ``seg``
+    (declared ``segment``): a MET class's escape factor is the segment
+    encounter ``k_D(1) = 4 pi N_A s 2 D0 sigma`` (``TransportLaw.k_diffusion_segment``)
+    against the summed activation of the molecule's own encounter group.
+    Loop entropy is not modelled (a property of law A, reported by
+    ``MeltEngine.loop_share``, never corrected)."""
+
+    law: str
+    phi: str
+
+    @classmethod
+    def from_spec(cls, spec, network: bool) -> Optional["SameMoleculeLaw"]:
+        """The declared law, or None when the declaration names none (a
+        same-molecule pair is then ``same_molecule`` leak, as before)."""
+        model = getattr(spec, "transport_model", None)
+        raw = model.get("same_molecule") if isinstance(model, Mapping) else None
+        if raw is None:
+            return None
+        if not network:
+            raise DeclarationError("transport_model['same_molecule'] is the law of a network declaration "
+                                   "(NetworkPolymerSpec); it is refused for any other")
+        if not isinstance(raw, Mapping) or set(raw) != {"schema", "law", "escape_factor"}:
+            raise DeclarationError("transport_model['same_molecule'] must be exactly "
+                                   "{schema, law, escape_factor}")
+        if raw["schema"] != SAME_MOLECULE_SCHEMA:
+            raise DeclarationError(f"transport_model['same_molecule'].schema must be {SAME_MOLECULE_SCHEMA!r}, "
+                                   f"got {raw['schema']!r}")
+        laws, phis = SAME_MOLECULE_LAW["law"], SAME_MOLECULE_LAW["escape_factor"]
+        if raw["law"] not in laws or raw["escape_factor"] not in phis:
+            raise DeclarationError(
+                f"transport_model['same_molecule']: law {raw['law']!r} with escape_factor "
+                f"{raw['escape_factor']!r} is not implemented (implemented: law {sorted(laws)} with "
+                f"escape_factor {sorted(phis)}; design I-297)")
+        return cls(laws[raw["law"]], phis[raw["escape_factor"]])
+
+
 class PayloadCatalog:
     """Emitted template payloads; the templates at T come only from
     ``template_emission.loaded_templates(payloads, T)``."""
@@ -1385,6 +1494,37 @@ def _transition_is(view, state, comps, delta, products) -> bool:
     return _same_species(_species_of_rows(rows), products)
 
 
+def _node_row(n) -> Tuple:
+    """An atom's row in ``EngineTransition.delta`` form."""
+    return (n.element, n.isotope, n.charge, n.radical, n.lone_pairs,
+            tuple(sorted((b, float(o)) for b, o in n.edges.items())))
+
+
+def _edit_atoms(edits) -> frozenset:
+    """The atoms an edit set names."""
+    return frozenset(x for e in edits for x in ((e.a, e.b) if isinstance(e, SetBond) else (e.atom,)))
+
+
+def atom_resolved_product(tr: EngineTransition) -> frozenset:
+    """A transition's product atom by atom: every atom whose row it changes
+    with its product row (first form, ``delta``).  Two transitions of one
+    component make the same graph with the same atom ids, bond orders,
+    radicals, charges and lone pairs exactly when these are equal.  Unlike
+    ``_transition_is`` (product species under isomorphism) it tells apart two
+    transitions whose products are isomorphic but placed on other atoms."""
+    return frozenset(tr.delta)
+
+
+def inverse_product(tr: EngineTransition, old_nodes, nodes) -> frozenset:
+    """The ``atom_resolved_product`` that restores the reactant of ``tr``
+    once ``tr`` is applied: each atom ``tr`` changes, with its row before
+    (``old_nodes``: atom -> node before the transaction; ``nodes``: the
+    state's atoms, for an atom the transaction never touched).  A transition
+    of the product state is the exact (atom-resolved) inverse of ``tr`` when
+    its ``atom_resolved_product`` equals this."""
+    return frozenset((a, _node_row(old_nodes[a] if a in old_nodes else nodes[a])) for a, _row in tr.delta)
+
+
 # --------------------------------------------------------------------------
 # Fenwick trees and the exact pair sampler
 # --------------------------------------------------------------------------
@@ -1705,6 +1845,46 @@ class SelfPairRows:
 
 
 @dataclass(frozen=True)
+class SelfRow:
+    """One class (and override) of one molecule's same-molecule pairs under
+    the declared law: ``allowed`` its ordered site pairs (s0, s1) that are
+    channels, and the counts refused by per-pair declared linearity (R1)."""
+    class_index: int
+    override: int                 # -1: the template weight
+    allowed: Tuple[Tuple[Tuple[int, ...], Tuple[int, ...]], ...]
+    short_cycle: int
+    undeclared_link: int
+
+
+@dataclass(frozen=True)
+class SelfTable:
+    """One component's same-molecule pairs under the declared law
+    (``MeltEngine.self_table``): its rows, the pairs a unimolecular
+    transition owns (R3: neither channel nor leak), its encounter group (the
+    MET rows, excluded classes and owned pairs out, each count over the
+    class's divisor) and its exact propensities (1/s) at the engine's
+    temperature and weights."""
+    cid: int
+    rows: Tuple[SelfRow, ...]
+    owned: int
+    group: Tuple[Tuple, ...]      # (class, T allowed, T leak[, override])
+    k_act: float                  # m3/mol/s, allowed + leak
+    k_d: float                    # the segment encounter (phi_seg)
+    phi: float
+    bypass: bool                  # a declared small species: phi 1
+    rates: Tuple[Tuple[int, float], ...]   # class -> propensity of its allowed pairs (proposal rate if thinned)
+    short_cycle: float
+    undeclared_link: float
+    excluded: float
+
+    def rate(self, ci: int) -> float:
+        for c, a in self.rates:
+            if c == ci:
+                return a
+        return 0.0
+
+
+@dataclass(frozen=True)
 class RunResult:
     time: float
     events: int
@@ -1757,6 +1937,8 @@ class MeltEngine:
         self.linearity = melt_branched.DeclaredLinearity(spec) if isinstance(spec, BranchedPolymerSpec) else None
         # a network reports its leak per class (module doc, Networks)
         self.network = isinstance(spec, NetworkPolymerSpec)
+        # a network's declared same-molecule law (None: such pairs are same_molecule leak)
+        self.same_law = SameMoleculeLaw.from_spec(spec, self.network)
         self.leak_by_class = {name: 0.0 for name in NETWORK_LEAK_CLASSES} if self.network else {}
         self._leak_by_class_c = dict(self.leak_by_class)
         self._leak_rates: Tuple[Tuple[str, float], ...] = ()
@@ -1896,6 +2078,14 @@ class MeltEngine:
         if not lo <= float(temperature) <= hi:
             raise DeclarationError(f"temperature {temperature} K outside the run range [{lo}, {hi}]")
         self._load(temperature)
+        if self.same_law is not None:
+            # weights and k_D(1) move with temperature, and so may ownership (a zero-weight owner)
+            for cid in sorted(self._self_of):
+                del self._self_of[cid]
+            for cid in sorted(self.entries):
+                table = self.self_table(self.entries[cid])
+                if table is not None:
+                    self._self_of[cid] = table
         self._refresh_met()
 
     # -- index -------------------------------------------------------------
@@ -2243,6 +2433,7 @@ class MeltEngine:
         self.uni_cycle: Counter = Counter()
         self.same: Counter = Counter()        # network: (class, kind0, kind1) -> ordered disjoint site pairs on one molecule
         self._same_of: Dict[int, Counter] = {}
+        self._self_of: Dict[int, SelfTable] = {}   # the declared same-molecule law: component -> its table
         self.uni_o_cids: Dict[Tuple[int, int], set] = defaultdict(set)
         self.met_comps: Dict[int, Dict] = {}
         self.pairs: Dict[Tuple[int, int], PairRate] = {}
@@ -2313,6 +2504,10 @@ class MeltEngine:
             if same:
                 self._same_of[cid] = same
                 self.same.update(same)
+            if self.same_law is not None:
+                table = self.self_table(entry)
+                if table is not None:
+                    self._self_of[cid] = table
 
     def _remove(self, cid: int):
         entry = self.entries.pop(cid)
@@ -2336,6 +2531,7 @@ class MeltEngine:
         if self.network:
             self.uni_cycle.subtract(shape.cycle)
             self.same.subtract(self._same_of.pop(cid, Counter()))
+            self._self_of.pop(cid, None)
         for pair in [p for p in self.pairs if cid in p]:
             del self.pairs[pair]
 
@@ -2473,6 +2669,135 @@ class MeltEngine:
         phi = 1.0 if bypass or k_act <= 0.0 else escape_factor(k_act, k_d)
         return SelfPairRows(classes, k_act, k_allowed, k_d, phi)
 
+    # -- the declared same-molecule law (networks) ----------------------------
+    def _site_edits(self, t: wm.Template, s0, s1) -> Tuple:
+        """The concrete edits of a site pair (each participant's edited atoms
+        in ``t.edited`` order): what ``_pair_transition`` applies, read from
+        the sites alone."""
+        mapping = dict(zip(t.edited[0], s0))
+        mapping.update(zip(t.edited[1], s1))
+        return wm._concrete_edits(t, mapping)
+
+    def _owners(self, entry) -> Dict[frozenset, set]:
+        """R3: the ``atom_resolved_product`` of every unimolecular transition
+        of the component that fires, keyed by the atoms its edits name: an
+        allowed transition (a leak one is forbidden; a deferred one is the
+        class's it defers to) of a class that is not excluded, at a positive
+        weight (its override's for a ``uni_o`` transition)."""
+        out = defaultdict(set)
+        shape = entry.shape
+        for ci in sorted(shape.uni):
+            if shape.uni[ci][0] and ci not in self.excluded and self.weights[ci] > 0.0:
+                for tr in entry.uni[ci][0]:
+                    out[_edit_atoms(tr.edits)].add(atom_resolved_product(tr))
+        for key in sorted(shape.uni_o):
+            ci, o = key
+            if shape.uni_o[key][0] and ci not in self.excluded and self._ovr[ci].weights[o] > 0.0:
+                for tr in entry.uni_o[key][0]:
+                    out[_edit_atoms(tr.edits)].add(atom_resolved_product(tr))
+        return out
+
+    def _self_pairs(self, entry, classify: bool = True, owners=None):
+        """((class, override) -> [allowed pairs, short_cycle count,
+        undeclared_link count], owned count) of one component: every ordered
+        pair of a participant-0 and a participant-1 site of one class sharing
+        no atom, suppressed kind pairs out (as ``_same_pairs``).  A pair whose
+        ``atom_resolved_product`` an active unimolecular transition of the
+        component makes is that transition's (R3: owned, no row).  Every other
+        pair is checked by declared linearity on its own edits (R1:
+        ``DeclaredLinearity.leak_reason``; a kind pair cannot see the cycle a
+        pair on one molecule closes).  ``classify`` False: MET classes that are
+        not excluded only, and no R1 check (every unowned pair counts as
+        allowed): what the escape factor reads (it sums allowed and leak)."""
+        sites = entry.sites
+        keys = list(entry.shape.sites)
+        per, owned = {}, 0
+        for (ci, p, k0) in keys:
+            if p != 0:
+                continue
+            cls = self.classes[ci]
+            if not classify and (not cls.met_forward or ci in self.excluded):
+                continue
+            t = self.templates[ci]
+            for (cj, q, k1) in keys:
+                if cj != ci or q != 1 or _suppressed(k0, k1):
+                    continue
+                slot = per.setdefault((ci, self._pair_override(ci, k0, k1)), [[], 0, 0])
+                s1 = sites[(cj, q, k1)]
+                for a in sites[(ci, p, k0)]:
+                    atoms = set(a)
+                    for b in s1:
+                        if atoms.intersection(b):
+                            continue
+                        edits = self._site_edits(t, a, b)
+                        if owners is None:
+                            owners = self._owners(entry)
+                        named = _edit_atoms(edits)
+                        if named in owners:
+                            tr, _view = self._pair_transition(ci, entry.cid, a, entry.cid, b)
+                            if atom_resolved_product(tr) in owners[named]:
+                                owned += 1
+                                continue
+                        reason = self._leaks(self.state, edits) if classify else False
+                        if not reason:
+                            slot[0].append((a, b))
+                        elif reason == SHORT_CYCLE:
+                            slot[1] += 1
+                        else:
+                            slot[2] += 1
+        return {k: v for k, v in per.items() if v[0] or v[1] or v[2]}, owned
+
+    def _self_phi(self, entry, per) -> Tuple[Tuple, float, float, float, bool]:
+        """(group, k_act, k_D, phi, bypass) of a component's same-molecule
+        pairs ``per`` (``_self_pairs``): the encounter group is every MET row
+        of the molecule, allowed and leak, owned pairs and excluded classes
+        out, each count over its class's divisor (``_group_rows``, as
+        ``encounter_group`` for two molecules: it does not ask which row is
+        the inverse of a reverse proposal); phi_seg = k_D(1) / (k_D(1) +
+        k_act) (``TransportLaw.k_diffusion_segment``), 1 for a declared small
+        species (bypass)."""
+        rows = {k: [len(v[0]), v[1] + v[2]] for k, v in per.items() if self.classes[k[0]].met_forward}
+        group = self._group_rows(rows)[0] if rows else ()
+        k_act = math.fsum(self._row_weight(r) * (r[1] + r[2]) for r in group)
+        k_d = self.transport.k_diffusion_segment(self.temperature)
+        bypass = entry.species is not None
+        phi = 1.0 if bypass or k_act <= 0.0 else escape_factor(k_act, k_d)
+        return group, k_act, k_d, phi, bypass
+
+    def self_table(self, entry) -> Optional[SelfTable]:
+        """The same-molecule table of one component under the declared law
+        (None when it has no such pair).  Each allowed pair of class ``c``
+        fires at ``f w / (divisor N_A V)`` (law A: the two-molecule law's
+        per-pair concentration), ``f`` the molecule's phi_seg for a MET class
+        and 1 otherwise (a radical-increasing class is proposed there and
+        thinned at the escape factor of its product, R2); an R1-refused pair
+        accrues the same as leak of its class; an excluded class's pairs are
+        intrinsic excluded propensity.  Read on the committed state only
+        (R5): a tentative product's escape factor is ``_reverse_phi``'s own
+        evaluation, never stored."""
+        if self.state._tx is not None:
+            raise EngineError("a same-molecule table is read on the committed state only (R5)")
+        per, owned = self._self_pairs(entry)
+        if not per and not owned:
+            return None
+        rows = tuple(SelfRow(ci, o, tuple(sorted(v[0])), v[1], v[2]) for (ci, o), v in sorted(per.items()))
+        group, k_act, k_d, phi, bypass = self._self_phi(entry, per)
+        by_class, short, link, excluded = defaultdict(list), [], [], []
+        for row in rows:
+            ci, o = row.class_index, row.override
+            cls = self.classes[ci]
+            unit = (self.weights[ci] if o < 0 else self._ovr[ci].weights[o]) / (cls.divisor * self.nav)
+            if ci in self.excluded:
+                excluded.append(unit * (len(row.allowed) + row.short_cycle + row.undeclared_link))
+                continue
+            f = phi if cls.met_forward else 1.0
+            by_class[ci].append(f * unit * len(row.allowed))
+            short.append(f * unit * row.short_cycle)
+            link.append(f * unit * row.undeclared_link)
+        return SelfTable(entry.cid, rows, owned, group, k_act, k_d, phi, bypass,
+                         tuple((ci, math.fsum(v)) for ci, v in sorted(by_class.items())),
+                         math.fsum(short), math.fsum(link), math.fsum(excluded))
+
     def pair_rate(self, e0: _Entry, e1: _Entry, gel=None) -> Optional[PairRate]:
         """MET pair rate of two components (None when no MET class pairs
         them): Collins-Kimball applied once to the summed activation of their
@@ -2560,6 +2885,14 @@ class MeltEngine:
         channels.append((("met",), met))
         leak.append(math.fsum(r.leak for r in self.pairs.values()))
         excluded.append(math.fsum(r.excluded for r in self.pairs.values()))
+        tables = [self._self_of[c] for c in sorted(self._self_of)] if self.same_law is not None else []
+        if self.same_law is not None:
+            # the declared same-molecule law: one channel per bimolecular class, exact rates
+            for cls in self.classes:
+                if cls.bimolecular and cls.index not in self.excluded:
+                    channels.append((("self", cls.index), math.fsum(t.rate(cls.index) for t in tables)))
+            leak += [math.fsum(t.short_cycle for t in tables), math.fsum(t.undeclared_link for t in tables)]
+            excluded.append(math.fsum(t.excluded for t in tables))
         thinned = math.fsum(a for k, a in channels if k[0] != "met" and self.classes[k[1]].met_reverse)
         non_thinned = math.fsum(a for k, a in channels
                                 if k[0] == "met" or not self.classes[k[1]].met_reverse)
@@ -2568,9 +2901,11 @@ class MeltEngine:
             cycle = [self.weights[k] * n for k, n in self.uni_cycle.items()
                      if isinstance(k, int) and n and k not in self.excluded]
             cycle += [self._ovr[k[0]].weights[k[1]] * n for k, n in self.uni_o_cycle_items()]
-            short = math.fsum(cycle)
-            same = math.fsum(self._kind_weight(ci, k0, k1) * n / (self.classes[ci].divisor * self.nav)
-                             for (ci, k0, k1), n in sorted(self.same.items(), key=repr) if n)
+            short = math.fsum(cycle + [t.short_cycle for t in tables])
+            # under a declared law no pair is same_molecule leak: each is a channel, R1 leak or owned (R3)
+            same = 0.0 if self.same_law is not None else \
+                math.fsum(self._kind_weight(ci, k0, k1) * n / (self.classes[ci].divisor * self.nav)
+                          for (ci, k0, k1), n in sorted(self.same.items(), key=repr) if n)
             mobility = math.fsum(r.mobility for r in self.pairs.values())
             linearity = math.fsum(leak)
             classes = (("undeclared_link", max(0.0, linearity - short)), ("short_cycle", short),
@@ -2608,6 +2943,8 @@ class MeltEngine:
                               tuple(sorted(((k, v) for k, v in self.uni_cycle.items() if v), key=repr)),
                               tuple(sorted((k, v.mobility) for k, v in self.pairs.items())),
                               self._gel, prop.leak_classes)
+        if self.same_law is not None:
+            out["self"] = tuple(sorted((c, t) for c, t in self._self_of.items()))
         return out
 
     def fresh_snapshot(self):
@@ -2618,7 +2955,7 @@ class MeltEngine:
                                if k in ("spec", "transport", "catalog", "rng", "state", "volume", "nav",
                                         "identity", "temperature", "templates", "classes", "weights",
                                         "quotient", "temperature_range", "_ovr", "excluded", "linearity",
-                                        "_defers", "_roles", "network")})
+                                        "_defers", "_roles", "network", "same_law")})
         other._gel = None
         other._index_revision = 0
         other.rebuild()
@@ -2726,9 +3063,22 @@ class MeltEngine:
         (``pair_rate`` on partial entries, the gel read among the products),
         so the reverse and the pair's forward rows share one phi; phi 1 when
         no MET class pairs them (bypass when either is a declared small
-        species).  One product (a no-split reverse: no same-molecule law is
-        declared, counted ``reverse_no_pair`` by ``_fire``) or more than two:
-        phi 1, no bypass."""
+        species).  More than two products: phi 1, no bypass.
+
+        One product (a no-split reverse, R2).  Without a declared
+        same-molecule law: phi 1, no bypass (counted ``reverse_no_pair`` by
+        ``_fire``).  Under the law, a third element names the owner:
+        ``unimolecular_owner`` (phi 1: an active unimolecular transition of
+        the product is the exact, atom-resolved inverse, ``inverse_product``;
+        it has no encounter step, R3), else ``self``: the product molecule's
+        own encounter group (``_self_phi``: every same-molecule MET row of the
+        product, owned pairs and excluded classes out), the group the forward
+        pairs of that molecule read, whichever row is the inverse; else
+        ``no_owner`` (phi 1: no MET row on the product).  The product's entry
+        is scanned here (incrementally from the reactant's, as the commit
+        will) and its table is never stored (R5)."""
+        if len(products) == 1 and self.same_law is not None:
+            return self._self_reverse_phi(tr, products[0])
         if len(products) != 2:
             return 1.0, False
         # partial entries (phi only); an accepted event's index update scans
@@ -2739,6 +3089,25 @@ class MeltEngine:
             return 1.0, (new[products[0]].species is not None or new[products[1]].species is not None)
         return rate.phi, rate.bypass
 
+    def _self_reverse_phi(self, tr: EngineTransition, product: int) -> Tuple[float, bool, str]:
+        """``_reverse_phi`` of a no-split reverse under the declared law."""
+        tx = self.state._tx
+        if tx is None:
+            raise EngineError("a reverse proposal's escape factor is read inside its open transaction")
+        old = tx.journal.old_nodes
+        prior = [self.entries[c] for c in sorted(set(tr.components)) if c in self.entries]
+        entry = self._scan([product], prior=prior or None,
+                           dirty=_dirty_atoms(self.state, old) if prior else None)[product]
+        inverse = inverse_product(tr, old, self.state.atoms)
+        owners = self._owners(entry)
+        if any(inverse in made for made in owners.values()):
+            return 1.0, False, "unimolecular_owner"
+        per, _owned = self._self_pairs(entry, classify=False, owners=owners)
+        group, _k_act, _k_d, phi, bypass = self._self_phi(entry, per)
+        if not group:
+            return 1.0, entry.species is not None, "no_owner"
+        return phi, bypass, "self"
+
     def _fire(self, tr: EngineTransition, view, channel: str, thinning: bool,
               met_key: Optional[str] = None) -> Optional[Event]:
         if tr.leak:
@@ -2746,8 +3115,10 @@ class MeltEngine:
         tx, products = self._begin_apply(tr, view)
         if thinning:
             try:
-                phi, bypass = self._reverse_phi(tr, products)
-                if len(products) == 2 and not (math.isfinite(phi) and 0.0 < phi <= 1.0):
+                result = self._reverse_phi(tr, products)
+                phi, bypass = result[0], result[1]
+                owner = result[2] if len(result) > 2 else None
+                if (len(products) == 2 or owner is not None) and not (math.isfinite(phi) and 0.0 < phi <= 1.0):
                     raise EngineError(f"{tr.template}: escape factor {phi!r} outside (0, 1]")
                 accept = phi >= 1.0 or self.rng.random() < phi
             except BaseException:
@@ -2762,9 +3133,11 @@ class MeltEngine:
             self._phi_by_class[tr.class_index] += phi
             self._proposals_by_class[tr.class_index] += 1
             self._set_den()
-            if len(products) != 2:
-                self.met_counts["reverse_no_pair"] += 1
-            elif bypass:
+            if owner == "unimolecular_owner":
+                self.met_counts["reverse_unimolecular_owner"] += 1
+            elif len(products) != 2 and owner != "self":
+                self.met_counts["reverse_no_pair"] += 1    # no owner: no MET row pairs the products
+            if bypass:
                 self.met_counts["reverse_bypass"] += 1
             if not accept:
                 tx.rollback()
@@ -2772,6 +3145,8 @@ class MeltEngine:
                 return None
             if len(products) == 2:
                 self.met_counts["reverse_accepted"] += 1
+            elif owner == "self":
+                self.met_counts["reverse_self_accepted"] += 1
         journal = tx.commit()
         # the chemistry is committed: log the event first, then bring the index
         # up to date; any failure there rebuilds the index from the state (full
@@ -2874,6 +3249,38 @@ class MeltEngine:
             g -= n
         raise EngineError("MET draw fell through")
 
+    def _draw_self(self, ci, total: float) -> Tuple[EngineTransition, Any, SelfTable]:
+        """A same-molecule transition of class ``ci``: a component with weight
+        its class propensity, a row (override) with weight w x its allowed
+        pairs (one phi per molecule), a pair uniformly among them."""
+        r = self.rng.random() * total
+        chosen = None
+        for cid in sorted(self._self_of):
+            a = self._self_of[cid].rate(ci)
+            if a <= 0.0:
+                continue
+            chosen = cid
+            if r < a:
+                break
+            r -= a
+        if chosen is None:
+            raise EngineError("same-molecule draw fell through")
+        table = self._self_of[chosen]
+        rows = [(row, (self.weights[ci] if row.override < 0 else self._ovr[ci].weights[row.override])
+                 * len(row.allowed)) for row in table.rows if row.class_index == ci and row.allowed]
+        r = self.rng.random() * math.fsum(w for _row, w in rows)
+        row = rows[-1][0]
+        for c, w in rows:
+            if r < w:
+                row = c
+                break
+            r -= w
+        s0, s1 = row.allowed[int(self.rng.integers(len(row.allowed)))]
+        tr, view = self._pair_transition(ci, chosen, s0, chosen, s1)
+        if tr.leak:
+            raise EngineError(f"{tr.template}: a same-molecule pair indexed as allowed is refused ({tr.leak})")
+        return tr, view, table
+
     # -- leak estimate ----------------------------------------------------------
     def _open_thinned_rate(self, prop) -> float:
         """Physical hazard estimate of the thinned channels over an open
@@ -2950,7 +3357,7 @@ class MeltEngine:
         for tr in trs:
             tx, products = self._begin_apply(tr, _LocalView(self.state, list(tr.components)))
             try:
-                phi, _bypass = self._reverse_phi(tr, products)
+                phi = self._reverse_phi(tr, products)[0]
             finally:
                 tx.rollback()
             phis.append(phi)
@@ -3078,6 +3485,12 @@ class MeltEngine:
             c0, s0, c1, s1 = self.channels[(ci, k0, k1)].draw(self.rng)
             tr, view = self._pair_transition(ci, c0, s0, c1, s1)
             return self._fire(tr, view, "bi", self.classes[ci].met_reverse)
+        if kind == "self":
+            ci = key[1]
+            tr, view, table = self._draw_self(ci, total)
+            cls = self.classes[ci]
+            met_key = ("self_forward_bypass" if table.bypass else "self_forward") if cls.met_forward else None
+            return self._fire(tr, view, "self", cls.met_reverse, met_key)
         tr, view, rate = self._draw_met(total)
         return self._fire(tr, view, "met", False, "forward_bypass" if rate.bypass else "forward")
 
@@ -3132,6 +3545,129 @@ class MeltEngine:
                if self.network else {}),
         }
 
+    # -- the loop-share diagnostic (reported, never fired) --------------------
+    def _united_masses(self, atoms) -> Dict[int, float]:
+        from rmgpy.molecule.element import get_element
+        mass = {}
+        nodes = self.state.atoms
+        h = get_element("H").mass * 1000.0
+        for a in atoms:
+            n = nodes[a]
+            if n.element != "H":
+                mass[a] = get_element(n.element).mass * 1000.0 + h * sum(
+                    1 for b in n.edges if nodes[b].element == "H")
+        return mass
+
+    def _strand_mass(self, mass, sources, targets) -> float:
+        """The least united-atom strand mass from any of ``sources`` to any of
+        ``targets`` over heavy atoms of one component (Dijkstra; a value, so
+        ties between equal paths and atom renumbering cannot change it)."""
+        import heapq
+        nodes = self.state.atoms
+        targets = set(targets)
+        dist = {a: 0.0 for a in sources}
+        queue = [(0.0, a) for a in sorted(sources)]
+        heapq.heapify(queue)
+        while queue:
+            d, x = heapq.heappop(queue)
+            if x in targets:
+                return d
+            if d > dist[x]:
+                continue
+            for y in nodes[x].edges:
+                if y in mass:
+                    c = d + 0.5 * (mass[x] + mass[y])
+                    if c < dist.get(y, math.inf):
+                        dist[y] = c
+                        heapq.heappush(queue, (c, y))
+        raise EngineError("the anchors of a same-molecule pair are not connected")
+
+    def _loop_ratio(self, cid, ci, s0, s1, mass) -> float:
+        """c_sp / c_bg of one same-molecule pair (``LOOP_SHARE_DEFINITION``); inf when its anchors coincide."""
+        t, cls, nodes = self.templates[ci], self.classes[ci], self.state.atoms
+        pos = dict(zip(t.edited[0], s0))
+        pos.update(zip(t.edited[1], s1))
+
+        def anchors(a):
+            if nodes[a].element != "H":
+                return {a}
+            return {b for b in nodes[a].edges if nodes[b].element != "H"}
+        best = math.inf
+        for i0, i1 in cls.cross_bonds:
+            x, y = anchors(pos[i0]), anchors(pos[i1])
+            if not x or not y:
+                continue
+            best = min(best, 0.0 if x & y else self._strand_mass(mass, x, y))
+        if best == math.inf:
+            raise EngineError(f"{t.name}: a same-molecule pair has no anchor pair")
+        if best <= 0.0:
+            return math.inf
+        r2 = self.transport.r2_per_molar_mass * best
+        return (3.0 / (2.0 * math.pi * r2)) ** 1.5 / constants.Na * self.nav
+
+    def loop_share(self, samples: int = 64, seed: int = 0) -> dict:
+        """The loop-share diagnostic of the declared same-molecule law at the
+        current state (``LOOP_SHARE_DEFINITION``).  It reads the state and the
+        index only and draws from its own generator (``seed``), so a run that
+        calls it fires exactly the events of one that does not."""
+        import random
+        if self.same_law is None:
+            raise EngineError("loop_share is a diagnostic of a declared same-molecule law")
+        samples = int(samples)
+        if samples < 1:
+            raise ValueError("loop_share needs at least one sample")
+        pairs, thinned = [], 0
+        for cid in sorted(self._self_of):
+            table = self._self_of[cid]
+            for row in table.rows:
+                ci, o = row.class_index, row.override
+                if ci in self.excluded or not row.allowed:
+                    continue
+                cls = self.classes[ci]
+                if cls.met_reverse:
+                    # proposed at its intrinsic rate and thinned: no physical rate to share
+                    thinned += len(row.allowed)
+                    continue
+                w = self.weights[ci] if o < 0 else self._ovr[ci].weights[o]
+                a = (table.phi if cls.met_forward else 1.0) * w / (cls.divisor * self.nav)
+                pairs += [(a, cid, ci, s0, s1) for s0, s1 in row.allowed]
+        total = math.fsum(p[0] for p in pairs)
+        out = {"definition": LOOP_SHARE_DEFINITION, "law": self.same_law.law, "phi": self.same_law.phi,
+               "pairs": len(pairs), "samples": 0, "seed": int(seed), "exact": True, "propensity": total,
+               "share": 0.0, "standard_error": 0.0, "unbounded": 0, "thinned_pairs_out": thinned}
+        if not pairs or total <= 0.0:
+            return out
+        masses = {}
+
+        def ratio(p):
+            _a, cid, ci, s0, s1 = p
+            if cid not in masses:
+                masses[cid] = self._united_masses(self.state.components.atoms(cid))
+            return self._loop_ratio(cid, ci, s0, s1, masses[cid])
+        if len(pairs) <= samples:
+            xs = [(p[0], ratio(p)) for p in pairs]
+            finite = [(a, x) for a, x in xs if math.isfinite(x)]
+            den = math.fsum(a for a, _x in finite)
+            out.update(samples=len(pairs), unbounded=len(xs) - len(finite),
+                       share=math.fsum(a * x for a, x in finite) / den if den > 0.0 else 0.0)
+            return out
+        rng = random.Random(int(seed))
+        cumulative, run = [], 0.0
+        for p in pairs:
+            run += p[0]
+            cumulative.append(run)
+        import bisect
+        drawn = [pairs[min(len(pairs) - 1, bisect.bisect_right(cumulative, rng.random() * run))]
+                 for _k in range(samples)]
+        xs = [ratio(p) for p in drawn]
+        finite = [x for x in xs if math.isfinite(x)]
+        k = len(finite)
+        mean = math.fsum(finite) / k if k else 0.0
+        var = math.fsum((x - mean) ** 2 for x in finite) / (k - 1) if k > 1 else 0.0
+        out.update(samples=samples, exact=False, unbounded=len(xs) - k, share=mean,
+                   standard_error=math.sqrt(var / k) if k else 0.0)
+        return out
+
     def thinning_report(self) -> dict:
         """The exact-thinning decomposition of the radical-increasing (MET
         reverse) classes: each is proposed at its intrinsic rate (majorant
@@ -3164,7 +3700,8 @@ class MeltEngine:
 
 __all__ = [
     "ComponentPairSampler", "DeclarationError", "EngineError", "EngineTransition", "Event",
-    "EXCLUDED_DEFINITION", "LEAK_ESTIMATOR", "MET_SCHEMA", "MeltEngine", "PairRate", "PayloadCatalog", "Propensities", "RunResult",
-    "SelfPairRows",
+    "EXCLUDED_DEFINITION", "LEAK_ESTIMATOR", "LOOP_SHARE_DEFINITION", "MET_SCHEMA", "MeltEngine", "PairRate",
+    "PayloadCatalog", "Propensities", "RunResult", "SAME_MOLECULE_SCHEMA", "SameMoleculeLaw", "SelfPairRows",
+    "SelfRow", "SelfTable", "atom_resolved_product", "inverse_product",
     "SpeciesIdentity", "TransportLaw", "escape_factor", "pooled_leak_fraction", "refuse_initial_species_overlap",
 ]
