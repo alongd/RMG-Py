@@ -540,3 +540,18 @@ def test_argon_population_interpolation_and_chain_rule(tmp_path, fraction):
         derivative, rel=2.e-5)
     with pytest.raises(OutOfDomain, match='f_Ar4s'):
         table.row(u, {'f_Ar4s': 1.00001e-4})
+
+
+def test_argon_population_first_cell_floor_flag(tmp_path):
+    """The physical zero-to-first-node cell retains its diagnostic flags."""
+    from rmgpy.tools.eedf.argon_population import NODES
+    path, model = fixture_table(tmp_path, composition=True, composition_name='f_Ar4s',
+                                composition_axis=NODES)
+    table = EEDFTable.load(path, model, artifact_sha256=_file_hash(path / 'table.h5'))
+    branch = next(iter(table._data))
+    start, stop, _ = table._layout[branch]['below_floor']
+    table._data[branch][..., start:stop] = 0.
+    assert not table.row(.7, {'f_Ar4s': 1.e-8}).below_floor[0, 0]
+    table._data[branch][:, 0, start] = 1.
+    assert table.row(.7, {'f_Ar4s': 1.e-8}).below_floor[0, 0]
+    assert not table.row(.7, {'f_Ar4s': 1.e-5}).below_floor[0, 0]

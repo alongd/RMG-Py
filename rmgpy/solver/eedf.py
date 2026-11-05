@@ -795,7 +795,7 @@ class EEDFTable:
                 raise EEDFError('nonpositive transport ' + name)
         # A flag is conservative over the cell stencil and both rate directions.
         indices = []
-        for axis, value in zip(self._axes, point):
+        for axis, value in zip(interpolation_axes, point):
             hi = int(np.searchsorted(axis, value, side='right'))
             hi = min(max(hi, 1), len(axis) - 1)
             indices.append([hi - 1, hi])
