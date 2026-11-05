@@ -4017,23 +4017,40 @@
   {
     "site": "rmgpy/reaction.py::Reaction.check_collision_limit_violation::_reverse_rate_at_reference_potential#1",
     "kind": "reverse",
-    "line": 2414,
+    "line": 2416,
     "source": "kr = _reverse_rate_at_reference_potential(reverse_kinetics, condition[0], condition[1])",
     "verdict": "guarded",
-    "reason": "Checks original resolved declaration before requesting a reverse collision-limit rate.",
+    "reason": "Audits every forward direction; requests an equilibrium reverse only for a reversible reaction accepted by the original-rate reverse policy. Direct non-equilibrium reverse generation still refuses.",
     "tests": [
-      "test/rmgpy/data/kinetics/superelasticRework3Test.py::test_collision_limit_reaches_reverse_helper"
+      "test/rmgpy/reactionTest.py::test_collision_audit_preserves_forward_and_reversible_reverse_violations",
+      "test/rmgpy/reactionTest.py::test_collision_audit_skips_non_equilibrium_reverse_without_weakening_direct_refusal",
+      "test/rmgpy/data/kinetics/superelasticRework3Test.py::test_collision_limit_skips_non_equilibrium_reverse"
     ]
   },
   {
     "site": "rmgpy/reaction.py::Reaction.check_collision_limit_violation::generate_reverse_rate_coefficient#1",
     "kind": "reverse",
-    "line": 2413,
+    "line": 2415,
     "source": "reverse_kinetics = self.generate_reverse_rate_coefficient()",
     "verdict": "guarded",
-    "reason": "Checks original resolved declaration before requesting a reverse collision-limit rate.",
+    "reason": "Audits every forward direction; requests an equilibrium reverse only for a reversible reaction accepted by the original-rate reverse policy. Direct non-equilibrium reverse generation still refuses.",
     "tests": [
-      "test/rmgpy/data/kinetics/superelasticRework3Test.py::test_collision_limit_reaches_reverse_helper"
+      "test/rmgpy/reactionTest.py::test_collision_audit_preserves_forward_and_reversible_reverse_violations",
+      "test/rmgpy/reactionTest.py::test_collision_audit_skips_non_equilibrium_reverse_without_weakening_direct_refusal",
+      "test/rmgpy/data/kinetics/superelasticRework3Test.py::test_collision_limit_skips_non_equilibrium_reverse"
+    ]
+  },
+  {
+    "site": "rmgpy/reaction.py::Reaction.check_collision_limit_violation::reaction-io",
+    "kind": "reader-exporter",
+    "line": 2315,
+    "source": "def check_collision_limit_violation(self, t_min, t_max, p_min, p_max):",
+    "verdict": "guarded",
+    "reason": "Audits every forward direction; requests an equilibrium reverse only for a reversible reaction accepted by the original-rate reverse policy. Direct non-equilibrium reverse generation still refuses.",
+    "tests": [
+      "test/rmgpy/reactionTest.py::test_collision_audit_preserves_forward_and_reversible_reverse_violations",
+      "test/rmgpy/reactionTest.py::test_collision_audit_skips_non_equilibrium_reverse_without_weakening_direct_refusal",
+      "test/rmgpy/data/kinetics/superelasticRework3Test.py::test_collision_limit_skips_non_equilibrium_reverse"
     ]
   },
   {
@@ -5138,7 +5155,7 @@
   {
     "site": "rmgpy/reaction.py::_same_object::is_isomorphic#1",
     "kind": "direction",
-    "line": 2604,
+    "line": 2606,
     "source": "return object1.is_isomorphic(object2, generate_initial_map=_generate_initial_map,",
     "verdict": "not-reachable-for-resolved",
     "reason": "Species/Molecule equivalence helpers do not decide reaction direction or produce rates.",
@@ -5206,7 +5223,7 @@
   {
     "site": "rmgpy/rmg/main.py::RMG.check_model::to_chemkin#1",
     "kind": "reader-exporter",
-    "line": 1985,
+    "line": 1986,
     "source": "rxn_string = violator[0].to_chemkin(self.reaction_model.core.species)",
     "verdict": "guarded",
     "reason": "Database/model imports validate original library or Chemkin declarations; final output delegates to guarded converters.",
@@ -5278,7 +5295,7 @@
   {
     "site": "rmgpy/rmg/main.py::RMG.save_everything::reaction-io",
     "kind": "reader-exporter",
-    "line": 2609,
+    "line": 2610,
     "source": "def save_everything(self):",
     "verdict": "guarded",
     "reason": "Database/model imports validate original library or Chemkin declarations; final output delegates to guarded converters.",
@@ -6595,7 +6612,7 @@
   {
     "site": "rmgpy/solver/plasma.pyx::PlasmaReactor._compute_reference_reaction_data::reaction-io",
     "kind": "reader-exporter",
-    "line": 7728,
+    "line": 7742,
     "source": "def _compute_reference_reaction_data(self, np.ndarray y):",
     "verdict": "guarded",
     "reason": "The diagnostic serializes already-initialized directed kf/kb arrays; reactor initialization has checked original declarations, and irreversible explicit channels never synthesize a reverse record.",
@@ -6606,7 +6623,7 @@
   {
     "site": "rmgpy/solver/plasma.pyx::PlasmaReactor._evaluate_electronegative_wall_regime::reaction-io",
     "kind": "reader-exporter",
-    "line": 7858,
+    "line": 7872,
     "source": "def _evaluate_electronegative_wall_regime(self, np.ndarray y, double t, result=None):",
     "verdict": "guarded",
     "reason": "The accepted-state diagnostic formats original directed reactions and already-initialized kf/kb arrays; initialization enforces resolved reversibility, and the formatter preserves the declared arrow.",
@@ -6617,7 +6634,7 @@
   {
     "site": "rmgpy/solver/plasma.pyx::PlasmaReactor._requires_en_steps::reaction-io",
     "kind": "reader-exporter",
-    "line": 8459,
+    "line": 8473,
     "source": "def _requires_en_steps(self):",
     "verdict": "guarded",
     "reason": "The wall-step predicate only inspects admitted reaction direction flags and participants; admission has enforced resolved reversibility, and opposite irreversible channels remain independent entries.",
@@ -6628,7 +6645,7 @@
   {
     "site": "rmgpy/solver/plasma.pyx::PlasmaReactor._validate_reactions::reaction-io",
     "kind": "reader-exporter",
-    "line": 6056,
+    "line": 6070,
     "source": "def _validate_reactions(self, core_species, edge_species, core_reactions, edge_reactions):",
     "verdict": "guarded",
     "reason": "Reactor preflight checks original reverse declarations before initializing any equilibrium reverse rate.",
@@ -6639,7 +6656,7 @@
   {
     "site": "rmgpy/solver/plasma.pyx::PlasmaReactor.generate_rate_coefficients::check_reverse_from_equilibrium_supported#1",
     "kind": "reverse",
-    "line": 6292,
+    "line": 6306,
     "source": "rxn.check_reverse_from_equilibrium_supported()",
     "verdict": "guarded",
     "reason": "Reactor preflight checks original reverse declarations before initializing any equilibrium reverse rate.",
@@ -6650,7 +6667,7 @@
   {
     "site": "rmgpy/solver/plasma.pyx::PlasmaReactor.generate_rate_coefficients::get_equilibrium_constant#1",
     "kind": "reverse",
-    "line": 6293,
+    "line": 6307,
     "source": "self.Keq[j] = rxn.get_equilibrium_constant(self.T.value_si)",
     "verdict": "guarded",
     "reason": "Reactor preflight checks original reverse declarations before initializing any equilibrium reverse rate.",
@@ -6661,7 +6678,7 @@
   {
     "site": "rmgpy/solver/plasma.pyx::PlasmaReactor.generate_rate_coefficients::reaction-io",
     "kind": "reader-exporter",
-    "line": 6227,
+    "line": 6241,
     "source": "def generate_rate_coefficients(self, core_reactions, edge_reactions):",
     "verdict": "guarded",
     "reason": "Reactor preflight checks original reverse declarations before initializing any equilibrium reverse rate.",

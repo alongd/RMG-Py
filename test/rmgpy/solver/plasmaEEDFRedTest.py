@@ -45,6 +45,7 @@ import rmgpy.constants as constants
 import rmgpy.data.rmg as rmg_data_module
 from rmgpy.data.kinetics import quarantine
 from rmgpy.data.kinetics.database import KineticsDatabase
+from rmgpy.data.base import Entry
 from rmgpy.data.kinetics.library import KineticsLibrary, LibraryReaction
 from rmgpy.data.rmg import RMGDatabase
 from rmgpy.data.thermo import ThermoDatabase
@@ -110,10 +111,10 @@ def _constant(rate):
 class ArchivedRowReactor(PlasmaReactor):
     """Only library-entry resolution is synthetic; the reactor is unchanged."""
 
-    def _declared_entry_kinetics(self, library, index):
+    def _declared_entry(self, library, index):
         if library != 'RedFixture':
             raise PlasmaStateError('unknown fixture library')
-        return self.fixture_entries[index]
+        return Entry(index=index, data=self.fixture_entries[index])
 
 
 @pytest.fixture(autouse=True)
@@ -141,9 +142,9 @@ def _deck(data, row=None, mixture=False, table_rates=False, drift=1., energy=Tru
     ex = _constant(row['rates_m3_s'][AR_M1]+row['rates_m3_s'][AR_M2]) if table_rates else _ashida()
     entries = {1:ion, 2:ex}
     reactions = [LibraryReaction(reactants=[electron, ar], products=[arp, electron, electron],
-                                kinetics=ion, reversible=False, library='RedFixture'),
+                                kinetics=ion, reversible=False, library='RedFixture', entry=Entry(index=1, data=ion)),
                  LibraryReaction(reactants=[electron, ar], products=[ars, electron],
-                                kinetics=ex, reversible=False, library='RedFixture')]
+                                kinetics=ex, reversible=False, library='RedFixture', entry=Entry(index=2, data=ex))]
     energies = {'RedFixture:1':(15.76, 'eV'), 'RedFixture:2':(11.56, 'eV')}
     elastic = {'Ar':{'A':(2.336e-14, 'm^3/s'), 'n':1.609, 'b':.0618, 'c':-.1171},
                'Ars':{'ignore':'trace metastable elastic contribution omitted for this test'}}
@@ -160,7 +161,8 @@ def _deck(data, row=None, mixture=False, table_rates=False, drift=1., energy=Tru
         fractions[ar] -= row['x_N2'] + 2e-8
         entries[3] = _constant(row['rates_m3_s'][N2_ION])
         reactions.append(LibraryReaction(reactants=[electron, n2], products=[n2p, electron, electron],
-                                        kinetics=entries[3], reversible=False, library='RedFixture'))
+                                        kinetics=entries[3], reversible=False, library='RedFixture',
+                                        entry=Entry(index=3, data=entries[3])))
         energies['RedFixture:3'] = (15.6, 'eV')
         elastic['N2'] = {'ignore':'composition-chain/mixed-provider proxy; no N2 elastic fit'}
         assertions['N2+'] = 'ion'

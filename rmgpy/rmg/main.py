@@ -1946,6 +1946,7 @@ class RMG(util.Subject):
                         "\n{2}\n{3}".format(spc.label, spc2.label, spc.to_adjacency_list(), spc2.to_adjacency_list())
                     )
 
+        # Check forward rates and thermodynamically defined reversible rates for collision limits
         # Thermal collision limits do not apply to EEDF-integrated electron rates.
         from rmgpy.kinetics import EEDFChannel
         violators = []

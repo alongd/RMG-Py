@@ -52,6 +52,7 @@ from scipy.optimize import brentq
 import rmgpy.constants as constants
 import rmgpy.data.rmg as rmg_data_module
 from rmgpy.exceptions import PlasmaStateError
+from rmgpy.data.base import Entry
 from rmgpy.data.kinetics.library import LibraryReaction
 from rmgpy.kinetics import Arrhenius, TwoTemperaturePlasma
 from rmgpy.reaction import Reaction
@@ -133,10 +134,10 @@ class ToyLibraryReactor(PlasmaReactor):
     database; everything else is the production reactor."""
     toy_entries = {}
 
-    def _declared_entry_kinetics(self, library, index):
+    def _declared_entry(self, library, index):
         if library != 'Toy' or index not in self.toy_entries:
             raise PlasmaStateError('no entry {0}:{1}'.format(library, index))
-        return self.toy_entries[index]
+        return Entry(index=index, data=self.toy_entries[index])
 
 
 def _energy_decl(power_w=0.5, elastic=True, volume=CHAMBER_VOLUME, energies=None):
@@ -151,7 +152,7 @@ def _energy_decl(power_w=0.5, elastic=True, volume=CHAMBER_VOLUME, energies=None
 def _toy(index, reactants, products, kinetics, entries):
     entries[index] = kinetics
     return LibraryReaction(reactants=reactants, products=products, reversible=False,
-                           kinetics=kinetics, library='Toy')
+                           kinetics=kinetics, library='Toy', entry=Entry(index=index, data=kinetics))
 
 
 def _build(te_ev=1.0, x_ion=1.0e-6, power_w=0.5, energy=True, metastable=False,
@@ -1039,3 +1040,51 @@ def test_the_budget_check_catches_a_dropped_loss_term():
         r.energy_ion_sheath_factor = np.zeros_like(r.energy_ion_sheath_factor)
     closure, p_abs, t = _independent_closure(drop_ion_sheath)
     assert abs(closure) > 100 * CLOSURE_RTOL * p_abs
+
+
+def test_energy_binding_refuses_two_keys_for_one_entry(monkeypatch):
+    original = ToyLibraryReactor._declared_entry
+
+    def alias(self, library, index):
+        return original(self, library, 1 if index == 2 else index)
+
+    monkeypatch.setattr(ToyLibraryReactor, '_declared_entry', alias)
+    with pytest.raises(PlasmaStateError, match='resolve to the same reaction entry'):
+        _build(metastable=True)
+
+
+@pytest.mark.parametrize('mutation', ['no_entry', 'no_model_reaction', 'two_model_reactions'])
+def test_energy_binding_refuses_unmatched_or_ambiguous_model_reactions(mutation):
+    r, core, reactions = _build()
+    if mutation == 'no_entry':
+        r.energy_declared[('Toy', 999)] = 0.
+        match = 'no entry Toy:999'
+    elif mutation == 'no_model_reaction':
+        ToyLibraryReactor.toy_entries[999] = reactions[0].kinetics
+        r.energy_declared[('Toy', 999)] = 0.
+        match = 'match no model reaction'
+    else:
+        reactions.append(_toy(1, reactions[0].reactants, reactions[0].products,
+                              reactions[0].kinetics, ToyLibraryReactor.toy_entries))
+        match = 'matches more than one model reaction'
+    with pytest.raises(PlasmaStateError, match=match):
+        r.initialize_model(core, reactions, [], [])
+
+
+def test_energy_binding_survives_model_renumbering_and_copied_kinetics():
+    r, core, reactions = _build(metastable=True)
+    # A source entry keeps its identity when the model numbers/rates change.
+    for index, reaction in enumerate(reactions, 100):
+        reaction.index = index
+        reaction.kinetics = copy.deepcopy(reaction.kinetics)
+    r.initialize_model(core, reactions, [], [])
+    assert r.energy_reaction_keys == ['Toy:1', 'Toy:2', 'Toy:3']
+
+
+def test_distinct_entries_can_share_one_kinetics_object():
+    r, core, reactions = _build(metastable=True)
+    reactions[2].kinetics = reactions[1].kinetics
+    ToyLibraryReactor.toy_entries[3] = ToyLibraryReactor.toy_entries[2]
+    r.initialize_model(core, reactions, [], [])
+    assert r.energy_reaction_keys == ['Toy:1', 'Toy:2', 'Toy:3']
+    assert r.energy_threshold[1] > 0. and r.energy_threshold[2] < 0.

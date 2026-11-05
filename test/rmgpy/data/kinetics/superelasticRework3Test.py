@@ -472,14 +472,15 @@ def test_arkane_sensitivity_reaches_reverse_helper(tmp_path, monkeypatch, stage)
             sensitivity.execute()
 
 
-def test_collision_limit_reaches_reverse_helper():
+def test_collision_limit_skips_non_equilibrium_reverse():
     from rmgpy.transport import TransportData
     rxn = helpers.make_reaction()
     rxn.products.append(helpers.Species(label='Ar').from_smiles('[Ar]'))
     for species in rxn.products:
         species.transport_data = TransportData(sigma=(3.5, 'angstrom'), epsilon=(100, 'K'))
+    assert rxn.check_collision_limit_violation(300, 1000, 1e5, 1e5) == []
     with pytest.raises(NonEquilibriumReverseRateError, match='vibrationallevel 1'):
-        rxn.check_collision_limit_violation(300, 1000, 1e5, 1e5)
+        rxn.generate_reverse_rate_coefficient()
 
 
 def test_html_export_reaches_reverse_helper(tmp_path):

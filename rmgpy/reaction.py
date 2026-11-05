@@ -2314,7 +2314,8 @@ class Reaction:
 
     def check_collision_limit_violation(self, t_min, t_max, p_min, p_max):
         """
-        Warn if a core reaction violates the collision limit rate in either the forward or reverse direction
+        Warn if a core reaction violates the collision limit rate in the forward direction
+        or in a reversible, thermodynamically defined reverse direction
         at the relevant extreme T/P conditions. Assuming a monotonic behaviour of the kinetics.
         Returns a list with the reaction object and the direction in which the violation was detected.
         """
@@ -2348,6 +2349,7 @@ class Reaction:
         # uncomputable we skip only the reverse direction and warn once; the forward direction is
         # handled entirely separately below and is unaffected.
         reverse_unsupported = False
+        check_reverse = self.reversible and self.get_reverse_from_equilibrium_refusal() is None
         for condition in conditions:
             if len(self.reactants) >= 2:
                 try:
@@ -2364,7 +2366,7 @@ class Reaction:
                     collision_limit_f.append(coll_limit_f)
                     kf_list.append(self.get_rate_coefficient(condition[0], condition[1]))
                     conditions_f.append(condition)
-            if len(self.products) >= 2 and not reverse_unsupported:
+            if check_reverse and len(self.products) >= 2 and not reverse_unsupported:
                 try:
                     coll_limit_r = self.calculate_coll_limit(temp=condition[0], reverse=True)
                 except ValueError:

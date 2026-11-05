@@ -1854,6 +1854,11 @@ and power balances.  It needs a charged-particle wall::
   not the -11.5 eV its enthalpy says).  The thermo enthalpy change is logged beside each
   declaration as a cross-check.  An undeclared electron reaction in the core is refused.  An
   electron-consuming reaction is in addition charged 3/2 k_B Te per consumed electron.
+  Binding uses the source library entry, so distinct entries may share identical kinetics.
+  A declared key must identify exactly one model reaction in the core or edge; unresolved
+  or ambiguous keys are refused. The final collision audit checks every forward direction,
+  and only reversible reactions with a thermodynamically defined reverse direction.
+  Requesting a non-equilibrium reverse rate directly continues to raise its refusal.
 * ``elasticCollisions`` -- per neutral partner, the momentum-transfer rate coefficient
   ``K_m = A Te^n exp(b ln(Te)^2 + c ln(Te)^3)`` (Te in eV; the form of the Lieberman &
   Lichtenberg 2005 Table 3.3 fits), giving ``Q_elastic = 3 (m_e/M) K_m n_g n_e k_B (Te - Tgas)``,

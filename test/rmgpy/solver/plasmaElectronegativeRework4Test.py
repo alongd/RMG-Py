@@ -39,6 +39,7 @@ import rmgpy
 from rmgpy import constants
 from rmgpy.exceptions import ElectronegativeWallRegimeError, PlasmaStateError
 from rmgpy.kinetics import Arrhenius
+from rmgpy.data.base import Entry
 from rmgpy.data.kinetics.library import LibraryReaction
 from rmgpy.species import Species
 from plasmaElectronegativeWallTest import model, FixtureEnergyReactor
@@ -183,6 +184,7 @@ def test_quadratic_trace_mass_action_is_exact(arm):
     r.electron_energy_balance['electron_energies']['EN-test:3']=(0.,'eV')
     r._configure_energy_balance(copy.deepcopy(r.electron_energy_balance))
     FixtureEnergyReactor.entries[3]=rx.kinetics
+    rx.entry=Entry(index=3, data=rx.kinetics)
     r.initialize_model(sp+[n,n2],rxns+[rx],[],[])
     y=r.y.copy(); y[5]=1.e-30
     v=r.compute_volume(y)

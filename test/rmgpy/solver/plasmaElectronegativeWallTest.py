@@ -44,6 +44,7 @@ import rmgpy.constants as constants
 import rmgpy.data.rmg as data_module
 from rmgpy.kinetics import Arrhenius
 from rmgpy.reaction import Reaction
+from rmgpy.data.base import Entry
 from rmgpy.data.kinetics.library import LibraryReaction
 from rmgpy.exceptions import PlasmaStateError
 try:
@@ -89,9 +90,9 @@ def qualification(**overrides):
 class FixtureEnergyReactor(PlasmaReactor):
     entries = {}
 
-    def _declared_entry_kinetics(self, library, index):
+    def _declared_entry(self, library, index):
         assert library == 'EN-test'
-        return self.entries[index]
+        return Entry(index=index, data=self.entries[index])
 
 
 class FixtureTransportReactor(PlasmaReactor):
@@ -169,7 +170,8 @@ def model(alpha=0.5, arm='fullFrequency', closure='confinedAnion',
     if energy:
         cls = FixtureEnergyReactor
         rxns = [LibraryReaction(reactants=r.reactants,products=r.products,
-                kinetics=r.kinetics,reversible=False,library='EN-test') for r in rxns]
+                kinetics=r.kinetics,reversible=False,library='EN-test',
+                entry=Entry(index=i+1, data=r.kinetics)) for i, r in enumerate(rxns)]
         cls.entries = {i+1:r.kinetics for i,r in enumerate(rxns)}
         kw['electron_energy_balance'] = dict(absorbed_power=(0.,'W'),
             chamber_volume=(np.pi*RADIUS**2*LENGTH,'m^3'),sheath='floating_wall',

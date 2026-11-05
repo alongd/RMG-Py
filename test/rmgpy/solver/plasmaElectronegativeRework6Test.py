@@ -39,6 +39,7 @@ import rmgpy
 from rmgpy import constants
 from rmgpy.kinetics import Arrhenius, TwoTemperaturePlasma
 from rmgpy.reaction import Reaction
+from rmgpy.data.base import Entry
 from rmgpy.data.kinetics.library import LibraryReaction
 from rmgpy.species import Species
 from rmgpy.exceptions import ElectronegativeWallRegimeError, PlasmaStateError
@@ -251,7 +252,8 @@ def reinitialise(r, species, reactions):
         config['elastic_collisions'].update({sp.label: {'ignore': 'test isolation'}
             for sp in species if sp.label not in config['elastic_collisions']
             and sp.get_net_charge() == 0})
-        for i in range(len(reactions)):
+        for i, reaction in enumerate(reactions):
+            reaction.entry = Entry(index=i+1, data=reaction.kinetics)
             config['electron_energies'].setdefault('EN-test:'+str(i+1), (0., 'eV'))
         FixtureEnergyReactor.entries = {i+1: rx.kinetics for i, rx in enumerate(reactions)}
         r._configure_energy_balance(config)

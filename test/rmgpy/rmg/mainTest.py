@@ -1522,3 +1522,74 @@ CH3(4)              2     144.001     3.800     0.000     0.000     0.000    ! G
             # clean up
             os.chdir(originalPath)
             shutil.rmtree(self.dir_name)
+
+
+@pytest.mark.functional
+@pytest.mark.parametrize('power_balance', [False, True])
+def test_resolved_plasma_real_job_completes(tmp_path, monkeypatch, power_balance):
+    """Final audit and equal-kinetics entry bindings survive a real execute()."""
+    library = tmp_path / 'resolved-plasma'
+    library.mkdir()
+    dictionary = {
+        'Ar': '1 Ar u0 p4 c0',
+        'Arp': 'multiplicity 2\n1 Ar u1 p3 c+1',
+        'e-': '1 e u1 p0 c-1',
+        'Ars': 'multiplicity 3\nelectronicstate 3P2\n1 Ar u2 p3 c0',
+        'Ar13': 'multiplicity 3\nelectronicstate 3P0\n1 Ar u2 p3 c0',
+    }
+    (library / 'dictionary.txt').write_text('\n\n'.join(
+        label + '\n' + adjacency for label, adjacency in dictionary.items()) + '\n')
+    # The two directions intentionally share a coefficient, but have distinct entry identities.
+    (library / 'reactions.py').write_text("""
+name = 'resolved-plasma'
+entry(index=16, label='Ars + e- => Ar13 + e-', reversible=False,
+      kinetics=TwoTemperaturePlasma(A=(1e4,'m^3/(mol*s)'), n=0,
+          Ea_g=(0,'J/mol'), Ea_e=(0,'J/mol'), T0=(1,'K')))
+entry(index=23, label='Ar13 + e- => Ars + e-', reversible=False,
+      kinetics=TwoTemperaturePlasma(A=(1e4,'m^3/(mol*s)'), n=0,
+          Ea_g=(0,'J/mol'), Ea_e=(0,'J/mol'), T0=(1,'K')))
+""")
+    if not power_balance:
+        # A single resolved-state electron-impact reaction suffices for the audit failure.
+        source = (library / 'reactions.py').read_text()
+        (library / 'reactions.py').write_text(source.split('entry(index=23')[0])
+    energy = ("electronEnergyBalance={'absorbedPower':(0.5,'W'), 'sheath':'floatingWall', "
+              "'elasticCollisions':{'Ar':{'ignore':'isolate entry binding'}, "
+              "'Ars':{'ignore':'isolate entry binding'}, 'Ar13':{'ignore':'isolate entry binding'}}, "
+              "'electronEnergies':{'resolved-plasma:16':(0.17,'eV'), "
+              "'resolved-plasma:23':(-0.17,'eV')}},") if power_balance else ''
+    input_file = tmp_path / 'input.py'
+    input_file.write_text(
+        "database(thermoLibraries=['PlasmaExcitedNeutralThermo','PlasmaThermo', "
+        "'primaryThermoLibrary','electrocatThermo'], reactionLibraries=[], seedMechanisms=[" + repr(str(library)) +
+        "], kineticsDepositories=[], kineticsFamilies='none', kineticsEstimator='rate rules')\n" +
+        '\n'.join("species(label=" + repr(label) + ", reactive=True, structure=adjacencyList(" +
+                  repr(adjacency) + "))" for label, adjacency in dictionary.items()) +
+        "\nplasmaReactor(temperature=(298.15,'K'), pressure=(5,'torr'), "
+        "electronTemperature=(23209,'K'), initialMoleFractions={'Ar':0.98,'Ars':0.01, "
+        "'Ar13':0.01}, electronDensity=(1e15,'m^-3'), chargeBalanceSpecies='Arp', "
+        "chamberGeometry={'shape':'cylinder','radius':(5,'cm'),'length':(30,'cm')}, "
+        "ionReducedMobilities={'Arp':(1.535e-4,'m^2/(V*s)')}, "
+        "wallNeutralizationProducts={'Arp':'Ar'}, " + energy + "terminationTime=(1e-12,'s'))\n"
+        "simulator(atol=1e-20, rtol=1e-8)\n"
+        "model(toleranceMoveToCore=0.1, toleranceInterruptSimulation=1.0)\n"
+        "options(generateOutputHTML=False, generatePlots=False, saveEdgeSpecies=False, "
+        "generateChemkin=False, generateCanteraFromChemkin=False, generateRMSYAML=False, "
+        "generateCanteraYAML1=False, generateCanteraYAML2=False)\n")
+    output = tmp_path / 'output'
+    output.mkdir()
+    # RMG's database and input DSL are process globals; restore them after this job.
+    import rmgpy.data.rmg as data_module
+    import rmgpy.rmg.input as input_module
+    monkeypatch.setattr(data_module, 'database', data_module.database)
+    for name in ('rmg', 'species_dict', 'mol_to_frag'):
+        monkeypatch.setattr(input_module, name, getattr(input_module, name, None), raising=False)
+    job = RMG(input_file=str(input_file), output_directory=str(output))
+    job.execute()
+    assert len(job.reaction_model.core.reactions) == (2 if power_balance else 1)
+    assert job.reaction_systems[0].t >= 1e-12
+    if power_balance:
+        reactor = job.reaction_systems[0]
+        assert set(reactor.energy_reaction_keys) == {'resolved-plasma:16', 'resolved-plasma:23'}
+        assert sorted(reactor.energy_threshold) == pytest.approx(
+            [-0.17 * 96485.33212, 0.17 * 96485.33212], rel=5e-5)

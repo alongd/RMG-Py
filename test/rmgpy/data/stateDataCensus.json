@@ -22011,7 +22011,7 @@
       "evidence": [
         "test/rmgpy/reactionTest.py"
       ],
-      "source_sha256": "3f78c348c6a947de112af9f1f7909cb9a88018879714abdf44c69804824b1776"
+      "source_sha256": "f9b948ab66838ae1c4057d18e8b1e1e5b9ee62ef9d0642bdab0f8e630b5bdf23"
     },
     "rmgpy/reaction.py:Reaction.check_resolved_species_reversibility": {
       "verdict": "refused",
@@ -22711,6 +22711,14 @@
       "source_sha256": "a71159e6c0782b23fcf49f7c2f04f54c73499b2e3b4480c4d157707729ea5608",
       "file": "rmgpy/rmg/input.py",
       "line": 1117
+    },
+    "rmgpy/rmg/input.py:_plasma_geometry_dimensions": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Validates scalar physical chamber dimensions shared by wall and radiation closures; no molecular data lookup.",
+      "evidence": [
+        "test/rmgpy/rmg/inputTest.py"
+      ],
+      "source_sha256": "52d257970c095d5c0ee0ca1a6c85bb37df58d6c109ad8c58dff2dec231ee0f5a"
     },
     "rmgpy/rmg/input.py:_plasma_inverse_lambda_squared": {
       "verdict": "carried",
@@ -26996,6 +27004,14 @@
       "file": "rmgpy/solver/plasma.pyx",
       "line": 6760
     },
+    "rmgpy/solver/plasma.pyx:PlasmaReactor._bind_radiation": {
+      "verdict": "carried",
+      "reason": "Configures or exposes the explicit reactor radiation operator with copied declarations, binds original molecular electronic states, and carries accepted own-state loss plus sourced line data; no inferred ground-state property.",
+      "evidence": [
+        "test/rmgpy/solver/plasmaRadiationTest.py"
+      ],
+      "source_sha256": "cbc5965a2aec0cb0e87073086f5a00783f3fb97785c61c76abc8339c2d4a375e"
+    },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._blanc_combine": {
       "verdict": "carried",
       "reason": "Consumes already assigned species models and reaction rates while evolving populations. No independent thermo/group-template acquisition; reaction/species identity is retained in model arrays.",
@@ -27027,6 +27043,14 @@
       "source_sha256": "7805d0dbb58c0a6cd337fdf684c09ce02ff70002f44eb4eb9b5d7122170195af",
       "file": "rmgpy/solver/plasma.pyx",
       "line": 3970
+    },
+    "rmgpy/solver/plasma.pyx:PlasmaReactor._check_argon_elimination_validity": {
+      "verdict": "carried",
+      "reason": "Checks the realized total 4s/ground ratio and electron density against explicit table limits using exact species indices; it refuses outside the declared domain and acquires no molecular data.",
+      "evidence": [
+        "test/rmgpy/solver/argonValidityTest.py"
+      ],
+      "source_sha256": "d4c1c84e63e5de904628d0b625cf363d7fc5ef5383428c6d8894a35c4a30fb56"
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._check_bath_threshold": {
       "verdict": "carried",
@@ -27301,6 +27325,14 @@
       "file": "rmgpy/solver/plasma.pyx",
       "line": 2327
     },
+    "rmgpy/solver/plasma.pyx:PlasmaReactor._configure_radiation": {
+      "verdict": "carried",
+      "reason": "Configures or exposes the explicit reactor radiation operator with copied declarations, binds original molecular electronic states, and carries accepted own-state loss plus sourced line data; no inferred ground-state property.",
+      "evidence": [
+        "test/rmgpy/solver/plasmaRadiationTest.py"
+      ],
+      "source_sha256": "e972514eedc643d1f5c7c80eef3bd613f08658d6d83dcbf8bb390531173eb642"
+    },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._configure_wall": {
       "verdict": "carried",
       "reason": "Validates explicit mobility maps/laws, geometry, recycling/source and neutral-diffusion declarations, storing supplied values defensively. It contains no transport database lookup or automatic state-based scientific value substitution.",
@@ -27312,13 +27344,14 @@
       "file": "rmgpy/solver/plasma.pyx",
       "line": 1575
     },
-    "rmgpy/solver/plasma.pyx:PlasmaReactor._declared_entry_kinetics": {
+    "rmgpy/solver/plasma.pyx:PlasmaReactor._declared_entry": {
       "verdict": "carried",
-      "reason": "Consumes already assigned species models and reaction rates while evolving populations. No independent thermo/group-template acquisition; reaction/species identity is retained in model arrays.",
+      "reason": "Returns the explicitly named loaded library entry without kinetics-based inference; resolved reaction participants and their source entry identity remain attached.",
       "evidence": [
-        "test/rmgpy/solver/plasmaTest.py"
+        "test/rmgpy/solver/plasmaEnergyBalanceTest.py",
+        "test/rmgpy/rmg/mainTest.py"
       ],
-      "source_sha256": "c2cd79968dc9b0faee71b43b9f294e029d0c6b9bf21542ec09ba11440f8954e7",
+      "source_sha256": "bde9c51bae1377515af3f2ce26b2b0745b1efb1669d1a5e98b3bb73211a3675b",
       "file": "rmgpy/solver/plasma.pyx",
       "line": 2702
     },
@@ -27683,7 +27716,7 @@
         "test/rmgpy/solver/plasmaElectronegativeWallTest.py",
         "test/rmgpy/solver/plasmaRadiationTest.py"
       ],
-      "source_sha256": "92c34581088a0d877d0cdf0e7b46e76e42adc27559a5b1fd403a6242700a60eb",
+      "source_sha256": "304c3168c55d4995e9ad763d69fa19ef2c0d12ba525455617f2407b705374ab4",
       "file": "rmgpy/solver/plasma.pyx",
       "line": 5088
     },
@@ -27705,6 +27738,14 @@
         "test/rmgpy/solver/plasmaElectronegativeRework7Test.py"
       ],
       "source_sha256": "cb5f4199b166c61316e6e80eb184e93bca99c14179364f944d8fd8ae8d3b82a5"
+    },
+    "rmgpy/solver/plasma.pyx:PlasmaReactor._latch_radiation": {
+      "verdict": "carried",
+      "reason": "Configures or exposes the explicit reactor radiation operator with copied declarations, binds original molecular electronic states, and carries accepted own-state loss plus sourced line data; no inferred ground-state property.",
+      "evidence": [
+        "test/rmgpy/solver/plasmaRadiationTest.py"
+      ],
+      "source_sha256": "371ce5e67ac8acd16680461b76cb9569ec0a2f552b1ba9b14b6e2400aedf41ff"
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._latch_wall_diagnostics": {
       "verdict": "carried",
@@ -27788,6 +27829,14 @@
       "source_sha256": "81cdf4c1d01d4e6f4f3ce2b9f1ba437f7dc051e530190f7cd29b531e17644455",
       "file": "rmgpy/solver/plasma.pyx",
       "line": 4182
+    },
+    "rmgpy/solver/plasma.pyx:PlasmaReactor._radiation_evaluation": {
+      "verdict": "carried",
+      "reason": "Configures or exposes the explicit reactor radiation operator with copied declarations, binds original molecular electronic states, and carries accepted own-state loss plus sourced line data; no inferred ground-state property.",
+      "evidence": [
+        "test/rmgpy/solver/plasmaRadiationTest.py"
+      ],
+      "source_sha256": "e25fbc63d196424c95863128f74b11625a872852cd0361fb276c8d1e0f9cceb7"
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._raise_native_callback_failure": {
       "verdict": "carried",
@@ -27909,7 +27958,7 @@
       "evidence": [
         "test/rmgpy/solver/plasmaTest.py"
       ],
-      "source_sha256": "6ad9cce7e7988595fa52911460cba0eac73f39afd567bd8e4eea293bdb9b0221",
+      "source_sha256": "3862cb9928ab2f67fe1d32e826a5477b9c4a3a876077690ce2f9a9a30a372776",
       "file": "rmgpy/solver/plasma.pyx",
       "line": 2721
     },
@@ -28411,6 +28460,22 @@
       "file": "rmgpy/solver/plasma.pyx",
       "line": 7461
     },
+    "rmgpy/solver/plasma.pyx:PlasmaReactor.radiation_chamber_geometry.__get__": {
+      "verdict": "carried",
+      "reason": "Configures or exposes the explicit reactor radiation operator with copied declarations, binds original molecular electronic states, and carries accepted own-state loss plus sourced line data; no inferred ground-state property.",
+      "evidence": [
+        "test/rmgpy/solver/plasmaRadiationTest.py"
+      ],
+      "source_sha256": "e938014fbe3266fcdf43b83cf114d46b5b84be00f9959a42403778882edeee5e"
+    },
+    "rmgpy/solver/plasma.pyx:PlasmaReactor.radiation_manifest": {
+      "verdict": "carried",
+      "reason": "Configures or exposes the explicit reactor radiation operator with copied declarations, binds original molecular electronic states, and carries accepted own-state loss plus sourced line data; no inferred ground-state property.",
+      "evidence": [
+        "test/rmgpy/solver/plasmaRadiationTest.py"
+      ],
+      "source_sha256": "35e8f74fca9f15516966f5fbeaf70a97c6543154f2e2baf127363c8733fa5fbf"
+    },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.residual": {
       "verdict": "carried",
       "reason": "Consumes already assigned species models and reaction rates while evolving populations. No independent thermo/group-template acquisition; reaction/species identity is retained in model arrays.",
@@ -28420,6 +28485,14 @@
       "source_sha256": "8d625eecb6dbf83929d5d6296decb4b31e4063e005f390a33bd74e67ccc64ce7",
       "file": "rmgpy/solver/plasma.pyx",
       "line": 8449
+    },
+    "rmgpy/solver/plasma.pyx:PlasmaReactor.resonance_radiation.__get__": {
+      "verdict": "carried",
+      "reason": "Configures or exposes the explicit reactor radiation operator with copied declarations, binds original molecular electronic states, and carries accepted own-state loss plus sourced line data; no inferred ground-state property.",
+      "evidence": [
+        "test/rmgpy/solver/plasmaRadiationTest.py"
+      ],
+      "source_sha256": "48ef0e515d32937a10ffc8b0b2e9c5ddacbb90b07af5d2300f06719b7b69ec8f"
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.set_initial_conditions": {
       "verdict": "carried",
@@ -28755,6 +28828,86 @@
       "source_sha256": "6f32083e28e96ba69a9d74c01faf024e8bdb437800091520e68663906a2b9cc5",
       "file": "rmgpy/solver/plasma.pyx",
       "line": 197
+    },
+    "rmgpy/solver/radiation.py:ArgonRadiation.__init__": {
+      "verdict": "carried",
+      "reason": "Carries original neutral atomic Ar electronic identities and explicit closure/geometry. Only 3P1/1P1 decay to uniquely bound ground Ar; metastables remain unmodified and mixed baths use ground partial density.",
+      "evidence": [
+        "test/rmgpy/solver/plasmaRadiationTest.py"
+      ],
+      "source_sha256": "2e567324268da67f2df9df37868631f52c6d8a47c5efd0181f7c3a88c5afea3e"
+    },
+    "rmgpy/solver/radiation.py:ArgonRadiation.bind": {
+      "verdict": "carried",
+      "reason": "Carries original neutral atomic Ar electronic identities and explicit closure/geometry. Only 3P1/1P1 decay to uniquely bound ground Ar; metastables remain unmodified and mixed baths use ground partial density.",
+      "evidence": [
+        "test/rmgpy/solver/plasmaRadiationTest.py"
+      ],
+      "source_sha256": "0df29734f6275fdf495607cd80b914a12c547d069b0193f0f95419554715761a"
+    },
+    "rmgpy/solver/radiation.py:ArgonRadiation.evaluate": {
+      "verdict": "carried",
+      "reason": "Carries original neutral atomic Ar electronic identities and explicit closure/geometry. Only 3P1/1P1 decay to uniquely bound ground Ar; metastables remain unmodified and mixed baths use ground partial density.",
+      "evidence": [
+        "test/rmgpy/solver/plasmaRadiationTest.py"
+      ],
+      "source_sha256": "5365a92c75ef14193304d9e23d8b273cf3360bc49866ab8deff3042fe5d27447"
+    },
+    "rmgpy/solver/radiation.py:_argon_state": {
+      "verdict": "carried",
+      "reason": "Carries original neutral atomic Ar electronic identities and explicit closure/geometry. Only 3P1/1P1 decay to uniquely bound ground Ar; metastables remain unmodified and mixed baths use ground partial density.",
+      "evidence": [
+        "test/rmgpy/solver/plasmaRadiationTest.py"
+      ],
+      "source_sha256": "eaf469ccc3ebef64be0edbe6ab812120cae4c72b5f54336618d230e478426f39"
+    },
+    "rmgpy/solver/radiation.py:_walsh_terms": {
+      "verdict": "carried",
+      "reason": "Evaluates the declared optically thick Walsh closure from explicit line parameters and ground-Ar partial density; refuses outside the published-asymptotic engineering domain, without molecular substitution.",
+      "evidence": [
+        "test/rmgpy/solver/radiationTest.py"
+      ],
+      "source_sha256": "d0c10bc0dbfc4a33637439a85c29505d59c83c6c96406dffbee951e61ceaee50"
+    },
+    "rmgpy/solver/radiation.py:argon_escape": {
+      "verdict": "carried",
+      "reason": "Evaluates the declared optically thick Walsh closure from explicit line parameters and ground-Ar partial density; refuses outside the published-asymptotic engineering domain, without molecular substitution.",
+      "evidence": [
+        "test/rmgpy/solver/radiationTest.py"
+      ],
+      "source_sha256": "f1e09af58159f77e9d351bd44cf290d3c66ba6196d8eb55f4fa97ed1f4b2cfc2"
+    },
+    "rmgpy/solver/radiation.py:has_argon_resonance": {
+      "verdict": "carried",
+      "reason": "Carries original neutral atomic Ar electronic identities and explicit closure/geometry. Only 3P1/1P1 decay to uniquely bound ground Ar; metastables remain unmodified and mixed baths use ground partial density.",
+      "evidence": [
+        "test/rmgpy/solver/plasmaRadiationTest.py"
+      ],
+      "source_sha256": "ef01f827b46240fb9e40a222548b42215607f6a0dd32826ebf2e660d465ab858"
+    },
+    "rmgpy/solver/radiation.py:load_argon_lines": {
+      "verdict": "carried",
+      "reason": "Loads only explicitly keyed 3P1/1P1 NIST vacuum lines, validates the lower ground identity and degeneracy, and retains query provenance separately from cascades.",
+      "evidence": [
+        "test/rmgpy/solver/radiationTest.py"
+      ],
+      "source_sha256": "08886ecb78c6c8b66ebf3cd5fc60541749d4e185052ee41ef1045b52cfb8482d"
+    },
+    "rmgpy/solver/radiation.py:walsh_escape_derivatives": {
+      "verdict": "carried",
+      "reason": "Evaluates the declared optically thick Walsh closure from explicit line parameters and ground-Ar partial density; refuses outside the published-asymptotic engineering domain, without molecular substitution.",
+      "evidence": [
+        "test/rmgpy/solver/radiationTest.py"
+      ],
+      "source_sha256": "b493382cc306d6ed19c8c4eae8ec497f63dba3aa22098f33059fe0158f50918d"
+    },
+    "rmgpy/solver/radiation.py:walsh_escape_factor": {
+      "verdict": "carried",
+      "reason": "Evaluates the declared optically thick Walsh closure from explicit line parameters and ground-Ar partial density; refuses outside the published-asymptotic engineering domain, without molecular substitution.",
+      "evidence": [
+        "test/rmgpy/solver/radiationTest.py"
+      ],
+      "source_sha256": "7c2c928010df96d218876d5fdfe36655e39bf77733f8eb56b3b19b39737b083e"
     },
     "rmgpy/solver/simple.pyx:SimpleReactor.__init__": {
       "verdict": "carried",
@@ -33136,6 +33289,70 @@
       ],
       "source_sha256": "ee3e288952fa7513676a05f6268a94ca4c1e5e3954ab0b379d9cfd5b3e2b4b67"
     },
+    "rmgpy/tools/eedf/argon.py:main": {
+      "verdict": "carried",
+      "reason": "Routes explicit CLI inputs to the source-checked spec refresh and reports conversion counts; it does not infer molecular identity or data.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/argonSpecTest.py"
+      ],
+      "source_sha256": "ababd3acd500ad434ff948a1659f7ad4b12e827e750d0ac3208642bcea23cc50"
+    },
+    "rmgpy/tools/eedf/argon.py:refresh_spec": {
+      "verdict": "carried",
+      "reason": "Refreshes explicit collision inputs only after source hash and realization identity checks, retaining resolved molecular owner identities and sourced cascade declarations.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/argonSpecTest.py"
+      ],
+      "source_sha256": "f42f7fe256edf55623238346b74610f8aa6a3a229a6e9036557394d6090e8b2a"
+    },
+    "rmgpy/tools/eedf/argon.py:refresh_spec.<lambda1>": {
+      "verdict": "carried",
+      "reason": "Resolves user-supplied filesystem paths for the pinned spec, database and realization; it supplies no molecular data.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/argonSpecTest.py"
+      ],
+      "source_sha256": "c4f3abeea608def4da96b5c2db1db3709d320de2cb0ce8edc64dbd664d920e6e"
+    },
+    "rmgpy/tools/eedf/argon_population.py:check_zero_target_nodes": {
+      "verdict": "carried",
+      "reason": "Checks explicitly resolved target and reverse-source populations at every population grid node and refuses unsupported solver inputs without substituting data.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/argonPopulationTest.py"
+      ],
+      "source_sha256": "f13b9a89787232fe91f50970d26ae975714d73029004c38ae6aaaab7f937f76c"
+    },
+    "rmgpy/tools/eedf/argon_population.py:coordinate": {
+      "verdict": "carried",
+      "reason": "Transforms the declared physical fraction to its fixed linear/log interpolation coordinate; no species mapping or data acquisition.",
+      "evidence": [
+        "test/rmgpy/solver/eedfTableTest.py"
+      ],
+      "source_sha256": "eb7576a973c9fb615ce71503a04312752505449a969c4a8149b519f9902eec78"
+    },
+    "rmgpy/tools/eedf/argon_population.py:coordinate_derivative": {
+      "verdict": "carried",
+      "reason": "Returns the derivative of the frozen fraction interpolation coordinate without acquiring molecular data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfTableTest.py"
+      ],
+      "source_sha256": "5114ceb5c70f6833af5a22789e4752cc6415b808cceb0394935a9d4b0316b5e0"
+    },
+    "rmgpy/tools/eedf/argon_population.py:populations": {
+      "verdict": "carried",
+      "reason": "Distributes a declared total-4s/ground ratio among the four explicitly named states by the frozen statistical weights, preserving those state identities.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/argonPopulationTest.py"
+      ],
+      "source_sha256": "5e9b0465bb406e2431f406df8013590be064ee2d43a5098d6ae2c30224264093"
+    },
+    "rmgpy/tools/eedf/argon_population.py:validate_population_axis": {
+      "verdict": "carried",
+      "reason": "Requires the frozen total-4s population convention and base nodes; no molecular data acquisition or ground-state substitution.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/argonPopulationTest.py"
+      ],
+      "source_sha256": "8690260a3432fd6d2b5ff1d79b432301eaec41588f954f437512f13a919ec32a"
+    },
     "rmgpy/tools/eedf/artifact.py:_storage_items": {
       "verdict": "carried",
       "reason": "Consumes explicitly indexed electron channels and computed EEDF artifacts with validated state/channel identities. No thermo or group-tree lookup or implicit molecular data inheritance.",
@@ -34284,6 +34501,14 @@
       ],
       "source_sha256": "78be8b1f2525dbbf1207de681d87cdefa2deb8beda41ecf64fa7769f1f65ce7d"
     },
+    "rmgpy/tools/eedf/channel_map.py:_paired_inverse": {
+      "verdict": "carried",
+      "reason": "Requires exactly one superelastic library owner with the same collision identity and verifies its reversed molecular stoichiometry against the forward owner.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/channelMapTest.py"
+      ],
+      "source_sha256": "5a72135d2113fb6866be6c1587d82d3c73fe74b5f6c10e89ab5c269e5e93b1b7"
+    },
     "rmgpy/tools/eedf/channel_map.py:_physical_channel_from_frozen": {
       "verdict": "carried",
       "reason": "Transforms a physical cross-section record from the pinned frozen map into one converter channel, requiring explicit valid mass and reverse weights where applicable; it does not infer values from another gas or owner.",
@@ -34299,6 +34524,14 @@
         "test/rmgpy/tools/eedf/channelMapTest.py"
       ],
       "source_sha256": "ee7f3a4d7bd6b82c94508d03747cb9a7b62e8dcbc3586ace3525d46f089971d0"
+    },
+    "rmgpy/tools/eedf/channel_map.py:_reviewed_inverse": {
+      "verdict": "carried",
+      "reason": "Validates explicit sourced upper-level inverse exceptions and their density/population bounds; it never estimates missing state data or silently omits an owner.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/channelMapTest.py"
+      ],
+      "source_sha256": "9d448439c0224dd3af43bf6b90d52e1641321c35f13a4f4838091098b2696598"
     },
     "rmgpy/tools/eedf/channel_map.py:_target_gas": {
       "verdict": "not-reachable-for-resolved",
@@ -34367,6 +34600,14 @@
     "rmgpy/tools/eedf/channel_map.py:convert_channel_maps.<lambda2>": {
       "verdict": "not-reachable-for-resolved",
       "reason": "Adapts explicit EEDF source data and pinned owner metadata; does not acquire resolved thermo, calculate rates, or transfer state data.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/channelMapTest.py"
+      ],
+      "source_sha256": "e32a85d8e0b6e77fe96cc409c1c8365b0060cd54942d0879474c922507fb5895"
+    },
+    "rmgpy/tools/eedf/channel_map.py:convert_channel_maps.<lambda3>": {
+      "verdict": "carried",
+      "reason": "Sorts explicitly validated paired-owner report rows by collision id without accessing molecular data.",
       "evidence": [
         "test/rmgpy/tools/eedf/channelMapTest.py"
       ],
@@ -35545,6 +35786,14 @@
       ],
       "source_sha256": "d061098152b5b2bbacbab2e3afcb626a1a49729b57d1f34e8b03f8b20045cb88"
     },
+    "rmgpy/tools/eedf/ownership.py:is_declared_branch_owner": {
+      "verdict": "carried",
+      "reason": "Admits a self-return only when its actual library entry and marker belong to a complete declared family with verified molecular products, common source identity and normalized yields.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchYieldTest.py"
+      ],
+      "source_sha256": "056031d918a303420fcfc64a7f42ebd05a864b1b6323f99b4a437e5ad7d4ee9c"
+    },
     "rmgpy/tools/eedf/ownership.py:iter_reaction_owners": {
       "verdict": "carried",
       "reason": "Enumerates all validated source-entry/marker identities from a family while retaining one physical collision envelope.",
@@ -35883,6 +36132,14 @@
         "test/rmgpy/tools/eedf/reportTest.py"
       ],
       "source_sha256": "b84d311b29022a289fb2fcc4d967704cc54844c71fc0f182a9680d07db3eface"
+    },
+    "rmgpy/tools/eedf/schema.py:_argon_validity_declarations": {
+      "verdict": "carried",
+      "reason": "Validates optional positive finite argon elimination limits from explicit metadata; absent declarations do not trigger data estimation.",
+      "evidence": [
+        "test/rmgpy/solver/argonValidityTest.py"
+      ],
+      "source_sha256": "5e0de58868fbe612bb864a38c1e27c3a25dd45aa4120efa01a150dca6629c9a4"
     },
     "rmgpy/tools/eedf/schema.py:_artifact_provider_kind": {
       "verdict": "excluded",
@@ -38066,262 +38323,6 @@
         "test/rmgpy/diagnosticModeTest.py"
       ],
       "source_sha256": "c8ab70b5acb94b1d3b2dd1ec44f4fe3dc3fde57eeb36db139eab88f9b48d7a20"
-    },
-    "rmgpy/rmg/input.py:_plasma_geometry_dimensions": {
-      "verdict": "not-reachable-for-resolved",
-      "reason": "Validates scalar physical chamber dimensions shared by wall and radiation closures; no molecular data lookup.",
-      "evidence": [
-        "test/rmgpy/rmg/inputTest.py"
-      ],
-      "source_sha256": "52d257970c095d5c0ee0ca1a6c85bb37df58d6c109ad8c58dff2dec231ee0f5a"
-    },
-    "rmgpy/solver/plasma.pyx:PlasmaReactor.resonance_radiation.__get__": {
-      "verdict": "carried",
-      "reason": "Configures or exposes the explicit reactor radiation operator with copied declarations, binds original molecular electronic states, and carries accepted own-state loss plus sourced line data; no inferred ground-state property.",
-      "evidence": [
-        "test/rmgpy/solver/plasmaRadiationTest.py"
-      ],
-      "source_sha256": "48ef0e515d32937a10ffc8b0b2e9c5ddacbb90b07af5d2300f06719b7b69ec8f"
-    },
-    "rmgpy/solver/plasma.pyx:PlasmaReactor.radiation_chamber_geometry.__get__": {
-      "verdict": "carried",
-      "reason": "Configures or exposes the explicit reactor radiation operator with copied declarations, binds original molecular electronic states, and carries accepted own-state loss plus sourced line data; no inferred ground-state property.",
-      "evidence": [
-        "test/rmgpy/solver/plasmaRadiationTest.py"
-      ],
-      "source_sha256": "e938014fbe3266fcdf43b83cf114d46b5b84be00f9959a42403778882edeee5e"
-    },
-    "rmgpy/solver/plasma.pyx:PlasmaReactor._configure_radiation": {
-      "verdict": "carried",
-      "reason": "Configures or exposes the explicit reactor radiation operator with copied declarations, binds original molecular electronic states, and carries accepted own-state loss plus sourced line data; no inferred ground-state property.",
-      "evidence": [
-        "test/rmgpy/solver/plasmaRadiationTest.py"
-      ],
-      "source_sha256": "e972514eedc643d1f5c7c80eef3bd613f08658d6d83dcbf8bb390531173eb642"
-    },
-    "rmgpy/solver/plasma.pyx:PlasmaReactor._bind_radiation": {
-      "verdict": "carried",
-      "reason": "Configures or exposes the explicit reactor radiation operator with copied declarations, binds original molecular electronic states, and carries accepted own-state loss plus sourced line data; no inferred ground-state property.",
-      "evidence": [
-        "test/rmgpy/solver/plasmaRadiationTest.py"
-      ],
-      "source_sha256": "cbc5965a2aec0cb0e87073086f5a00783f3fb97785c61c76abc8339c2d4a375e"
-    },
-    "rmgpy/solver/plasma.pyx:PlasmaReactor._radiation_evaluation": {
-      "verdict": "carried",
-      "reason": "Configures or exposes the explicit reactor radiation operator with copied declarations, binds original molecular electronic states, and carries accepted own-state loss plus sourced line data; no inferred ground-state property.",
-      "evidence": [
-        "test/rmgpy/solver/plasmaRadiationTest.py"
-      ],
-      "source_sha256": "e25fbc63d196424c95863128f74b11625a872852cd0361fb276c8d1e0f9cceb7"
-    },
-    "rmgpy/solver/plasma.pyx:PlasmaReactor._latch_radiation": {
-      "verdict": "carried",
-      "reason": "Configures or exposes the explicit reactor radiation operator with copied declarations, binds original molecular electronic states, and carries accepted own-state loss plus sourced line data; no inferred ground-state property.",
-      "evidence": [
-        "test/rmgpy/solver/plasmaRadiationTest.py"
-      ],
-      "source_sha256": "371ce5e67ac8acd16680461b76cb9569ec0a2f552b1ba9b14b6e2400aedf41ff"
-    },
-    "rmgpy/solver/plasma.pyx:PlasmaReactor.radiation_manifest": {
-      "verdict": "carried",
-      "reason": "Configures or exposes the explicit reactor radiation operator with copied declarations, binds original molecular electronic states, and carries accepted own-state loss plus sourced line data; no inferred ground-state property.",
-      "evidence": [
-        "test/rmgpy/solver/plasmaRadiationTest.py"
-      ],
-      "source_sha256": "35e8f74fca9f15516966f5fbeaf70a97c6543154f2e2baf127363c8733fa5fbf"
-    },
-    "rmgpy/solver/radiation.py:walsh_escape_factor": {
-      "verdict": "carried",
-      "reason": "Evaluates the declared optically thick Walsh closure from explicit line parameters and ground-Ar partial density; refuses outside the published-asymptotic engineering domain, without molecular substitution.",
-      "evidence": [
-        "test/rmgpy/solver/radiationTest.py"
-      ],
-      "source_sha256": "7c2c928010df96d218876d5fdfe36655e39bf77733f8eb56b3b19b39737b083e"
-    },
-    "rmgpy/solver/radiation.py:_walsh_terms": {
-      "verdict": "carried",
-      "reason": "Evaluates the declared optically thick Walsh closure from explicit line parameters and ground-Ar partial density; refuses outside the published-asymptotic engineering domain, without molecular substitution.",
-      "evidence": [
-        "test/rmgpy/solver/radiationTest.py"
-      ],
-      "source_sha256": "d0c10bc0dbfc4a33637439a85c29505d59c83c6c96406dffbee951e61ceaee50"
-    },
-    "rmgpy/solver/radiation.py:walsh_escape_derivatives": {
-      "verdict": "carried",
-      "reason": "Evaluates the declared optically thick Walsh closure from explicit line parameters and ground-Ar partial density; refuses outside the published-asymptotic engineering domain, without molecular substitution.",
-      "evidence": [
-        "test/rmgpy/solver/radiationTest.py"
-      ],
-      "source_sha256": "b493382cc306d6ed19c8c4eae8ec497f63dba3aa22098f33059fe0158f50918d"
-    },
-    "rmgpy/solver/radiation.py:load_argon_lines": {
-      "verdict": "carried",
-      "reason": "Loads only explicitly keyed 3P1/1P1 NIST vacuum lines, validates the lower ground identity and degeneracy, and retains query provenance separately from cascades.",
-      "evidence": [
-        "test/rmgpy/solver/radiationTest.py"
-      ],
-      "source_sha256": "08886ecb78c6c8b66ebf3cd5fc60541749d4e185052ee41ef1045b52cfb8482d"
-    },
-    "rmgpy/solver/radiation.py:argon_escape": {
-      "verdict": "carried",
-      "reason": "Evaluates the declared optically thick Walsh closure from explicit line parameters and ground-Ar partial density; refuses outside the published-asymptotic engineering domain, without molecular substitution.",
-      "evidence": [
-        "test/rmgpy/solver/radiationTest.py"
-      ],
-      "source_sha256": "f1e09af58159f77e9d351bd44cf290d3c66ba6196d8eb55f4fa97ed1f4b2cfc2"
-    },
-    "rmgpy/solver/radiation.py:_argon_state": {
-      "verdict": "carried",
-      "reason": "Carries original neutral atomic Ar electronic identities and explicit closure/geometry. Only 3P1/1P1 decay to uniquely bound ground Ar; metastables remain unmodified and mixed baths use ground partial density.",
-      "evidence": [
-        "test/rmgpy/solver/plasmaRadiationTest.py"
-      ],
-      "source_sha256": "eaf469ccc3ebef64be0edbe6ab812120cae4c72b5f54336618d230e478426f39"
-    },
-    "rmgpy/solver/radiation.py:ArgonRadiation.__init__": {
-      "verdict": "carried",
-      "reason": "Carries original neutral atomic Ar electronic identities and explicit closure/geometry. Only 3P1/1P1 decay to uniquely bound ground Ar; metastables remain unmodified and mixed baths use ground partial density.",
-      "evidence": [
-        "test/rmgpy/solver/plasmaRadiationTest.py"
-      ],
-      "source_sha256": "2e567324268da67f2df9df37868631f52c6d8a47c5efd0181f7c3a88c5afea3e"
-    },
-    "rmgpy/solver/radiation.py:ArgonRadiation.bind": {
-      "verdict": "carried",
-      "reason": "Carries original neutral atomic Ar electronic identities and explicit closure/geometry. Only 3P1/1P1 decay to uniquely bound ground Ar; metastables remain unmodified and mixed baths use ground partial density.",
-      "evidence": [
-        "test/rmgpy/solver/plasmaRadiationTest.py"
-      ],
-      "source_sha256": "0df29734f6275fdf495607cd80b914a12c547d069b0193f0f95419554715761a"
-    },
-    "rmgpy/solver/radiation.py:ArgonRadiation.evaluate": {
-      "verdict": "carried",
-      "reason": "Carries original neutral atomic Ar electronic identities and explicit closure/geometry. Only 3P1/1P1 decay to uniquely bound ground Ar; metastables remain unmodified and mixed baths use ground partial density.",
-      "evidence": [
-        "test/rmgpy/solver/plasmaRadiationTest.py"
-      ],
-      "source_sha256": "5365a92c75ef14193304d9e23d8b273cf3360bc49866ab8deff3042fe5d27447"
-    },
-    "rmgpy/solver/radiation.py:has_argon_resonance": {
-      "verdict": "carried",
-      "reason": "Carries original neutral atomic Ar electronic identities and explicit closure/geometry. Only 3P1/1P1 decay to uniquely bound ground Ar; metastables remain unmodified and mixed baths use ground partial density.",
-      "evidence": [
-        "test/rmgpy/solver/plasmaRadiationTest.py"
-      ],
-      "source_sha256": "ef01f827b46240fb9e40a222548b42215607f6a0dd32826ebf2e660d465ab858"
-    },
-    "rmgpy/solver/plasma.pyx:PlasmaReactor._check_argon_elimination_validity": {
-      "verdict": "carried",
-      "reason": "Checks the realized total 4s/ground ratio and electron density against explicit table limits using exact species indices; it refuses outside the declared domain and acquires no molecular data.",
-      "evidence": [
-        "test/rmgpy/solver/argonValidityTest.py"
-      ],
-      "source_sha256": "d4c1c84e63e5de904628d0b625cf363d7fc5ef5383428c6d8894a35c4a30fb56"
-    },
-    "rmgpy/tools/eedf/argon.py:main": {
-      "verdict": "carried",
-      "reason": "Routes explicit CLI inputs to the source-checked spec refresh and reports conversion counts; it does not infer molecular identity or data.",
-      "evidence": [
-        "test/rmgpy/tools/eedf/argonSpecTest.py"
-      ],
-      "source_sha256": "ababd3acd500ad434ff948a1659f7ad4b12e827e750d0ac3208642bcea23cc50"
-    },
-    "rmgpy/tools/eedf/argon.py:refresh_spec": {
-      "verdict": "carried",
-      "reason": "Refreshes explicit collision inputs only after source hash and realization identity checks, retaining resolved molecular owner identities and sourced cascade declarations.",
-      "evidence": [
-        "test/rmgpy/tools/eedf/argonSpecTest.py"
-      ],
-      "source_sha256": "f42f7fe256edf55623238346b74610f8aa6a3a229a6e9036557394d6090e8b2a"
-    },
-    "rmgpy/tools/eedf/argon.py:refresh_spec.<lambda1>": {
-      "verdict": "carried",
-      "reason": "Resolves user-supplied filesystem paths for the pinned spec, database and realization; it supplies no molecular data.",
-      "evidence": [
-        "test/rmgpy/tools/eedf/argonSpecTest.py"
-      ],
-      "source_sha256": "c4f3abeea608def4da96b5c2db1db3709d320de2cb0ce8edc64dbd664d920e6e"
-    },
-    "rmgpy/tools/eedf/argon_population.py:check_zero_target_nodes": {
-      "verdict": "carried",
-      "reason": "Checks explicitly resolved target and reverse-source populations at every population grid node and refuses unsupported solver inputs without substituting data.",
-      "evidence": [
-        "test/rmgpy/tools/eedf/argonPopulationTest.py"
-      ],
-      "source_sha256": "f13b9a89787232fe91f50970d26ae975714d73029004c38ae6aaaab7f937f76c"
-    },
-    "rmgpy/tools/eedf/argon_population.py:coordinate": {
-      "verdict": "carried",
-      "reason": "Transforms the declared physical fraction to its fixed linear/log interpolation coordinate; no species mapping or data acquisition.",
-      "evidence": [
-        "test/rmgpy/solver/eedfTableTest.py"
-      ],
-      "source_sha256": "eb7576a973c9fb615ce71503a04312752505449a969c4a8149b519f9902eec78"
-    },
-    "rmgpy/tools/eedf/argon_population.py:coordinate_derivative": {
-      "verdict": "carried",
-      "reason": "Returns the derivative of the frozen fraction interpolation coordinate without acquiring molecular data.",
-      "evidence": [
-        "test/rmgpy/solver/eedfTableTest.py"
-      ],
-      "source_sha256": "5114ceb5c70f6833af5a22789e4752cc6415b808cceb0394935a9d4b0316b5e0"
-    },
-    "rmgpy/tools/eedf/argon_population.py:populations": {
-      "verdict": "carried",
-      "reason": "Distributes a declared total-4s/ground ratio among the four explicitly named states by the frozen statistical weights, preserving those state identities.",
-      "evidence": [
-        "test/rmgpy/tools/eedf/argonPopulationTest.py"
-      ],
-      "source_sha256": "5e9b0465bb406e2431f406df8013590be064ee2d43a5098d6ae2c30224264093"
-    },
-    "rmgpy/tools/eedf/argon_population.py:validate_population_axis": {
-      "verdict": "carried",
-      "reason": "Requires the frozen total-4s population convention and base nodes; no molecular data acquisition or ground-state substitution.",
-      "evidence": [
-        "test/rmgpy/tools/eedf/argonPopulationTest.py"
-      ],
-      "source_sha256": "8690260a3432fd6d2b5ff1d79b432301eaec41588f954f437512f13a919ec32a"
-    },
-    "rmgpy/tools/eedf/channel_map.py:_paired_inverse": {
-      "verdict": "carried",
-      "reason": "Requires exactly one superelastic library owner with the same collision identity and verifies its reversed molecular stoichiometry against the forward owner.",
-      "evidence": [
-        "test/rmgpy/tools/eedf/channelMapTest.py"
-      ],
-      "source_sha256": "5a72135d2113fb6866be6c1587d82d3c73fe74b5f6c10e89ab5c269e5e93b1b7"
-    },
-    "rmgpy/tools/eedf/channel_map.py:_reviewed_inverse": {
-      "verdict": "carried",
-      "reason": "Validates explicit sourced upper-level inverse exceptions and their density/population bounds; it never estimates missing state data or silently omits an owner.",
-      "evidence": [
-        "test/rmgpy/tools/eedf/channelMapTest.py"
-      ],
-      "source_sha256": "9d448439c0224dd3af43bf6b90d52e1641321c35f13a4f4838091098b2696598"
-    },
-    "rmgpy/tools/eedf/channel_map.py:convert_channel_maps.<lambda3>": {
-      "verdict": "carried",
-      "reason": "Sorts explicitly validated paired-owner report rows by collision id without accessing molecular data.",
-      "evidence": [
-        "test/rmgpy/tools/eedf/channelMapTest.py"
-      ],
-      "source_sha256": "e32a85d8e0b6e77fe96cc409c1c8365b0060cd54942d0879474c922507fb5895"
-    },
-    "rmgpy/tools/eedf/ownership.py:is_declared_branch_owner": {
-      "verdict": "carried",
-      "reason": "Admits a self-return only when its actual library entry and marker belong to a complete declared family with verified molecular products, common source identity and normalized yields.",
-      "evidence": [
-        "test/rmgpy/tools/eedf/branchYieldTest.py"
-      ],
-      "source_sha256": "056031d918a303420fcfc64a7f42ebd05a864b1b6323f99b4a437e5ad7d4ee9c"
-    },
-    "rmgpy/tools/eedf/schema.py:_argon_validity_declarations": {
-      "verdict": "carried",
-      "reason": "Validates optional positive finite argon elimination limits from explicit metadata; absent declarations do not trigger data estimation.",
-      "evidence": [
-        "test/rmgpy/solver/argonValidityTest.py"
-      ],
-      "source_sha256": "5e0de58868fbe612bb864a38c1e27c3a25dd45aa4120efa01a150dca6629c9a4"
     }
   }
 }

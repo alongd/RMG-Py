@@ -38,6 +38,7 @@ import numpy as np
 import rmgpy.data.rmg as data
 from rmgpy import constants
 from rmgpy.kinetics import Arrhenius, TwoTemperaturePlasma
+from rmgpy.data.base import Entry
 from rmgpy.data.kinetics.library import LibraryReaction
 from rmgpy.species import Species
 from plasmaElectronegativeWallTest import model
@@ -156,6 +157,7 @@ def test_signed_energy_jacobian():
 
 from rmgpy import constants
 from rmgpy.kinetics import TwoTemperaturePlasma
+from rmgpy.data.base import Entry
 from rmgpy.data.kinetics.library import LibraryReaction
 from rmgpy.species import Species
 from rmgpy.solver.plasma import PlasmaReactor
@@ -165,7 +167,7 @@ EVK=constants.e*constants.Na/constants.R
 law=TwoTemperaturePlasma(A=(1e16*math.exp(20.),'m^3/(mol*s)'),n=-20.,
     Ea_g=(40.,'eV/molecule'),Ea_e=(40.,'eV/molecule'),T0=(2*EVK,'K'),electrons=1)
 class Reactor(PlasmaReactor):
-    def _declared_entry_kinetics(self,library,index):return law
+    def _declared_entry(self,library,index):return Entry(index=index,data=law)
     def check_wall_support(self,y,accepted=True):
         self.checked.append((self.t,float(y[-1])/EVK))
         return super().check_wall_support(y,accepted)
@@ -182,7 +184,7 @@ def build_ep_cap_crossing():
     ap=Species(label='Ar+').from_adjacency_list('multiplicity 2\n1 Ar u1 p3 c+1')
     ar.thermo,ap.thermo=_thermo(0.),_thermo(15.76)
     reaction=LibraryReaction(reactants=[e,ar],products=[ar,e],reversible=False,
-        library='EN-test',kinetics=law)
+        library='EN-test',kinetics=law,entry=Entry(index=1,data=law))
     r=Reactor((298.15,'K'),(5*101325/760,'Pa'),{e:1e-6,ar:1.-2e-6,ap:1e-6},
         (.5*EVK,'K'),diffusion_length=(.02,'m'),
         ion_reduced_mobility=(1.535e-4,'m^2/(V*s)'),thermo_source_assertions={'Ar+': 'ion'},

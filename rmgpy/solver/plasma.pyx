@@ -2715,12 +2715,12 @@ cdef class PlasmaReactor(ReactionSystem):
         # A private Te the solve may move. The caller's quantity is never written through.
         self.Te = Quantity((self.te_initial, 'K'))
 
-    def _declared_entry_kinetics(self, str library, int index):
-        """The kinetics object of entry ``index`` of the loaded reaction library
-        ``library``: what a declared ``'<library>:<index>'`` key names. Library reactions
-        in a model keep their library's name but NOT their entry index (the model
-        renumbers reactions), so a declaration is matched to a model reaction through the
-        entry's kinetics."""
+    def _declared_entry(self, str library, int index):
+        """Resolve a declared library/index key to its entry, independently of kinetics.
+
+        Model reaction indices are renumbered; LibraryReaction.entry retains the
+        source entry index even when its kinetics are copied or replaced.
+        """
         from rmgpy.data.rmg import get_db
         try:
             kinetics_db = get_db('kinetics')
@@ -2732,10 +2732,10 @@ cdef class PlasmaReactor(ReactionSystem):
                 "electron_energy_balance['electron_energies'] names {0!r}, but no entry {1} of "
                 "a loaded reaction library {2!r} exists. ({3})".format(
                     '{0}:{1}'.format(library, index), index, library, self._identity()))
-        return lib.entries[index].data
+        return lib.entries[index]
 
     def _resolve_energy_balance(self, list core_species, list core_reactions, list edge_reactions,
-                                list core_reactions_model):
+                                list core_reactions_model, list edge_reactions_model):
         """
         Build the per-reaction energy bookkeeping once the reaction set and its packed
         indices exist.
@@ -2757,17 +2757,37 @@ cdef class PlasmaReactor(ReactionSystem):
         keys = [None] * self.num_core_reactions
         refresh = []
         tg = self.T.value_si
-        # Declared key -> kinetics signature, resolved against the loaded libraries.
-        by_signature = {}
-        for (library, index) in self.energy_declared:
-            sig = (library, repr(self._declared_entry_kinetics(library, index)))
-            if sig in by_signature:
+        # Match library entry provenance, never a kinetics representation: distinct
+        # entries may legitimately use the very same evaluated coefficient.
+        by_entry = {}
+        for library, index in self.energy_declared:
+            entry = self._declared_entry(library, index)
+            identity = (library, entry.index)
+            if identity in by_entry:
                 raise PlasmaStateError(
-                    "electron_energy_balance['electron_energies'] keys {0!r} and {1!r} name "
-                    "entries with identical kinetics, which cannot be told apart. "
-                    "({2})".format(by_signature[sig], (library, index), self._identity()))
-            by_signature[sig] = (library, index)
-        used = set()
+                    "electron_energy_balance['electron_energies'] keys {0!r} and {1!r} "
+                    "resolve to the same reaction entry. ({2})".format(
+                        by_entry[identity], (library, index), self._identity()))
+            by_entry[identity] = (library, index)
+        matched = set()
+        bindings = {}
+        for model_rxn in itertools.chain(core_reactions_model, edge_reactions_model):
+            identity = (getattr(model_rxn, 'library', None),
+                        getattr(getattr(model_rxn, 'entry', None), 'index', None))
+            key = by_entry.get(identity)
+            if key is None:
+                continue
+            if key in matched:
+                raise PlasmaStateError(
+                    "electron_energy_balance['electron_energies'][{0!r}] matches more than one "
+                    "model reaction. ({1})".format('{0}:{1}'.format(*key), self._identity()))
+            matched.add(key)
+            bindings[id(model_rxn)] = key
+        unmatched = set(self.energy_declared) - matched
+        if unmatched:
+            raise PlasmaStateError(
+                "electron_energy_balance['electron_energies'] keys {0!r} match no model "
+                "reaction. ({1})".format(sorted(unmatched), self._identity()))
         missing = []
         for rxn in itertools.chain(core_reactions, edge_reactions):
             j = self.reaction_index[rxn]
@@ -2797,17 +2817,11 @@ cdef class PlasmaReactor(ReactionSystem):
                     dh += sign * h
             thr_thermo[j] = dh
             model_rxn = core_reactions_model[j]
-            sig = (getattr(model_rxn, 'library', None), repr(model_rxn.kinetics))
-            key = by_signature.get(sig)
+            key = bindings.get(id(model_rxn))
             if key is None:
                 missing.append('{0!s} (library {1!r}; thermo dH = {2:.4f} eV)'.format(
-                    model_rxn, sig[0], dh / (constants.Na * constants.e)))
+                    model_rxn, getattr(model_rxn, 'library', None), dh / (constants.Na * constants.e)))
                 continue
-            if key in used:
-                raise PlasmaStateError(
-                    "electron_energy_balance['electron_energies'][{0!r}] matches more than one "
-                    "core reaction. ({1})".format('{0}:{1}'.format(*key), self._identity()))
-            used.add(key)
             keys[j] = '{0}:{1}'.format(*key)
             thr[j] = self.energy_declared[key]
         if missing:
@@ -5485,7 +5499,7 @@ cdef class PlasmaReactor(ReactionSystem):
                 self._resolve_eedf_energy_balance(core_species, core_reactions, edge_reactions)
             else:
                 self._resolve_energy_balance(core_species, core_reactions, edge_reactions,
-                                             core_reactions_model)
+                                             core_reactions_model, edge_reactions_model)
 
         # Make the algebraic charge row commensurate with the differential rows,
         # now that the rate coefficients exist and the Jacobian can be evaluated.

@@ -61,6 +61,7 @@ import pytest
 from scipy.optimize import brentq
 
 import rmgpy.constants as constants
+from rmgpy.data.base import Entry
 from rmgpy.data.kinetics.library import LibraryReaction
 from rmgpy.exceptions import PlasmaStateError
 from rmgpy.kinetics import Arrhenius, TwoTemperaturePlasma
@@ -865,10 +866,10 @@ LL_AR_ELASTIC = {'A': (2.336e-14, 'm^3/s'), 'n': 1.609, 'b': 0.0618, 'c': -0.117
 class _ToyReactor(PlasmaReactor):
     toy_entries = {}
 
-    def _declared_entry_kinetics(self, library, index):
+    def _declared_entry(self, library, index):
         if library != 'Toy' or index not in self.toy_entries:
             raise PlasmaStateError('no entry {0}:{1}'.format(library, index))
-        return self.toy_entries[index]
+        return Entry(index=index, data=self.toy_entries[index])
 
 
 def test_two_bath_energy_balance_deck_reaches_steady_state_on_blanc_transport():
@@ -883,7 +884,7 @@ def test_two_bath_energy_balance_deck_reaches_steady_state_on_blanc_transport():
                                T0=(1.0, 'K'))
     _ToyReactor.toy_entries = {1: kin}
     rxn = LibraryReaction(reactants=[e, ar], products=[arp, e, e], reversible=False,
-                          kinetics=kin, library='Toy')
+                          kinetics=kin, library='Toy', entry=Entry(index=1, data=kin))
     energy = {'absorbed_power': (0.5, 'W'), 'chamber_volume': (np.pi * RADIUS ** 2 * LENGTH, 'm^3'),
               'sheath': 'floating_wall', 'electron_energies': {'Toy:1': (E_IZ_EV, 'eV')},
               'elastic_collisions': {
