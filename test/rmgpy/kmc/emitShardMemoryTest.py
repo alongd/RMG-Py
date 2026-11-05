@@ -367,7 +367,33 @@ def test_real_certification_prepared_once_is_every_whole_artifact_shards(
     monkeypatch.setattr(emit, "database_content_sha256", lambda path: "h" * 64)
     monkeypatch.setattr(emit.Emitter, "run_record", digest_row)
     whole = _shards(artifact, roster, tmp_path, 2, "whole")
-    assert _prepared_shards(artifact, roster, tmp_path, 2) == whole
+    prepared = _prepared_shards(artifact, roster, tmp_path, 2)
+    # prepared shards own whole reference-case keys (I-304), so they assign
+    # other records than sorted(ids)[k::n]: the rows are compared per record
+    assert by_record(prepared) == by_record(whole)
+    manifest = json.loads((tmp_path / "prepared2" / emit_prepare.MANIFEST).read_text())
+    plan = manifest["assignment"]
+    assert plan["units"] < len(manifest["artifact_ids"]), "no two records share a key here"
     heads = [json.loads(text.splitlines()[0]) for text in whole]
     # the compile's real certification refuses records here: republishing is exercised
     assert any(a != s for h in heads for a, s in zip(h["assigned"], h["partition"]["sources"]))
+
+
+def by_record(texts):
+    """(the headers without their shard's chunk and assignment, every source
+    id assigned once, each record's row by id): the rows of a shard set
+    independent of which shard emitted each record."""
+    heads, rows, sources = set(), {}, []
+    for text in texts:
+        lines = [json.loads(line) for line in text.decode().splitlines() if line.strip()]
+        head = dict(lines[0])
+        sources += head["partition"]["sources"]
+        for key in ("chunk", "assigned"):
+            head.pop(key)
+        head["partition"] = dict(head["partition"], sources=None)
+        heads.add(_canon(head))
+        for row in lines[1:]:
+            assert row["event_id"] not in rows
+            rows[row["event_id"]] = _canon(row)
+    assert len(heads) == 1 and len(sources) == len(set(sources))
+    return heads.pop(), sorted(sources), rows
