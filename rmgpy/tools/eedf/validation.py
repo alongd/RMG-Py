@@ -57,6 +57,12 @@ def _rows_agree(a, b, tolerance):
     if set(qa) != set(qb):
         return False
     for key in qa:
+        # LoKIDriver separately refuses nonconverged power balances. Relative
+        # error *of* that near-zero residual is not an EEDF branch observable:
+        # roundoff in two converged solves can have an arbitrarily large ratio.
+        # Keep every physical power term (and the absolute balance) below.
+        if key == 'power.relative_balance_percent':
+            continue
         absolute = tolerance['atol']
         if key in ('k_ine', 'k_sup') and 'rate_floors' in a:
             absolute = np.maximum(absolute, np.maximum(a['rate_floors'], b['rate_floors']))
