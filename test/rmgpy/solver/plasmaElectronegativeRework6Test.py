@@ -254,6 +254,7 @@ def reinitialise(r, species, reactions):
             and sp.get_net_charge() == 0})
         for i, reaction in enumerate(reactions):
             reaction.entry = Entry(index=i+1, data=reaction.kinetics)
+            reaction.source_identity = (reaction.library, i+1)
             config['electron_energies'].setdefault('EN-test:'+str(i+1), (0., 'eV'))
         FixtureEnergyReactor.entries = {i+1: rx.kinetics for i, rx in enumerate(reactions)}
         r._configure_energy_balance(config)

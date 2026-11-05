@@ -152,7 +152,7 @@ def _energy_decl(power_w=0.5, elastic=True, volume=CHAMBER_VOLUME, energies=None
 def _toy(index, reactants, products, kinetics, entries):
     entries[index] = kinetics
     return LibraryReaction(reactants=reactants, products=products, reversible=False,
-                           kinetics=kinetics, library='Toy', entry=Entry(index=index, data=kinetics))
+                           kinetics=kinetics, library='Toy', entry=Entry(index=index, data=kinetics), source_identity=('Toy', index))
 
 
 def _build(te_ev=1.0, x_ion=1.0e-6, power_w=0.5, energy=True, metastable=False,
@@ -1077,8 +1077,13 @@ def test_energy_binding_survives_model_renumbering_and_copied_kinetics():
     for index, reaction in enumerate(reactions, 100):
         reaction.index = index
         reaction.kinetics = copy.deepcopy(reaction.kinetics)
+        reaction.entry.index = index
+        reaction.entry.long_desc = 'Originally from reaction library: Archived\nOriginal reaction library entry index: 99'
+        reaction.library = 'Mutable model label'
     r.initialize_model(core, reactions, [], [])
     assert r.energy_reaction_keys == ['Toy:1', 'Toy:2', 'Toy:3']
+    np.testing.assert_allclose(r.energy_threshold / EV_J_PER_MOL,
+                               [E_IZ_EV, E_EX_EV, -E_EX_EV], rtol=CONST_RTOL)
 
 
 def test_distinct_entries_can_share_one_kinetics_object():
@@ -1090,7 +1095,7 @@ def test_distinct_entries_can_share_one_kinetics_object():
     assert r.energy_threshold[1] > 0. and r.energy_threshold[2] < 0.
 
 
-def _seed_restart(tmp_path, core, reactions, edge=False, legacy=False):
+def _seed_restart(tmp_path, core, reactions, edge=False, legacy=False, external_library_labels=None):
     """Use the production disk seed writer and reader, with reordered model entries."""
     from types import SimpleNamespace
     from rmgpy.data.kinetics.database import KineticsDatabase
@@ -1100,7 +1105,8 @@ def _seed_restart(tmp_path, core, reactions, edge=False, legacy=False):
 
     job = RMG(output_directory=str(tmp_path))
     job.reaction_model = CoreEdgeReactionModel()
-    job.database = SimpleNamespace(kinetics=SimpleNamespace(external_library_labels={}))
+    job.database = SimpleNamespace(kinetics=SimpleNamespace(
+        external_library_labels=external_library_labels or {}))
     job.save_seed_to_database = False
     job.save_seed_modulus = -1
     job.reaction_model.core.species = [] if edge else core
@@ -1134,6 +1140,140 @@ def _seed_restart(tmp_path, core, reactions, edge=False, legacy=False):
     return restored, seed_path
 
 
+@pytest.mark.parametrize('case', [
+    'reordered_textual_missing', 'external_missing',
+    'ordinary_structured', 'ordinary_textual', 'ordinary_plain',
+    'core_three_generations', 'edge_three_generations',
+    'same_name_source_and_seed', 'shared_index', 'excitation_superelastic',
+])
+def test_library_identity_energy_matrix(tmp_path, monkeypatch, case):
+    """Disk/admission probes from the restart and ordinary-provenance reviews.
+
+    Source energies are fixed by physical direction, independently of the loaded
+    entry numbering. Use the real declaration resolver, including same-name
+    deduplication and the additional source entry absent from its seed.
+    """
+    from types import SimpleNamespace
+    from rmgpy.data.kinetics.database import KineticsDatabase
+    from rmgpy.data.kinetics.library import KineticsLibrary
+    from rmgpy.data.kinetics.common import format_external_library_provenance
+    from rmgpy.rmg.model import CoreEdgeReactionModel
+
+    r, core, original = _build(metastable=True, recombination=case == 'same_name_source_and_seed')
+    energies = np.array([E_IZ_EV, E_EX_EV, -E_EX_EV] +
+                        ([0.] if len(original) == 4 else [])) * EV_J_PER_MOL
+    db = KineticsDatabase()
+    monkeypatch.setattr(rmg_data_module, 'database', SimpleNamespace(kinetics=db))
+    monkeypatch.setattr(ToyLibraryReactor, '_declared_entry', PlasmaReactor._declared_entry)
+
+    def disk_library(label, items, descriptions=None):
+        library = KineticsLibrary(label=label, auto_generated=False)
+        library.entries = {
+            i: Entry(index=i, item=rxn, data=rxn.kinetics,
+                     long_desc=descriptions[i] if descriptions else '')
+            for i, rxn in enumerate(items)
+        }
+        directory = tmp_path / label
+        directory.mkdir()
+        # Accepted database dictionary labels cannot end with a charge suffix.
+        core[2].label = 'Arp'
+        for rxn in items:
+            rxn.duplicate = True
+        library.save(str(directory / 'reactions.py'))
+        core[2].label = 'Ar+'
+        return db.resolve_library(label, source=str(directory))
+
+    def admit(reactions):
+        model = CoreEdgeReactionModel()
+        for reaction in reactions:
+            model.make_new_reaction(reaction, generate_thermo=False,
+                                    generate_kinetics=False, perform_cut=False)
+        for reaction in model.new_reaction_list:
+            replacements = {loaded: next(s for s in core if s.is_isomorphic(loaded))
+                            for loaded in reaction.reactants + reaction.products}
+            if reaction.pairs is not None:
+                reaction.pairs = [(replacements[a], replacements[b]) for a, b in reaction.pairs]
+            for side in (reaction.reactants, reaction.products):
+                side[:] = [replacements[loaded] for loaded in side]
+        return model.new_reaction_list
+
+    descriptions = None
+    if case in ('ordinary_structured', 'ordinary_textual'):
+        disk_library('Archived', [original[1], original[0], original[2]])
+        record = (format_external_library_provenance('Archived', str(tmp_path / 'Archived'))
+                  if case == 'ordinary_structured' else 'Originally from reaction library: Archived')
+        descriptions = [record + '\nOriginal reaction library entry index: ' + str(i)
+                        for i in (1, 0, 2)]
+    if case == 'shared_index':
+        names = ['Toy', 'Second', 'Third']
+        reactions = [disk_library(name, [rxn]).get_library_reactions()[0]
+                     for name, rxn in zip(names, original)]
+        r.energy_declared = {(name, 0): energy for name, energy in zip(names, energies)}
+    else:
+        source = disk_library('Toy', original, descriptions)
+        reactions = source.get_library_reactions()
+        r.energy_declared = {('Toy', i): energy for i, energy in enumerate(energies)}
+    r.electron_energy_balance['electron_energies'] = {
+        '{0}:{1}'.format(*key): (value, 'J/mol')
+        for key, value in r.energy_declared.items()
+    }
+
+    if case.startswith('ordinary_'):
+        admitted = admit(reactions)
+        assert len(admitted) == 3
+        r.initialize_model(core, admitted, [], [])
+        np.testing.assert_allclose(r.energy_threshold, energies)
+        # Seed output must use the attached pair even if mutable model metadata
+        # and historical descriptions subsequently disagree with that decision.
+        for reaction in admitted:
+            reaction.library = ''
+            reaction.entry.long_desc = 'Originally from reaction library: Wrong\nOriginal reaction library entry index: 99'
+        reseeded, _ = _seed_restart(tmp_path, core, admitted)
+        r.initialize_model(core, reseeded, [], [])
+        np.testing.assert_allclose(r.energy_threshold, energies)
+        return
+
+    reactions = [reactions[1], reactions[0], reactions[2]]
+    expected = energies[[1, 0, 2]]
+    generations = 3 if case in ('core_three_generations', 'edge_three_generations') else 1
+    missing = case in ('reordered_textual_missing', 'external_missing')
+    for generation in range(generations):
+        directory = tmp_path / str(generation)
+        directory.mkdir()
+        reactions, seed_path = _seed_restart(
+            directory, core, reactions, edge=case == 'edge_three_generations',
+            legacy=('external' if case == 'external_missing' else 'textual') if missing else False,
+            external_library_labels=db.external_library_labels)
+        seed = KineticsLibrary(label='seed', auto_generated=True)
+        seed.load(str(seed_path), db.local_context, db.global_context)
+        db.libraries['seed'] = seed
+        if case == 'same_name_source_and_seed':
+            reactions += source.get_library_reactions()
+            expected = energies[[1, 0, 2, 3]]
+        reactions = admit(reactions)
+        assert len(reactions) == len(expected)
+        if missing:
+            with pytest.raises(PlasmaStateError, match='missing source entry index provenance'):
+                r.initialize_model(core, reactions, [], [])
+            directory = tmp_path / 'reseed'
+            directory.mkdir()
+            reactions, _ = _seed_restart(directory, core, reactions)
+            with pytest.raises(PlasmaStateError, match='missing source entry index provenance'):
+                r.initialize_model(core, reactions, [], [])
+            return
+        r.initialize_model(core, reactions, [], [])
+        np.testing.assert_allclose(r.energy_threshold, expected)
+        # The negative superelastic direction is separately declared throughout.
+        assert r.energy_threshold[0] > 0 > r.energy_threshold[2]
+        # Copy, pickle, edge admission and promotion must carry the same identities.
+        r, core, reactions = pickle.loads(pickle.dumps((r, core, reactions)))
+        reactions = admit([reaction.copy() for reaction in reactions])
+        r.initialize_model(core, reactions[:2], [], reactions[2:])
+        np.testing.assert_allclose(r.energy_threshold[:2], expected[:2])
+        r.initialize_model(core, reactions, [], [])
+        np.testing.assert_allclose(r.energy_threshold, expected)
+
+
 @pytest.mark.parametrize("edge", [False, True])
 @pytest.mark.parametrize("source_indices", [(0, 1, 2), (1, 2, 3), (16, 23, 91)])
 @pytest.mark.parametrize("rate_rule_comment", [False, True])
@@ -1145,10 +1285,11 @@ def test_energy_binding_survives_reordered_seed_restart(tmp_path, edge, source_i
     ToyLibraryReactor.toy_entries = dict(zip(source_indices, old_entries.values()))
     for reaction, index in zip(original, source_indices):
         reaction.entry.index = index
+        reaction.source_identity = ('Toy', index)
         if rate_rule_comment:
             reaction.kinetics.comment = "Estimated using rate rule [X]\nfamily: H_Abstraction"
     reordered = [original[1], original[0], original[2]]
-    for generation in range(2):
+    for generation in range(3):
         directory = tmp_path / str(generation)
         directory.mkdir()
         restored, _ = _seed_restart(directory, core, reordered, edge=edge)
@@ -1175,6 +1316,7 @@ def test_energy_binding_refuses_legacy_seed_without_source_index(tmp_path, edge,
     r.energy_declared = {('Toy', index): energy for index, energy in enumerate(expected)}
     for index, reaction in enumerate(reactions):
         reaction.entry.index = index
+        reaction.source_identity = ('Toy', index)
     restored, _ = _seed_restart(tmp_path, core, [reactions[1], reactions[0], reactions[2]],
                                edge=edge, legacy=provenance)
     assert [reaction.library for reaction in restored] == ['Toy'] * 3

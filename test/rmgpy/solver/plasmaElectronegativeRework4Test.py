@@ -185,6 +185,7 @@ def test_quadratic_trace_mass_action_is_exact(arm):
     r._configure_energy_balance(copy.deepcopy(r.electron_energy_balance))
     FixtureEnergyReactor.entries[3]=rx.kinetics
     rx.entry=Entry(index=3, data=rx.kinetics)
+    rx.source_identity = (rx.library, 3)
     r.initialize_model(sp+[n,n2],rxns+[rx],[],[])
     y=r.y.copy(); y[5]=1.e-30
     v=r.compute_volume(y)

@@ -2096,18 +2096,19 @@ class RMG(util.Subject):
                     data=reaction.kinetics,
                 )
 
-                if hasattr(reaction, "library") and reaction.library:
+                if getattr(reaction, 'source_identity', None) is not None or getattr(reaction, 'library', None):
+                    identity = getattr(reaction, 'source_identity', None)
+                    source_library, source_index = identity if identity is not None else (reaction.library, None)
                     library_source = None
                     for external_path, library_label in self.database.kinetics.external_library_labels.items():
-                        if library_label == reaction.library:
+                        if library_label == source_library:
                             library_source = external_path
                             break
-                    entry.long_desc = "Originally from reaction library: " + reaction.library + "\n"
-                    source_index = reaction.get_source_entry_index() if isinstance(reaction, LibraryReaction) else None
+                    entry.long_desc = "Originally from reaction library: " + source_library + "\n"
                     if source_index is not None:
                         entry.long_desc += "Original reaction library entry index: {0}\n".format(source_index)
                     if library_source:
-                        entry.long_desc += format_external_library_provenance(reaction.library, library_source) + "\n"
+                        entry.long_desc += format_external_library_provenance(source_library, library_source) + "\n"
                     entry.long_desc += reaction.kinetics.comment
                 else:
                     entry.long_desc = reaction.kinetics.comment
@@ -2126,17 +2127,18 @@ class RMG(util.Subject):
                     data=reaction.kinetics,
                 )
                 try:
+                    identity = getattr(reaction, 'source_identity', None)
+                    source_library, source_index = identity if identity is not None else (reaction.library, None)
                     library_source = None
                     for external_path, library_label in self.database.kinetics.external_library_labels.items():
-                        if library_label == reaction.library:
+                        if library_label == source_library:
                             library_source = external_path
                             break
-                    entry.long_desc = "Originally from reaction library: " + reaction.library + "\n"
-                    source_index = reaction.get_source_entry_index() if isinstance(reaction, LibraryReaction) else None
+                    entry.long_desc = "Originally from reaction library: " + source_library + "\n"
                     if source_index is not None:
                         entry.long_desc += "Original reaction library entry index: {0}\n".format(source_index)
                     if library_source:
-                        entry.long_desc += format_external_library_provenance(reaction.library, library_source) + "\n"
+                        entry.long_desc += format_external_library_provenance(source_library, library_source) + "\n"
                     entry.long_desc += reaction.kinetics.comment
                 except AttributeError:
                     entry.long_desc = reaction.kinetics.comment

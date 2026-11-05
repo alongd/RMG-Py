@@ -38,6 +38,17 @@ import plasmaEEDFRedTest as red
 from plasmaEEDFStateIsolationTest import _database_view, _configured_view
 
 
+def test_historical_provenance_schema_omits_only_unknown_identity():
+    from rmgpy.data.base import Entry
+    from rmgpy.kinetics import Arrhenius
+    from rmgpy.reaction import Reaction
+
+    entry = Entry(index=7, item=Reaction(reactants=[], products=[]), data=Arrhenius())
+    assert 'source_identity' not in red._loader_provenance(entry, 'seed')
+    entry.long_desc = 'Originally from reaction library: Toy\nOriginal reaction library entry index: 23'
+    assert red._loader_provenance(entry, 'seed')['source_identity'] == ['Toy', 23]
+
+
 def _private_library(view, name):
     library = view / 'kinetics/libraries' / name
     if library.is_symlink():

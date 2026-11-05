@@ -175,6 +175,7 @@ def test_reactor_refuses_bad_branch_deck(tmp_path, branch_fixture, problem):
             reactions.append(copy.deepcopy(reactions[0]))
         elif problem == 'source':
             reactions[0].entry = Entry(index=9999)
+            reactions[0].source_identity = (reactions[0].library, 9999)
         elif problem == 'product':
             reactions[0].products[1].molecule[0].electronic_state = '3P1'
         elif problem == 'reversible':
@@ -200,7 +201,7 @@ def test_unweighted_duplicate_preserves_error(tmp_path):
         return LibraryReaction(reactants=[core[0], core[1]], products=[core[2], core[0], core[0]],
                                reversible=False, kinetics=EEDFChannel(
                                    process='e + Ar -> e + e + Ar+', collision_set='fixture'),
-                               library='Toy', entry=Entry(index=1))
+                               library='Toy', entry=Entry(index=1), source_identity=('Toy', 1))
     with pytest.raises(PlasmaStateError, match='more than one EEDF reaction maps table channel 0 side.*double-count'):
         build_reactor(tmp_path, composition=False, extra_reaction=duplicate)
 

@@ -884,7 +884,7 @@ def test_two_bath_energy_balance_deck_reaches_steady_state_on_blanc_transport():
                                T0=(1.0, 'K'))
     _ToyReactor.toy_entries = {1: kin}
     rxn = LibraryReaction(reactants=[e, ar], products=[arp, e, e], reversible=False,
-                          kinetics=kin, library='Toy', entry=Entry(index=1, data=kin))
+                          kinetics=kin, library='Toy', entry=Entry(index=1, data=kin), source_identity=('Toy', 1))
     energy = {'absorbed_power': (0.5, 'W'), 'chamber_volume': (np.pi * RADIUS ** 2 * LENGTH, 'm^3'),
               'sheath': 'floating_wall', 'electron_energies': {'Toy:1': (E_IZ_EV, 'eV')},
               'elastic_collisions': {

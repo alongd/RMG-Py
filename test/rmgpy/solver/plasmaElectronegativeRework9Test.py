@@ -57,7 +57,7 @@ def declared_model(threshold=0., exponent=0.):
         Ea_g=(0., 'J/mol'), Ea_e=(0., 'J/mol'), T0=(seed.Te.value_si, 'K'), electrons=1)
     reactions.append(LibraryReaction(reactants=[species[0], species[1]],
         products=[species[2], species[0], species[0]], reversible=False,
-        library='EN-test', kinetics=law, entry=Entry(index=3, data=law)))
+        library='EN-test', kinetics=law, entry=Entry(index=3, data=law), source_identity=('EN-test', 3)))
     config = copy.deepcopy(seed.electron_energy_balance)
     config['electron_energies']['EN-test:3'] = (threshold, 'J/mol')
     FixtureEnergyReactor.entries = {i+1: reaction.kinetics for i, reaction in enumerate(reactions)}

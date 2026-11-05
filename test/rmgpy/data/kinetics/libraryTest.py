@@ -47,9 +47,11 @@ from rmgpy.kinetics import Arrhenius, Troe, PDepArrhenius
 from rmgpy.kinetics.model import PDepKineticsModel
 
 
-@pytest.mark.parametrize('provenance', ['ordinary', 'textual', 'inline_textual', 'external'])
+@pytest.mark.parametrize('provenance', ['ordinary', 'textual', 'inline_textual', 'external',
+                                       'both', 'textual_rate_rule', 'external_rate_rule'])
 @pytest.mark.parametrize('source_index', [None, 0, 23])
-def test_source_entry_index_provenance(tmp_path, provenance, source_index):
+@pytest.mark.parametrize('auto_generated', [False, True])
+def test_source_entry_index_provenance(tmp_path, provenance, source_index, auto_generated):
     from rmgpy.data.base import Entry
     from rmgpy.data.kinetics.common import format_external_library_provenance
 
@@ -59,11 +61,41 @@ def test_source_entry_index_provenance(tmp_path, provenance, source_index):
         'inline_textual': 'Seed provenance: Originally from reaction library: Toy',
         'external': format_external_library_provenance('Toy', str(tmp_path)),
     }
+    descriptions['both'] = descriptions['textual'] + '\n' + descriptions['external']
+    for shape in ('textual', 'external'):
+        descriptions[shape + '_rate_rule'] = descriptions[shape] + '\nEstimated using rate rule [X]\nfamily: H_Abstraction'
     description = descriptions[provenance]
     if source_index is not None:
         description += '\nOriginal reaction library entry index: {0}'.format(source_index)
-    reaction = LibraryReaction(library='Toy', entry=Entry(index=7, long_desc=description))
-    assert reaction.get_source_entry_index() == (7 if provenance == 'ordinary' else source_index)
+    from rmgpy.reaction import Reaction
+    library = KineticsLibrary(label='Ordinary', auto_generated=auto_generated)
+    library.entries = {7: Entry(index=7, item=Reaction(reactants=[], products=[]),
+                               data=Arrhenius(), long_desc=description)}
+    reaction = library.get_library_reactions()[0]
+    expected = (('Toy' if provenance != 'inline_textual' else 'Seed provenance: Toy', source_index)
+                if auto_generated and provenance != 'ordinary' and source_index is not None else None)
+    if not auto_generated:
+        expected = ('Ordinary', 7)
+    assert reaction.source_identity == expected
+    assert reaction.get_source_entry_index() == (None if expected is None else expected[1])
+    # The attached decision cannot drift when the entry or prose is edited later.
+    reaction.entry.index = 123
+    reaction.entry.long_desc = 'Originally from reaction library: Wrong\nOriginal reaction library entry index: 99'
+    assert reaction.source_identity == expected
+    assert reaction.get_source_entry_index() == (None if expected is None else expected[1])
+
+
+@pytest.mark.parametrize('indices', ['not-an-index', '0\nOriginal reaction library entry index: 23'])
+def test_loader_refuses_invalid_source_indices(indices):
+    from rmgpy.data.base import Entry
+    from rmgpy.reaction import Reaction
+
+    library = KineticsLibrary(label='seed', auto_generated=True)
+    library.entries = {7: Entry(
+        index=7, item=Reaction(reactants=[], products=[]), data=Arrhenius(),
+        long_desc='Originally from reaction library: Toy\nOriginal reaction library entry index: ' + indices)}
+    with pytest.raises(DatabaseError, match='source entry ind'):
+        library.get_library_reactions()
 
 
 class TestLibrary:

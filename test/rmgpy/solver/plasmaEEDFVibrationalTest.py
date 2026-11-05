@@ -101,7 +101,7 @@ def molecular_model(tmp_path, small_ladder, *, policy=None, wrong_endpoint=False
             marker = EEDFChannel(process=pair['description'], collision_set='synthetic-vibrational', side='ine')
             reaction = LibraryReaction(reactants=[core[0], vib[i]], products=[core[0], vib[min(j, K)]],
                                        kinetics=marker, reversible=False, library='SyntheticVibrational',
-                                       entry=Entry(index=len(reactions) + 1))
+                                       entry=Entry(index=len(reactions) + 1), source_identity=('SyntheticVibrational', len(reactions) + 1))
             reactions.append(reaction)
             identity = {'library': reaction.library, 'index': reaction.entry.index, 'repr': repr(marker)}
             if j <= K:
@@ -109,7 +109,7 @@ def molecular_model(tmp_path, small_ladder, *, policy=None, wrong_endpoint=False
                                           kinetics=EEDFChannel(process=pair['description'],
                                                                collision_set='synthetic-vibrational', side='sup'),
                                           reversible=False, library='SyntheticVibrational',
-                                          entry=Entry(index=len(reactions) + 1))
+                                          entry=Entry(index=len(reactions) + 1), source_identity=('SyntheticVibrational', len(reactions) + 1))
                 reactions.append(reverse)
         channels.append({'description': pair['description'], 'kind': 'vibrational',
                          'classification': 'A' if identity else 'B', 'reaction': identity,

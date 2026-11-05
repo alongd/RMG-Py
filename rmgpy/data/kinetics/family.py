@@ -703,6 +703,8 @@ _COPIED_BY_REFERENCE = {
     'rank': 'an int or None',
     'family': 'a str label',
     'library': 'a str label',
+    'source_identity': 'an immutable (library label, source entry index) tuple or None',
+    'library_source': 'a str path recording an external source library',
     'estimator': 'a str',
     'entry': 'the shared database Entry, deliberately not copied: it is the object the '
              'quarantine gate reads authorship from, and a clone would answer for an '

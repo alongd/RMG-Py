@@ -184,7 +184,7 @@ def build_ep_cap_crossing():
     ap=Species(label='Ar+').from_adjacency_list('multiplicity 2\n1 Ar u1 p3 c+1')
     ar.thermo,ap.thermo=_thermo(0.),_thermo(15.76)
     reaction=LibraryReaction(reactants=[e,ar],products=[ar,e],reversible=False,
-        library='EN-test',kinetics=law,entry=Entry(index=1,data=law))
+        library='EN-test',kinetics=law,entry=Entry(index=1,data=law), source_identity=('EN-test', 1))
     r=Reactor((298.15,'K'),(5*101325/760,'Pa'),{e:1e-6,ar:1.-2e-6,ap:1e-6},
         (.5*EVK,'K'),diffusion_length=(.02,'m'),
         ion_reduced_mobility=(1.535e-4,'m^2/(V*s)'),thermo_source_assertions={'Ar+': 'ion'},

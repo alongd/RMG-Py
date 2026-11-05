@@ -1468,7 +1468,7 @@
     "rmgpy/data/kinetics/family.py:TemplateReaction.__repr__": {
       "file": "rmgpy/data/kinetics/family.py",
       "function": "TemplateReaction.__repr__",
-      "line": 930,
+      "line": 932,
       "signature": "45260293c6a6c37e05b0b0a199f862e12050d97617b6f209eddc3fe884d59b75",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/kinetics/family.py:TemplateReaction.__repr__]",
@@ -1486,7 +1486,7 @@
     "rmgpy/data/kinetics/family.py:KineticsFamily.save_training_reactions": {
       "file": "rmgpy/data/kinetics/family.py",
       "function": "KineticsFamily.save_training_reactions",
-      "line": 1801,
+      "line": 1803,
       "signature": "94bd869fdec176cb73f3e6b7d52c12affa7209e549fbdf85461dbf189165e87f",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/kinetics/family.py:KineticsFamily.save_training_reactions]",
@@ -1505,7 +1505,7 @@
     "rmgpy/data/kinetics/family.py:KineticsFamily.save_depository": {
       "file": "rmgpy/data/kinetics/family.py",
       "function": "KineticsFamily.save_depository",
-      "line": 1931,
+      "line": 1933,
       "signature": "fca12ec4f14d27534265fb8f2f68e59ffae068319c14e8e3d1483e7a1fae3b46",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/kinetics/family.py:KineticsFamily.save_depository]",
@@ -1523,7 +1523,7 @@
     "rmgpy/data/kinetics/library.py:KineticsLibrary.load": {
       "file": "rmgpy/data/kinetics/library.py",
       "function": "KineticsLibrary.load",
-      "line": 652,
+      "line": 650,
       "signature": "45f783ce1121662a6f25a8a255cdc0c7f589b1797f2c4bdf3a186dd287f68f91",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/kinetics/library.py:KineticsLibrary.load]",
@@ -1541,7 +1541,7 @@
     "rmgpy/data/kinetics/library.py:KineticsLibrary.save": {
       "file": "rmgpy/data/kinetics/library.py",
       "function": "KineticsLibrary.save",
-      "line": 862,
+      "line": 860,
       "signature": "00e0825800e3768771f3be5369ddcb1617b07c5e846f67673a1176b4d2b1493f",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/kinetics/library.py:KineticsLibrary.save]",
@@ -1559,7 +1559,7 @@
     "rmgpy/data/kinetics/library.py:KineticsLibrary.load_old": {
       "file": "rmgpy/data/kinetics/library.py",
       "function": "KineticsLibrary.load_old",
-      "line": 908,
+      "line": 906,
       "signature": "74d14e289688249e906a0a12a3a789443b285daea8bb40c9cabd87482d4c2439",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/kinetics/library.py:KineticsLibrary.load_old]",
@@ -1577,7 +1577,7 @@
     "rmgpy/data/kinetics/library.py:KineticsLibrary.save_old": {
       "file": "rmgpy/data/kinetics/library.py",
       "function": "KineticsLibrary.save_old",
-      "line": 968,
+      "line": 966,
       "signature": "6c2b60ef9657bd517f204346d893655ea4ee65a90e31d9aba8e012da1f18d93a",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/kinetics/library.py:KineticsLibrary.save_old]",
@@ -2365,7 +2365,7 @@
       "file": "rmgpy/rmg/main.py",
       "function": "RMG.make_seed_mech",
       "line": 2038,
-      "signature": "3cdb3c5f442716a70f851997b038e9cdab85b558732bd45c1cb63b93619464d1",
+      "signature": "a4c7dc39efc2ec6f565bbab15d36f2dd0430cbfde3e03ff8910c9b57d7ec8f79",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/rmg/main.py:RMG.make_seed_mech]",
       "manifold": {
@@ -2382,7 +2382,7 @@
     "rmgpy/rmg/main.py:RMG.generate_cantera_files_from_chemkin": {
       "file": "rmgpy/rmg/main.py",
       "function": "RMG.generate_cantera_files_from_chemkin",
-      "line": 2303,
+      "line": 2305,
       "signature": "bcbd9918de62fd816a64a504002e25e2826fe99767c3db6622724db2bbceffb2",
       "verdict": "N",
       "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/rmg/main.py:RMG.generate_cantera_files_from_chemkin]",
@@ -3955,7 +3955,7 @@
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/kinetics/library.py:KineticsLibrary.load_entry]",
       "file": "rmgpy/data/kinetics/library.py",
       "function": "KineticsLibrary.load_entry",
-      "line": 809,
+      "line": 807,
       "signature": "2ffb81967c7d67dfbcc9aa69b9afd88d1a85907b6e5ad48e48ec710972d0c160",
       "manifold": {
         "verdict": "carried",
@@ -4025,7 +4025,7 @@
     "rmgpy/solver/plasma.pyx:PlasmaReactor._compute_reference_reaction_data": {
       "file": "rmgpy/solver/plasma.pyx",
       "function": "PlasmaReactor._compute_reference_reaction_data",
-      "line": 7752,
+      "line": 7747,
       "signature": "4e16933925d7bb2f387b5e73d5b0e0e565eb8f80fa92124ccdeb788c3df50785",
       "verdict": "R",
       "reason": "Charged-reaction diagnostic equations use shared declarations when any participant is resolved and retain historical str(reaction) bytes for ground-only reactions. Thermo rebase classification: Reference-reaction names and equations include canonical v0 identity for declared participants; the reference energy calculation still uses its previously checked source.",
@@ -4047,7 +4047,7 @@
     "rmgpy/solver/plasma.pyx:PlasmaReactor._evaluate_electronegative_wall_regime": {
       "file": "rmgpy/solver/plasma.pyx",
       "function": "PlasmaReactor._evaluate_electronegative_wall_regime",
-      "line": 7882,
+      "line": 7877,
       "signature": "c0534dbafe3fd70cd2debb87c2f8284fbe156429631e29d4634048c0656d014e",
       "verdict": "R",
       "reason": "Wall destruction-channel equations and anion labels include declared v0 identifiers while gate computation and ground labels retain the existing code.",
@@ -4218,7 +4218,7 @@
     "rmgpy/data/kinetics/family.py:KineticsFamily.__repr__": {
       "file": "rmgpy/data/kinetics/family.py",
       "function": "KineticsFamily.__repr__",
-      "line": 1462,
+      "line": 1464,
       "signature": "f8bb84ba91f566a0fbc12b0be6833e2bcdbec18722a2f03c74bb6d9994a3e0e1",
       "reason": "Family diagnostic label.",
       "verdict": "E"
@@ -4226,7 +4226,7 @@
     "rmgpy/data/kinetics/family.py:KineticsFamily.save_groups": {
       "file": "rmgpy/data/kinetics/family.py",
       "function": "KineticsFamily.save_groups",
-      "line": 1938,
+      "line": 1940,
       "signature": "60eaecf0a05b7bd806906fa39c8327c602da6f149e8f661132636a72b50853f4",
       "reason": "Group-template labels and recipe output; not molecular species.",
       "verdict": "E"
@@ -4234,7 +4234,7 @@
     "rmgpy/data/kinetics/family.py:KineticsFamily.get_reaction_pairs": {
       "file": "rmgpy/data/kinetics/family.py",
       "function": "KineticsFamily.get_reaction_pairs",
-      "line": 3480,
+      "line": 3482,
       "signature": "9aec4638d252175008f97e873f4db7e85b0cdf4470fd1324172c348e676a53c7",
       "reason": "Internal pair matching, not exported names.",
       "verdict": "E"
@@ -4242,7 +4242,7 @@
     "rmgpy/data/kinetics/family.py:KineticsFamily.get_kinetics_from_depository": {
       "file": "rmgpy/data/kinetics/family.py",
       "function": "KineticsFamily.get_kinetics_from_depository",
-      "line": 3675,
+      "line": 3677,
       "signature": "745816d57175cccc5293d80502ff78febdd8fd426977944535b3ad0d3f38b90b",
       "reason": "Internal rate lookup; dictionary loading is separately audited.",
       "verdict": "E"
@@ -4250,7 +4250,7 @@
     "rmgpy/data/kinetics/family.py:KineticsFamily.get_reaction_template_labels": {
       "file": "rmgpy/data/kinetics/family.py",
       "function": "KineticsFamily.get_reaction_template_labels",
-      "line": 3864,
+      "line": 3866,
       "signature": "232b9ba4f3ab5ea85dfd649ad09a0e79494b0164d2f32db9f36c5438cc7493d6",
       "reason": "Group-template labels, not molecular species.",
       "verdict": "E"
@@ -4258,7 +4258,7 @@
     "rmgpy/data/kinetics/family.py:KineticsFamily.get_training_depository": {
       "file": "rmgpy/data/kinetics/family.py",
       "function": "KineticsFamily.get_training_depository",
-      "line": 4048,
+      "line": 4050,
       "signature": "fef6cf228bdb951da7c7d1926a46e869467e63fba97b140141ea1dbeffb0cb29",
       "reason": "Internal database object selection.",
       "verdict": "E"
@@ -4266,7 +4266,7 @@
     "rmgpy/data/kinetics/family.py:KineticsFamily.get_extension_edge": {
       "file": "rmgpy/data/kinetics/family.py",
       "function": "KineticsFamily.get_extension_edge",
-      "line": 4132,
+      "line": 4134,
       "signature": "0d252b079e086f29a679b4e51ac3314cf44b18a289ac01d597bbf7d87cbb7ebf",
       "reason": "Group pattern generation and diagnostic logs.",
       "verdict": "E"
@@ -4274,7 +4274,7 @@
     "rmgpy/data/kinetics/family.py:KineticsFamily.get_training_set": {
       "file": "rmgpy/data/kinetics/family.py",
       "function": "KineticsFamily.get_training_set",
-      "line": 5226,
+      "line": 5228,
       "signature": "8d017b4ac7fef456bc197cc62d6d4cecaa7a0b7b51fcc9245b39cfc5f9085bc9",
       "reason": "Internal reaction object selection; dictionary reads occur in audited depository loader.",
       "verdict": "E"
@@ -4282,7 +4282,7 @@
     "rmgpy/data/kinetics/family.py:KineticsFamily.get_label_fixed_mol": {
       "file": "rmgpy/data/kinetics/family.py",
       "function": "KineticsFamily.get_label_fixed_mol",
-      "line": 5236,
+      "line": 5238,
       "signature": "73c4309e081d52abd685271f3ecf6c5399c3fb81aa603ca7fabe91ad42563f82",
       "reason": "Internal labeled-atom remapping.",
       "verdict": "E"
@@ -4290,7 +4290,7 @@
     "rmgpy/data/kinetics/family.py:KineticsFamily.get_reactant_thermo": {
       "file": "rmgpy/data/kinetics/family.py",
       "function": "KineticsFamily.get_reactant_thermo",
-      "line": 5248,
+      "line": 5250,
       "signature": "176c46bcb563ed9db5af211e113519dbd3ecf21b47d779e4a0a48add80f5c8a9",
       "reason": "Internal thermo estimation.",
       "verdict": "E"
@@ -4298,7 +4298,7 @@
     "rmgpy/data/kinetics/family.py:KineticsFamily.get_reaction_matches": {
       "file": "rmgpy/data/kinetics/family.py",
       "function": "KineticsFamily.get_reaction_matches",
-      "line": 5457,
+      "line": 5459,
       "signature": "ce041761c9dbd733764ae974ea6d685ff55e13892149bb815036eaccb9801fea",
       "reason": "Internal family matching and diagnostics.",
       "verdict": "E"
@@ -4330,7 +4330,7 @@
     "rmgpy/data/kinetics/library.py:KineticsLibrary.__str__": {
       "file": "rmgpy/data/kinetics/library.py",
       "function": "KineticsLibrary.__str__",
-      "line": 458,
+      "line": 442,
       "signature": "217321735a2675715413adbeaf0a76359ced08fb3c305ccb07518cef90b15d1c",
       "reason": "Database diagnostic label.",
       "verdict": "E"
@@ -4338,7 +4338,7 @@
     "rmgpy/data/kinetics/library.py:KineticsLibrary.__repr__": {
       "file": "rmgpy/data/kinetics/library.py",
       "function": "KineticsLibrary.__repr__",
-      "line": 461,
+      "line": 445,
       "signature": "e4a12607d179c164dc60dfa09ab2be571ea921afd7d817154808ad4bc13994af",
       "reason": "Database diagnostic label.",
       "verdict": "E"
@@ -4346,8 +4346,8 @@
     "rmgpy/data/kinetics/library.py:KineticsLibrary.get_library_reactions": {
       "file": "rmgpy/data/kinetics/library.py",
       "function": "KineticsLibrary.get_library_reactions",
-      "line": 464,
-      "signature": "76929d81c78c3b465115d390f1127e45136ddb089258c542672dcbe5cbf19553",
+      "line": 448,
+      "signature": "dcfedc84fefb32d5ea40e383ad8a8020ae3ed8acb43f218c40ee8874c7ab99bd",
       "reason": "Returns reaction objects internally; no identifier emission.",
       "verdict": "E"
     },
@@ -4723,7 +4723,7 @@
     "rmgpy/rmg/main.py:RMG.initialize_reaction_threshold_and_react_flags": {
       "file": "rmgpy/rmg/main.py",
       "function": "RMG.initialize_reaction_threshold_and_react_flags",
-      "line": 2374,
+      "line": 2376,
       "signature": "625f8174dbe5f7892adc6024d426176a8bf01381a809e89572ea453ee098c80e",
       "reason": "Internal restart state bookkeeping; dictionary reload has a separate audited path.",
       "verdict": "E"
@@ -5144,7 +5144,7 @@
       "reason": "Nested formatter writes scalar Arrhenius parameters and uncertainties only; parent save_old refuses resolved molecular references before opening.",
       "file": "rmgpy/data/kinetics/library.py",
       "function": "KineticsLibrary.write_arrhenius",
-      "line": 1004,
+      "line": 1002,
       "signature": "1cf3591ae6abb9219ea62718650de3f613c953e7a13862fa42fa05ccef8bda91"
     },
     "rmgpy/molecule/draw.py:create_new_surface": {
@@ -5192,7 +5192,7 @@
       "reason": "marshal.dump persists profiler timing statistics only, not a molecular mechanism.",
       "file": "rmgpy/rmg/main.py",
       "function": "RMG.save_profiler_info",
-      "line": 2608,
+      "line": 2610,
       "signature": "178fd0183d2b302c0e7654490c2e210db62df834cdbb13a6c0a887292bfca2f2"
     },
     "rmgpy/rmg/main.py:_add_coverage_dependence_to_cantera_yaml": {
@@ -5200,7 +5200,7 @@
       "reason": "Inserts already-rendered thermo coverage blocks into an existing YAML by exact Chemkin names; does not rebuild or rename molecular records.",
       "file": "rmgpy/rmg/main.py",
       "function": "_add_coverage_dependence_to_cantera_yaml",
-      "line": 2984,
+      "line": 2986,
       "signature": "97ad55a8fa2cf8b2f74b491a1b025dc808081bb8f30d06295d15a71ac1af9658"
     },
     "rmgpy/rmg/main.py:Tee.write": {
@@ -5208,7 +5208,7 @@
       "reason": "Generic byte-preserving diagnostic stream fan-out; takes only strings, performs no molecular naming or reconstruction.",
       "file": "rmgpy/rmg/main.py",
       "function": "Tee.write",
-      "line": 3051,
+      "line": 3053,
       "signature": "81c59c0e5b7611675612830436b7fb2e9832edb38f703c7307f50fc18c18d15a"
     },
     "rmgpy/rmg/main.py:process_profile_stats": {
@@ -5216,7 +5216,7 @@
       "reason": "print(file=...) writes function timing/call-count diagnostics, not species identities.",
       "file": "rmgpy/rmg/main.py",
       "function": "process_profile_stats",
-      "line": 3078,
+      "line": 3080,
       "signature": "78cddbe838b7b68b127406544946151c1ce494ee24bb126e7263b7b481636834"
     },
     "rmgpy/rmg/main.py:make_profile_graph": {
@@ -5224,7 +5224,7 @@
       "reason": "Writes a function-call profiler graph and timing metrics, not molecular drawings.",
       "file": "rmgpy/rmg/main.py",
       "function": "make_profile_graph",
-      "line": 3098,
+      "line": 3100,
       "signature": "d1089cbb7e60fed4691c36fbb827a521adbc3e552c56c45971717e4d8aca58b7"
     },
     "rmgpy/rmg/pdep.py:PDepNetwork.update": {
@@ -5359,7 +5359,7 @@
       "reason": "Family schema, group-pattern and rate-rule loading delegates molecular training records to the separately guarded KineticsDepository.load boundary.",
       "file": "rmgpy/data/kinetics/family.py",
       "function": "KineticsFamily.load",
-      "line": 1486,
+      "line": 1488,
       "signature": "502f7a3906be1b4434b12eda0e7d8c9c698bc982f401e213a17dae8cb73e0fec"
     },
     "rmgpy/data/kinetics/family.py:KineticsFamily.generate_product_template": {
@@ -5367,7 +5367,7 @@
       "reason": "Generated group-template entries use the shared group database store without changing group or logic-node semantics.",
       "file": "rmgpy/data/kinetics/family.py",
       "function": "KineticsFamily.generate_product_template",
-      "line": 2025,
+      "line": 2027,
       "signature": "dadb0fc2b8d3993f1c0a5db48da70122b0f9e997e73aabdb283bd5aaddebddae"
     },
     "rmgpy/data/kinetics/family.py:KineticsFamily.add_rules_from_training": {
@@ -5375,7 +5375,7 @@
       "reason": "Training-derived rate-rule lists now use the shared rules database store; existing labels, append behavior and group-template identities are retained.",
       "file": "rmgpy/data/kinetics/family.py",
       "function": "KineticsFamily.add_rules_from_training",
-      "line": 2129,
+      "line": 2131,
       "signature": "6458c86e239ef6ad3867ebf11c1a2e4cde3357ac63a8525df8c2eff1111e4e68"
     },
     "rmgpy/data/kinetics/family.py:KineticsFamily.add_entry": {
@@ -5383,7 +5383,7 @@
       "reason": "Generated group entries and initially empty rate-rule lists are registered through their owning database shared stores.",
       "file": "rmgpy/data/kinetics/family.py",
       "function": "KineticsFamily.add_entry",
-      "line": 4058,
+      "line": 4060,
       "signature": "b3abe674cdd44344f0a7ebd803ddfd66c31c0f0cc9989399146d4f4652f96c1e"
     },
     "rmgpy/data/kinetics/family.py:KineticsFamily.make_tree_nodes": {
@@ -5391,7 +5391,7 @@
       "reason": "Generated group tree entries and empty rule lists use their owning database shared stores, retaining existing graph/group semantics.",
       "file": "rmgpy/data/kinetics/family.py",
       "function": "KineticsFamily.make_tree_nodes",
-      "line": 4619,
+      "line": 4621,
       "signature": "60c7128c213b1fa3b8dea942ef47ea4e9e8f9f19f0070eabbdd7de688b2d5afd"
     },
     "rmgpy/data/kinetics/family.py:KineticsFamily.make_bm_rules_from_template_rxn_map": {
@@ -5399,7 +5399,7 @@
       "reason": "Generated empty rate-rule lists are stored through the shared rules database helper; no molecular identity is replaced in this stage.",
       "file": "rmgpy/data/kinetics/family.py",
       "function": "KineticsFamily.make_bm_rules_from_template_rxn_map",
-      "line": 4753,
+      "line": 4755,
       "signature": "706a09b0c2e2d1610ef71c3f7e7e7b42d965c2e4eee091a668d9dea4ae85747b"
     },
     "rmgpy/data/kinetics/family.py:KineticsFamily.clean_tree_rules": {
@@ -5407,7 +5407,7 @@
       "reason": "Reset of the Root rate-rule list now uses the shared rules database store; these are group-pattern rule records.",
       "file": "rmgpy/data/kinetics/family.py",
       "function": "KineticsFamily.clean_tree_rules",
-      "line": 5172,
+      "line": 5174,
       "signature": "39d933c3cc88146d58addac7c525c590079a414380cc69e6f6a9b63d258f65f9"
     },
     "rmgpy/data/kinetics/rules.py:KineticsRules.load_entry": {
@@ -5461,7 +5461,7 @@
     "rmgpy/data/kinetics/family.py:KineticsFamily.get_reaction_template": {
       "file": "rmgpy/data/kinetics/family.py",
       "function": "KineticsFamily.get_reaction_template",
-      "line": 3643,
+      "line": 3645,
       "signature": "34382f94ce32736f0ac54a48814a7e0950caba98576d8e885b47bea6895f7abc",
       "verdict": "E",
       "reason": "Internal family-template selection enforces the family excited-reactant opt-in and emits no molecular representation."

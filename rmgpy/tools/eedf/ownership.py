@@ -357,9 +357,9 @@ def validate_bound_branch(family, reaction):
     """Match a runtime reaction to a previously validated family snapshot."""
     product = reaction_product_state(reaction, family['process'])
     marker = reaction.kinetics
-    entry = getattr(reaction, 'entry', None)
-    actual = dict(product=product, library=getattr(reaction, 'library', None),
-                  index=getattr(entry, 'index', None), repr=repr(marker))
+    identity = getattr(reaction, 'source_identity', None)
+    actual = dict(product=product, library=None if identity is None else identity[0],
+                  index=None if identity is None else identity[1], repr=repr(marker))
     expected = next(owner for owner in family['branches'] if owner['product'] == product)
     if actual != expected:
         raise FingerprintMismatch('cascade branch reaction identity differs from sourced family')

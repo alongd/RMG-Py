@@ -3664,6 +3664,7 @@ class TestEveryTransformReproducesTheWholeState:
             markers.update({
                 "family": "a_library",
                 "library": "a_library",
+                "source_identity": ("a_library", 4),
                 "entry": entry,
             })
 

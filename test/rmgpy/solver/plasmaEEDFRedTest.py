@@ -142,9 +142,9 @@ def _deck(data, row=None, mixture=False, table_rates=False, drift=1., energy=Tru
     ex = _constant(row['rates_m3_s'][AR_M1]+row['rates_m3_s'][AR_M2]) if table_rates else _ashida()
     entries = {1:ion, 2:ex}
     reactions = [LibraryReaction(reactants=[electron, ar], products=[arp, electron, electron],
-                                kinetics=ion, reversible=False, library='RedFixture', entry=Entry(index=1, data=ion)),
+                                kinetics=ion, reversible=False, library='RedFixture', entry=Entry(index=1, data=ion), source_identity=('RedFixture', 1)),
                  LibraryReaction(reactants=[electron, ar], products=[ars, electron],
-                                kinetics=ex, reversible=False, library='RedFixture', entry=Entry(index=2, data=ex))]
+                                kinetics=ex, reversible=False, library='RedFixture', entry=Entry(index=2, data=ex), source_identity=('RedFixture', 2))]
     energies = {'RedFixture:1':(15.76, 'eV'), 'RedFixture:2':(11.56, 'eV')}
     elastic = {'Ar':{'A':(2.336e-14, 'm^3/s'), 'n':1.609, 'b':.0618, 'c':-.1171},
                'Ars':{'ignore':'trace metastable elastic contribution omitted for this test'}}
@@ -162,7 +162,7 @@ def _deck(data, row=None, mixture=False, table_rates=False, drift=1., energy=Tru
         entries[3] = _constant(row['rates_m3_s'][N2_ION])
         reactions.append(LibraryReaction(reactants=[electron, n2], products=[n2p, electron, electron],
                                         kinetics=entries[3], reversible=False, library='RedFixture',
-                                        entry=Entry(index=3, data=entries[3])))
+                                        entry=Entry(index=3, data=entries[3]), source_identity=('RedFixture', 3)))
         energies['RedFixture:3'] = (15.6, 'eV')
         elastic['N2'] = {'ignore':'composition-chain/mixed-provider proxy; no N2 elastic fit'}
         assertions['N2+'] = 'ion'
@@ -170,7 +170,8 @@ def _deck(data, row=None, mixture=False, table_rates=False, drift=1., energy=Tru
     # its rate is not a sourced radiation or resonance model.
     reactions.append(LibraryReaction(reactants=[ars], products=[ar], reversible=False,
                      kinetics=Arrhenius(A=(1e7, 's^-1'), n=0, Ea=(0., 'J/mol'),
-                                        T0=(1., 'K')), library='RedFixture'))
+                                        T0=(1., 'K')), library='RedFixture',
+                     entry=Entry(index=4), source_identity=('RedFixture', 4)))
     if not energy:
         rec = _constant(1e-13)
         reactions.append(LibraryReaction(reactants=[arp, electron], products=[ar],
@@ -574,8 +575,14 @@ def _loader_provenance(entry, library_name):
     comment = entry.data.comment
     try:
         reaction, = library.get_library_reactions()
-        return _canonical_object(reaction, neutral={'entry', 'kinetics', 'reactants',
-                                                    'products', 'label', 'comment'})
+        fields = _canonical_object(reaction, neutral={'entry', 'kinetics', 'reactants',
+                                                      'products', 'label', 'comment'})
+        # The frozen historical schema predates the attached identity. An unknown
+        # identity is represented by absence there; a known identity still enters
+        # the comparison and cannot silently change the historical provenance.
+        if fields.get('source_identity') is None:
+            fields.pop('source_identity', None)
+        return fields
     finally:
         # The reader strips indentation in comments; preflight must not mutate.
         entry.data.comment = comment
@@ -683,7 +690,7 @@ def _entry_reactor(entry, library_name, thermo):
         # Use the same declared placement boundary as PlasmaReactor. Its owner
         # reads family on LibraryReaction, so carry that explicit provenance.
         reaction = LibraryReaction(reactants=reaction.reactants, products=reaction.products,
-                                   kinetics=entry.data, library=library_name, entry=entry,
+                                   kinetics=entry.data, library=library_name, entry=entry, source_identity=(library_name, entry.index),
                                    reversible=reaction.reversible, electrons=reaction.electrons,
                                    specific_collider=reaction.specific_collider)
         # Reuse an explicit electron if the library already contains one.

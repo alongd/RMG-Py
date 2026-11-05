@@ -171,7 +171,7 @@ def model(alpha=0.5, arm='fullFrequency', closure='confinedAnion',
         cls = FixtureEnergyReactor
         rxns = [LibraryReaction(reactants=r.reactants,products=r.products,
                 kinetics=r.kinetics,reversible=False,library='EN-test',
-                entry=Entry(index=i+1, data=r.kinetics)) for i, r in enumerate(rxns)]
+                entry=Entry(index=i+1, data=r.kinetics), source_identity=('EN-test', i+1)) for i, r in enumerate(rxns)]
         cls.entries = {i+1:r.kinetics for i,r in enumerate(rxns)}
         kw['electron_energy_balance'] = dict(absorbed_power=(0.,'W'),
             chamber_volume=(np.pi*RADIUS**2*LENGTH,'m^3'),sheath='floating_wall',

@@ -2718,8 +2718,8 @@ cdef class PlasmaReactor(ReactionSystem):
     def _declared_entry(self, str library, int index):
         """Resolve a declared library/index key to its entry, independently of kinetics.
 
-        Model and seed entry indices are renumbered; LibraryReaction.get_source_entry_index()
-        retains the source identity even when its kinetics are copied or replaced.
+        Model and seed entry indices are renumbered; LibraryReaction.source_identity
+        retains the loader's decision even when its kinetics are copied or replaced.
         """
         from rmgpy.data.rmg import get_db
         try:
@@ -2773,17 +2773,14 @@ cdef class PlasmaReactor(ReactionSystem):
         bindings = {}
         for model_rxn in itertools.chain(core_reactions_model, edge_reactions_model):
             library = getattr(model_rxn, 'library', None)
-            source_reader = getattr(model_rxn, 'get_source_entry_index', None)
-            source_index = (source_reader() if source_reader is not None else
-                            getattr(getattr(model_rxn, 'entry', None), 'index', None))
-            if source_index is None and any(lib == library for lib, _ in self.energy_declared):
+            identity = getattr(model_rxn, 'source_identity', None)
+            if identity is None and any(lib == library for lib, _ in self.energy_declared):
                 raise PlasmaStateError(
                     "electron_energy_balance cannot bind reaction {0!s} from library {1!r}: "
                     "missing source entry index provenance (possibly an older seed). "
                     "Regenerate the seed with source entry provenance; the seed-local index "
                     "cannot identify the original entry. ({2})".format(
                         model_rxn, library, self._identity()))
-            identity = (library, source_index)
             key = by_entry.get(identity)
             if key is None:
                 continue
@@ -2936,9 +2933,8 @@ cdef class PlasmaReactor(ReactionSystem):
             kin = rxn.kinetics
             if (getattr(kin, 'uses_electron_temperature', False)
                     and not getattr(kin, 'uses_eedf', False)):
-                entry = getattr(rxn, 'entry', None)
-                source = '{0}:{1}'.format(
-                    getattr(rxn, 'library', None), getattr(entry, 'index', None))
+                source_identity = getattr(rxn, 'source_identity', None)
+                source = None if source_identity is None else '{0}:{1}'.format(*source_identity)
                 if source in table_owned_sources:
                     raise PlasmaStateError(
                         'table-owned EEDF channel source {0} also declares an '
@@ -3024,13 +3020,13 @@ cdef class PlasmaReactor(ReactionSystem):
             # the one channel-map identity and is instead identified by the
             # marker's process/collision-set/side tuple.
             if kin.side == 'ine':
-                entry = getattr(rxn, 'entry', None)
-                if entry is None:
+                source_identity = getattr(rxn, 'source_identity', None)
+                if source_identity is None:
                     raise PlasmaStateError(
                         'EEDF reaction {0} has no source-library entry identity; model reaction '
                         'indices are renumbered and cannot identify a table channel'.format(rxn))
-                actual = {'library': getattr(rxn, 'library', None),
-                          'index': getattr(entry, 'index', None), 'repr': repr(kin)}
+                actual = {'library': source_identity[0],
+                          'index': source_identity[1], 'repr': repr(kin)}
                 if actual != identity:
                     raise PlasmaStateError(
                         'EEDF reaction identity mismatch for {0}: table {1!r}, model {2!r}'.format(
@@ -3390,11 +3386,10 @@ cdef class PlasmaReactor(ReactionSystem):
         return coordinates
 
     def _eedf_empirical_key(self, rxn):
-        entry = getattr(rxn, 'entry', None)
-        source_index = getattr(entry, 'index', None)
-        if source_index is None:
+        source_identity = getattr(rxn, 'source_identity', None)
+        if source_identity is None:
             return None
-        key = '{0}:{1}'.format(getattr(rxn, 'library', None), source_index)
+        key = '{0}:{1}'.format(*source_identity)
         return key if key in self.eedf_empirical_laws else None
 
     def _resolve_eedf_energy_balance(self, core_species, core_reactions, edge_reactions):
@@ -3424,9 +3419,9 @@ cdef class PlasmaReactor(ReactionSystem):
                 sum(1 for spc in rxn.reactants if spc.is_electron()))
             if getattr(rxn.kinetics, 'uses_electron_temperature', False):
                 self.energy_te_rate_refresh.append((j, rxn.kinetics))
-            entry = getattr(rxn, 'entry', None)
-            source_index = getattr(entry, 'index', None)
-            source = (getattr(rxn, 'library', None), source_index)
+            source = getattr(rxn, 'source_identity', None)
+            if source is None:
+                source = (getattr(rxn, 'library', None), None)
             if source not in self.energy_declared:
                 if (j < self.num_core_reactions and j not in self.eedf_reaction_map
                         and any(spc.is_electron()

@@ -6487,7 +6487,7 @@
       "evidence": [
         "test/rmgpy/data/kinetics/libraryTest.py"
       ],
-      "source_sha256": "78a28eef435b27a778e808a831cc66da43c7ed51c7cfc2477150bb85db285dc5"
+      "source_sha256": "409107c3492f73f05b0860c3ab266aa66e30256adbc9c20f25281a560295ed3d"
     },
     "rmgpy/data/kinetics/library.py:KineticsLibrary.load": {
       "verdict": "carried",
@@ -6584,7 +6584,7 @@
       "evidence": [
         "test/rmgpy/data/kinetics/libraryTest.py"
       ],
-      "source_sha256": "e3c2a7dca34cb54fe6030014d3cd7fbd08cbdaa31fe3df5e2417c471ccb57a09"
+      "source_sha256": "a52847e9d375086791e4f153e51ceea8e4afaf05d330c9c7b40ebe8eed1c7230"
     },
     "rmgpy/data/kinetics/library.py:LibraryReaction.__reduce__": {
       "verdict": "carried",
@@ -6645,7 +6645,7 @@
     "rmgpy/data/kinetics/library.py:LibraryReaction.get_source_entry_index": {
       "file": "rmgpy/data/kinetics/library.py",
       "line": 144,
-      "source_sha256": "ef0dea793b1255d8a7d63cbb85b7c4bc82e7f198be7ffef8d8b1926a50353bb3",
+      "source_sha256": "3b0130a392d6f5a8c39a2acd8782c52550688d4345e1b4b410936bfc821e89b8",
       "verdict": "carried",
       "reason": "Reads original library entry provenance from a reloaded seed without using seed-local numbering; missing source indices remain unknown and binding refuses.",
       "evidence": [
@@ -23487,7 +23487,7 @@
         "test/rmgpy/rmg/mainTest.py",
         "test/rmgpy/diagnosticModeTest.py"
       ],
-      "source_sha256": "fb3e6576210cd98a71d715733b6c7586f2d086d76590833167757e0f5d2120f1"
+      "source_sha256": "ccc5d0e66a8bf00399e4bd2d64cdb2368f3832850632f315f81e3202fcc95af1"
     },
     "rmgpy/rmg/main.py:RMG.make_species_labels_independent": {
       "verdict": "carried",
@@ -27361,7 +27361,7 @@
         "test/rmgpy/solver/plasmaEnergyBalanceTest.py",
         "test/rmgpy/rmg/mainTest.py"
       ],
-      "source_sha256": "590f7bcd1b8bbe99ff27f49e9ed145f212fca5b96da4e15e287a5d089e9d16dd",
+      "source_sha256": "a820eae2ea079da84060f09c5e55f5c6f6afbe59ca72aa30df5f86d04d54cd5e",
       "file": "rmgpy/solver/plasma.pyx",
       "line": 2702
     },
@@ -27465,7 +27465,7 @@
         "test/rmgpy/solver/plasmaEEDFStateIsolationTest.py",
         "test/rmgpy/solver/plasmaEEDFStructuralContractTest.py"
       ],
-      "source_sha256": "641efb871e5cdfa4fad95301e7b2300d56a5b63ab14d9ef46d63618f0e41ed5a",
+      "source_sha256": "ad7ea5346f25fd03465b42dc0a748fa758a6cd3f434993e938baa4498f65e04f",
       "file": "rmgpy/solver/plasma.pyx",
       "line": 3217
     },
@@ -27714,7 +27714,7 @@
         "test/rmgpy/solver/plasmaEEDFBranchedTest.py",
         "test/rmgpy/solver/plasmaEEDFVibrationalTest.py"
       ],
-      "source_sha256": "0b5d040756ad2e868f6c48164e6eb741788a5eea265c2e566228367bedaa8254",
+      "source_sha256": "99a1a3b7571320c10b01bc02ef8313cdae7f2d67e3ad5bb1e54360374828f886",
       "file": "rmgpy/solver/plasma.pyx",
       "line": 2875
     },
@@ -27948,7 +27948,7 @@
         "test/rmgpy/solver/plasmaEEDFStateIsolationTest.py",
         "test/rmgpy/solver/plasmaEEDFStructuralContractTest.py"
       ],
-      "source_sha256": "45a9e0f58ec32bc5fa3a26bccb3f5c869bd353c6bba89eed040ae24744f9f356",
+      "source_sha256": "dfefd8bbe97a556127a0b344acb3335cfb7011213586c01f8adef338b71f31d3",
       "file": "rmgpy/solver/plasma.pyx",
       "line": 3225
     },
@@ -27968,7 +27968,7 @@
       "evidence": [
         "test/rmgpy/solver/plasmaTest.py"
       ],
-      "source_sha256": "a4832736c6bab592a7351e2b3f848adbe1be68103093616086caae5f56b53eaf",
+      "source_sha256": "f4d1c58d1ab2931070251c22fe42339d18cbf82ed12278afc7cc130bd303561d",
       "file": "rmgpy/solver/plasma.pyx",
       "line": 2721
     },
@@ -35866,7 +35866,7 @@
       "evidence": [
         "test/rmgpy/solver/plasmaEEDFBranchedTest.py"
       ],
-      "source_sha256": "b3c5a658ef2502f2453c2c5f4820e8de159728d694fa2b580dd72f03057c353f"
+      "source_sha256": "cc04a852632cdf8dc05674ab58b1a4d5bfcc4028fa0714e93d823b08f3350fcd"
     },
     "rmgpy/tools/eedf/ownership.py:validate_branch_metadata": {
       "verdict": "not-reachable-for-resolved",

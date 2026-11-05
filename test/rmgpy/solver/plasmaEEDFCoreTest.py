@@ -61,7 +61,7 @@ def species_and_reaction():
     marker = EEDFChannel(process='e + Ar -> e + e + Ar+', collision_set='fixture', side='ine')
     reaction = LibraryReaction(reactants=[electron, ar], products=[ion, electron, electron],
                                reversible=False, kinetics=marker, library='Toy',
-                               entry=Entry(index=1))
+                               entry=Entry(index=1), source_identity=('Toy', 1))
     reaction.index = 1
     return [electron, ar, ion, excited], reaction
 
@@ -195,6 +195,7 @@ def build_reactor(tmp_path, composition=True, extra_reaction=None, empirical_law
                     include_ar4s_envelope=excited_state is None)
     reaction.index = reaction_index
     reaction.entry.index = entry_index
+    reaction.source_identity = ('Toy', entry_index)
     config = {
         'provider': 'loki-table', 'table': (str(path), _file_hash(path / 'table.h5')),
         'branch': 'branch_0', 'initial_reduced_field': (np.e, 'Td'),
@@ -235,6 +236,18 @@ def build_reactor(tmp_path, composition=True, extra_reaction=None, empirical_law
     else:
         reactor.initialize_model(core, core_reactions, [], edge_reactions)
     return reactor, core, reactions
+
+
+def test_eedf_binding_keeps_loaded_identity_after_entry_renumbering(tmp_path):
+    reactor, core, reactions = build_reactor(tmp_path)
+    for reaction in reactions:
+        reaction.index = 100
+        reaction.entry.index = 200
+        reaction.entry.long_desc = 'Originally from reaction library: Archived\nOriginal reaction library entry index: 999'
+        reaction.library = 'Renamed model label'
+    reactor.initialize_model(core, reactions, [], [])
+    assert len(reactor.eedf_reaction_map) == 1
+    assert reactions[0].source_identity == ('Toy', 1)
 
 
 def test_development_progress_is_timed_and_production_is_untouched(
@@ -445,7 +458,7 @@ def test_table_owned_source_cannot_also_run_declared_temperature_law(tmp_path):
             products=[core[2], core[0], core[0]],
             reversible=False,
             library='Toy',
-            entry=Entry(index=1),
+            entry=Entry(index=1), source_identity=('Toy', 1),
             kinetics=TwoTemperaturePlasma(
                 A=(1.e-15, 'm^3/(molecule*s)'), n=0.,
                 Ea_g=(0., 'J/mol'), Ea_e=(0., 'J/mol')),
@@ -486,7 +499,7 @@ class EEDFWallFixtureReactor(PlasmaReactor):
         core_reactions[:] = [
             LibraryReaction(reactants=reaction.reactants, products=reaction.products,
                             kinetics=reaction.kinetics, reversible=reaction.reversible,
-                            library='EN-EEDF-test', entry=Entry(index=j + 1))
+                            library='EN-EEDF-test', entry=Entry(index=j + 1), source_identity=('EN-EEDF-test', j + 1))
             for j, reaction in enumerate(core_reactions)]
         return super().initialize_model(core_species, core_reactions, edge_species, edge_reactions)
 
@@ -692,7 +705,7 @@ def test_development_run_labels_provider_diagnostics_budget_and_manifest(tmp_pat
         products=[restored_by_label['Ar+'], restored_by_label['e-'],
                   restored_by_label['e-']],
         reversible=False, kinetics=copy.deepcopy(reactions[0].kinetics),
-        library='Toy', entry=Entry(index=1))]
+        library='Toy', entry=Entry(index=1), source_identity=('Toy', 1))]
     with pytest.raises(PlasmaStateError, match='held-out qualification'):
         restored.initialize_model(restored_core, restored_reactions, [], [])
 
@@ -740,7 +753,7 @@ plasmaReactor(
     deck_reaction = LibraryReaction(
         reactants=[by_label['e-'], by_label['Ar']],
         products=[by_label['Arp'], by_label['e-'], by_label['e-']],
-        reversible=False, kinetics=marker, library='Toy', entry=Entry(index=1))
+        reversible=False, kinetics=marker, library='Toy', entry=Entry(index=1), source_identity=('Toy', 1))
     with pytest.raises(PlasmaStateError, match='held-out qualification'):
         reactor.initialize_model(list(by_label.values()), [deck_reaction], [], [])
 
@@ -1373,7 +1386,7 @@ def test_separate_superelastic_entry_maps_the_same_collision_sup_column(tmp_path
                              collision_set='fixture', side='sup')
         return LibraryReaction(
             reactants=[core[0], core[2]], products=[core[0], core[1]],
-            reversible=False, kinetics=marker, library='Toy', entry=Entry(index=2))
+            reversible=False, kinetics=marker, library='Toy', entry=Entry(index=2), source_identity=('Toy', 2))
 
     reactor, _, _ = build_reactor(tmp_path, extra_reaction=superelastic)
     assert reactor.eedf_reaction_map == {0: (0, 'ine'), 1: (0, 'sup')}
@@ -1391,10 +1404,10 @@ def test_duplicate_superelastic_binding_is_refused(tmp_path):
                              collision_set='fixture', side='sup')
         first = LibraryReaction(reactants=[core[0], core[2]], products=[core[0], core[1]],
                                 reversible=False, kinetics=marker, library='Toy',
-                                entry=Entry(index=2))
+                                entry=Entry(index=2), source_identity=('Toy', 2))
         second = LibraryReaction(reactants=[core[0], core[2]], products=[core[0], core[1]],
                                  reversible=False, kinetics=copy.deepcopy(marker), library='Toy',
-                                 entry=Entry(index=3))
+                                 entry=Entry(index=3), source_identity=('Toy', 3))
         return [first, second]
 
     core, reaction = species_and_reaction()
@@ -1421,7 +1434,7 @@ def test_declared_heavy_particle_electron_energy_is_kept_and_table_owned_is_refu
                                         Ea_g=(0., 'J/mol'), Ea_e=(0., 'J/mol'))
         return LibraryReaction(reactants=[core[0], core[3]], products=[core[0], core[1]],
                                reversible=False, kinetics=kinetics, library='Empirical',
-                               entry=Entry(index=90))
+                               entry=Entry(index=90), source_identity=('Empirical', 90))
 
     law = {'Empirical:90': {'evaluate_at': 'Te_eff', 'class': 'C',
                             'basis': 'fixture', 'sensitivity': True}}
@@ -1449,7 +1462,7 @@ def non_table_energy_reaction(core, kind):
     reaction = LibraryReaction(
         reactants=reactants, products=products, reversible=False,
         kinetics=Arrhenius(A=(1., units)), library='EnergyFixture',
-        entry=Entry(index=90))
+        entry=Entry(index=90), source_identity=('EnergyFixture', 90))
     # Model indices are not library entry identities.
     reaction.index = 735
     return reaction
@@ -1540,6 +1553,7 @@ def test_missing_source_identity_cannot_use_model_reaction_index(tmp_path):
     def extra(core):
         reaction = non_table_energy_reaction(core, 'produces')
         reaction.entry = None
+        reaction.source_identity = None
         reaction.index = 90
         return reaction
 
@@ -1563,7 +1577,7 @@ def test_superelastic_table_energy_cannot_also_be_declared(tmp_path):
     def superelastic(core):
         return LibraryReaction(
             reactants=[core[0], core[2]], products=[core[0], core[1]],
-            reversible=False, library='Toy', entry=Entry(index=2),
+            reversible=False, library='Toy', entry=Entry(index=2), source_identity=('Toy', 2),
             kinetics=EEDFChannel(process='e + Ar -> e + e + Ar+',
                                  collision_set='fixture', side='sup'))
 

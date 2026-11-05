@@ -119,6 +119,7 @@ class LibraryReaction(Reaction):
                  allow_max_rate_violation=False,
                  entry=None,
                  electrons=0,
+                 source_identity=None,
                  ):
         Reaction.__init__(self,
                           index=index,
@@ -140,31 +141,14 @@ class LibraryReaction(Reaction):
         self.library = library
         self.family = library
         self.entry = entry
+        # A loader-selected (library, source entry index) tuple, independent of
+        # mutable model/seed numbering and historical description text.
+        self.source_identity = source_identity
 
     def get_source_entry_index(self):
-        """Original library index, separate from a serialized seed entry position.
-
-        The source library and index must come from the same provenance. Older
-        seeds without the source index return None and cannot bind energies.
-        """
-        if self.entry is None:
-            return None
-        description = self.entry.long_desc or ''
-        lines = [line.strip() for line in description.splitlines()]
-        if not (parse_external_library_provenance(description)
-                or 'Originally from reaction library: ' in description):
-            return self.entry.index
-        prefix = 'Original reaction library entry index: '
-        indices = [line[len(prefix):] for line in lines if line.startswith(prefix)]
-        if not indices:
-            return None
-        try:
-            values = {int(index) for index in indices}
-        except ValueError:
-            raise DatabaseError('Invalid source entry index in seed library provenance.')
-        if len(values) != 1:
-            raise DatabaseError('Conflicting source entry indices in seed library provenance.')
-        return values.pop()
+        """Read the identity attached by the loader; never reinterpret provenance."""
+        identity = self.source_identity
+        return None if identity is None else identity[1]
 
     def __reduce__(self):
         """
@@ -485,6 +469,18 @@ class KineticsLibrary(Database):
                 else:
                     lib = [line for line in entry.long_desc.split('\n') if 'Originally from reaction library: ' in line]
                     lib = lib[0].replace('Originally from reaction library: ', '').strip()
+                # Select both identity components here, under the same provenance
+                # predicate. An incomplete seed must never inherit its local index.
+                prefix = 'Original reaction library entry index: '
+                indices = [line.strip()[len(prefix):] for line in entry.long_desc.splitlines()
+                           if line.strip().startswith(prefix)]
+                try:
+                    values = {int(index) for index in indices}
+                except ValueError:
+                    raise DatabaseError('Invalid source entry index in seed library provenance.')
+                if len(values) > 1:
+                    raise DatabaseError('Conflicting source entry indices in seed library provenance.')
+                identity = (lib, values.pop()) if values else None
                 # Clean up any leading indents in kinetics comment
                 entry.data.comment = '\n'.join([line.strip() for line in entry.data.comment.split('\n')])
                 rxn = LibraryReaction(reactants=entry.item.reactants[:], products=entry.item.products[:],
@@ -492,7 +488,8 @@ class KineticsLibrary(Database):
                                       duplicate=entry.item.duplicate, reversible=entry.item.reversible,
                                       allow_pdep_route=entry.item.allow_pdep_route,
                                       elementary_high_p=entry.item.elementary_high_p,
-                                      electrons=entry.item.electrons, entry=entry)
+                                      electrons=entry.item.electrons, entry=entry,
+                                      source_identity=identity)
                 _carry_entry_fields(rxn, entry.item)
                 if provenance:
                     rxn.library_source = provenance['source']
@@ -535,7 +532,8 @@ class KineticsLibrary(Database):
                                       kinetics=entry.data, duplicate=entry.item.duplicate,
                                       reversible=entry.item.reversible, allow_pdep_route=entry.item.allow_pdep_route,
                                       elementary_high_p=entry.item.elementary_high_p,
-                                      electrons=entry.item.electrons, entry=entry)
+                                      electrons=entry.item.electrons, entry=entry,
+                                      source_identity=None if self.auto_generated else (self.label, entry.index))
                 _carry_entry_fields(rxn, entry.item)
             rxns.append(rxn)
 

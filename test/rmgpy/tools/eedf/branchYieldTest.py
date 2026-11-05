@@ -89,7 +89,8 @@ def branch_reactions(snapshot, channel_id=6, collision_set='test-Ar'):
                              yield_table_sha256=snapshot['yield_table_sha256'])
         entry = Entry(index=1000 + channel_id * 4 + offset, data=marker)
         reaction = LibraryReaction(reactants=[electron, argon], products=[electron, excited],
-                                   reversible=False, kinetics=marker, library='PlasmaArgon', entry=entry)
+                                   reversible=False, kinetics=marker, library='PlasmaArgon', entry=entry,
+                                   source_identity=('PlasmaArgon', entry.index))
         entry.item = reaction
         reactions.append(reaction)
     return reactions
