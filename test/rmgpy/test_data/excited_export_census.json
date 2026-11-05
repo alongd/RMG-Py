@@ -4745,7 +4745,7 @@
       "file": "rmgpy/rmg/model.py",
       "function": "CoreEdgeReactionModel.make_new_species",
       "line": 523,
-      "signature": "2ede25fee96232ebb1dacc6847da24dc6fa6aea6af5240fa217250a64a7b8a00",
+      "signature": "221b924ba3dc3cbe688c4577f657a2578468deff826a70d46a8a8341dfce3d0e",
       "reason": "Internal naming/allocation, not export; state metadata retained in graph. Thermo rebase classification: Export-search exclusion: this is in-memory model admission and internal Fragment reconstruction, not an output boundary. It retains state, applies manifold declarations, reserves labels and delegates optional thermo generation to the checked model route.",
       "verdict": "E",
       "evidence": [
@@ -4758,7 +4758,7 @@
     "rmgpy/rmg/model.py:get_key": {
       "file": "rmgpy/rmg/model.py",
       "function": "get_key",
-      "line": 2706,
+      "line": 2709,
       "signature": "69dd9b09e5e66b9b195471529702d6e5a87c547d29c595f49a29b2f3bcb9d35c",
       "reason": "Internal reaction lookup key.",
       "verdict": "E"
