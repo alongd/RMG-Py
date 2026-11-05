@@ -64,6 +64,9 @@ contract = pytest.mark.skipif(
     reason="I-297 same-molecule law: design only (/home/alon/runs/pk-i297/design.md); these contract tests "
            "turn on with the owner's chosen law")
 
+# the declaration schema of the same-molecule law (``melt_engine.SAME_MOLECULE_SCHEMA``)
+SAME_MOLECULE_SCHEMA = "kmc-same-molecule/1"
+
 # the options of design §3 (revision 2) and the phi closures of §2; the implementation sets the chosen ones
 LAWS = ("A", "B_sp", "B_R", "C_sp", "C_R", "C_img", "D")
 PHI_CLOSURES = ("self", "seg")
@@ -99,16 +102,22 @@ def phi_closure(*options):
 
 
 def declare_law(mapping):
-    """The owner's chosen same-molecule law, as the implementation declares it
-    on the network (no-op while the law is a design)."""
+    """The owner's chosen same-molecule law (I-306: law A, phi_seg), declared
+    on the network: ``transport_model["same_molecule"]``.  It declares the
+    implemented law whatever ``I297_LAW`` / ``I297_PHI`` select, so a
+    selection of another option fails
+    ``test_the_selected_options_are_the_engines_declared_law``."""
+    mapping["transport_model"]["same_molecule"] = {"schema": SAME_MOLECULE_SCHEMA, "law": "well_mixed",
+                                                   "escape_factor": "segment"}
     return mapping
 
 
 def declared_law(engine):
-    """(law, phi closure) the engine fires, read from its declaration; (None,
-    None) while no law is declared.  The implementation points this at the
-    declaration field ``declare_law`` writes."""
-    return None, None
+    """(law, phi closure) the engine fires, read from its declaration
+    (``MeltEngine.same_law``, parsed from ``transport_model["same_molecule"]``);
+    (None, None) when none is declared."""
+    law_ = getattr(engine, "same_law", None)
+    return (None, None) if law_ is None else (law_.law, law_.phi)
 
 
 def exact_total(engine):
@@ -124,8 +133,9 @@ def class_rate(engine, name):
     current state: its unimolecular and two-molecule channels, a thinned
     reverse class's times its exact mean escape factor (``_fallback_phi``,
     exhaustive below ``PHI_FALLBACK_LIMIT``), a MET class's share of every
-    component pair's allowed rate.  Same-molecule pairs are leak today (0
-    here); the implementation adds their fired rate."""
+    component pair's allowed rate.  A class's same-molecule pairs under the
+    declared law are its ``("self", class)`` channel (phi_seg included for a
+    MET class)."""
     ci = [t.name for t in engine.templates].index(name)
     cls = engine.classes[ci]
     rate = math.fsum(a for key, a in engine.propensities().channels if key[0] != "met" and key[1] == ci)
@@ -138,14 +148,38 @@ def class_rate(engine, name):
     return rate
 
 
-def law_spec(*mutations, d_ref=1.0e-17):
+def law_spec(*mutations, d_ref=1.0e-17, law=True):
+    """The network fixture with the MET block (``d_ref``), no filler, the
+    ``mutations`` and (``law``) the declared same-molecule law."""
     def mutate(mapping):
         mapping["transport_model"] = {"met": S.pe_met(d_ref)}
         no_filler(mapping)
         for m in mutations:
             m(mapping)
-        declare_law(mapping)
+        if law:
+            declare_law(mapping)
     return network_spec(mutate)
+
+
+def _undeclared(spec):
+    """``spec`` without the same-molecule law (its pairs are same_molecule leak)."""
+    from rmgpy.polymer_spec import normalized_polymer_spec
+    mapping = spec.as_mapping()
+    mapping["transport_model"] = {k: v for k, v in mapping["transport_model"].items() if k != "same_molecule"}
+    return normalized_polymer_spec(mapping)
+
+
+def _prices_both_ways(engine, spec, state, templates, rows):
+    """The rows price the measured same_molecule leak of the undeclared
+    engine (same count, same weights), and they are the declared law's
+    encounter group of the molecule (the group phi_seg reads)."""
+    bare = _engine(_undeclared(spec), state, templates)
+    assert bare.same_law is None
+    assert _classes(bare)["same_molecule"] == pytest.approx(rows.k_act / bare.nav, rel=1.0e-12)
+    (table,) = engine._self_of.values()
+    assert table.group == rows.classes
+    assert table.k_act == pytest.approx(rows.k_act, rel=1.0e-15)
+    assert _classes(engine)["same_molecule"] == 0.0
 
 
 def _engine(spec, state, templates, seed=3):
@@ -997,7 +1031,8 @@ def test_the_self_pair_rows_count_each_ordered_site_pair_once():
     leak (same count, same weights).  phi_self = k_D(L, L) / (k_D + k_act)
     with k_D written out (``_analytic_k_d``)."""
     spec, cut, m, r = _opened_ring(_NO_SPLIT_D_REF)
-    engine = _engine(spec, cut, [_recombination(cut, m, r, "close", 1.0e-2)])
+    templates = [_recombination(cut, m, r, "close", 1.0e-2)]
+    engine = _engine(spec, cut, templates)
     (entry,) = engine.entries.values()
     rows = engine.self_pair_rows(entry)
     assert rows.classes == ((0, 1.0, 0.0),)
@@ -1006,17 +1041,18 @@ def test_the_self_pair_rows_count_each_ordered_site_pair_once():
     k_d = _analytic_k_d("self", engine.transport, entry.met_length)
     assert rows.k_d_self == pytest.approx(k_d, rel=1.0e-12)
     assert rows.phi_self == pytest.approx(k_d / (k_d + 1.0e-2), rel=1.0e-12)
-    assert _classes(engine)["same_molecule"] == pytest.approx(rows.k_act / engine.nav, rel=1.0e-12)
+    _prices_both_ways(engine, spec, cut, templates, rows)
 
     spec, state, a, c = _two_aryl_chain()
-    engine = _engine(spec, state, [_recombination(state, a, c, "aa", 3.0e-2)])
+    templates = [_recombination(state, a, c, "aa", 3.0e-2)]
+    engine = _engine(spec, state, templates)
     assert engine.classes[0].divisor == 2, "setup: the aryl-aryl recombination is a role swap"
     (entry,) = [e for e in engine.entries.values() if e.species is None]
     rows = engine.self_pair_rows(entry)
     assert sum(r[1] + r[2] for r in rows.classes) == 1.0
     assert rows.k_act == pytest.approx(3.0e-2, rel=1.0e-15)
     assert engine.pair_rate(entry, entry).k_act == pytest.approx(4 * 3.0e-2, rel=1.0e-15)
-    assert _classes(engine)["same_molecule"] == pytest.approx(rows.k_act / engine.nav, rel=1.0e-12)
+    _prices_both_ways(engine, spec, state, templates, rows)
 
 
 def test_the_self_pair_rows_leave_excluded_classes_out():
