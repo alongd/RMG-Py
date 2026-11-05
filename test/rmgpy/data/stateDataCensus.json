@@ -23342,7 +23342,7 @@
         "test/rmgpy/rmg/mainTest.py",
         "test/rmgpy/diagnosticModeTest.py"
       ],
-      "source_sha256": "b81e02233845d84ab8162e25ff9dc9ccc142d3d58630cd34984c96b41532d206"
+      "source_sha256": "3c6a5dcc8026ea2f9e93d2ef4f3d8fca116e65140f6b2936d299db6eba93ed42"
     },
     "rmgpy/rmg/main.py:RMG.clear": {
       "verdict": "carried",
@@ -23914,11 +23914,11 @@
     },
     "rmgpy/rmg/model.py:CoreEdgeReactionModel.check_for_existing_reaction": {
       "verdict": "carried",
-      "reason": "Uses the existing supplied-species reaction identity check, with a narrow exception for opposite irreversible electron channels from different libraries; it does not collapse species state or query rates.",
+      "reason": "Retains exact supplied-species reaction identity; permits only sourced, fully declared EEDF self-return family members through the symmetrical-reaction guard. No species-state collapse or rate estimation.",
       "evidence": [
         "test/rmgpy/rmg/electronChannelTest.py"
       ],
-      "source_sha256": "9238cfb0a3b9f2485535abbce272694b02ffbde65baa29d9130f089318b4d478"
+      "source_sha256": "deea36c3ecaa05102849b680aba946c66017c0d6d52f55671b057e8c7d28427f"
     },
     "rmgpy/rmg/model.py:CoreEdgeReactionModel.check_for_existing_species": {
       "verdict": "carried",
@@ -25722,7 +25722,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "0685d747728c2869722504684f02a15dc5e36a9f1cd8cb9c4ce14a3837570f18"
+      "source_sha256": "3090c2b73e3c169810eaeb3ebcb67af12b1411a1aac6f8ac6465c55eca158f9c"
     },
     "rmgpy/solver/eedf.py:EEDFTable.manifest": {
       "verdict": "carried",
@@ -25746,7 +25746,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "3256c0263f24df5e3d13404f662d7f7cc17278ecf0d82ede329e61fd77c314c2"
+      "source_sha256": "383749861e1619639e0c04e801f54ce67fffd204e902ed60cb3ccfa73cc56979"
     },
     "rmgpy/solver/eedf.py:EEDFTable.row.interpolate": {
       "verdict": "carried",
@@ -25754,7 +25754,7 @@
       "evidence": [
         "test/rmgpy/solver/eedfTableTest.py"
       ],
-      "source_sha256": "0c0cbdcf9a0b678308cb41d670a9d9ca8845ad4bf112829cd79d86e76e504844"
+      "source_sha256": "a07babe6aa5b7c8efa2c9002eff2094793db8271c71f69b4f81494a9bdea9ed2"
     },
     "rmgpy/solver/eedf.py:EEDFTable.row.take": {
       "verdict": "carried",
@@ -27024,7 +27024,7 @@
         "test/rmgpy/solver/plasmaElectronegativeRework8Test.py",
         "test/rmgpy/solver/plasmaRadiationTest.py"
       ],
-      "source_sha256": "3fffaa07bd2791ec5760d73663a23d554157a992598b212deeefbc8a63c7322a",
+      "source_sha256": "7805d0dbb58c0a6cd337fdf684c09ce02ff70002f44eb4eb9b5d7122170195af",
       "file": "rmgpy/solver/plasma.pyx",
       "line": 3970
     },
@@ -27365,14 +27365,14 @@
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._eedf_composition_energy_derivative": {
       "verdict": "carried",
-      "reason": "Combines the table mean-energy coordinate derivative with the analytic sourced Tv population gradient, preserving the original assigned molecular inputs.",
+      "reason": "Combines table coordinate derivatives with the sourced Tv gradient and the total-4s/ground quotient derivative, preserving exact mapped species and assigned molecular inputs.",
       "evidence": [
         "test/rmgpy/solver/plasmaEEDFCoreTest.py",
         "test/rmgpy/solver/plasmaEEDFStateIsolationTest.py",
         "test/rmgpy/solver/plasmaEEDFStructuralContractTest.py",
         "test/rmgpy/solver/plasmaEEDFVibrationalTest.py"
       ],
-      "source_sha256": "743d1b15c8c487c12dc9c452d249ad215ae9cff794f70fae9aaa61532637b569",
+      "source_sha256": "9b0d312f2db83e3343fcbac38181d2a2cc36f0c9235f89fe5765923c85b8f0ef",
       "file": "rmgpy/solver/plasma.pyx",
       "line": 3622
     },
@@ -27390,14 +27390,14 @@
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._eedf_coordinates": {
       "verdict": "carried",
-      "reason": "Computes Tv from the exact mapped v0/v1 populations and sourced energies/weights; out-of-domain Tv axes and envelopes refuse rather than clamping.",
+      "reason": "Computes Tv and total Ar(4s)/ground coordinates from exact mapped species populations and declared source energies/weights; no molecular-data estimation or identity substitution.",
       "evidence": [
         "test/rmgpy/solver/plasmaEEDFCoreTest.py",
         "test/rmgpy/solver/plasmaEEDFStateIsolationTest.py",
         "test/rmgpy/solver/plasmaEEDFStructuralContractTest.py",
         "test/rmgpy/solver/plasmaEEDFVibrationalTest.py"
       ],
-      "source_sha256": "898b203da810880ac9f2e1be5387ca67d9d19d73593af4be0fcba6c86ca56dcd",
+      "source_sha256": "6013cd60922b4823e8376b86daf90327563f0c9d87cbdfef08904d9ef97cd3df",
       "file": "rmgpy/solver/plasma.pyx",
       "line": 3243
     },
@@ -27410,7 +27410,7 @@
         "test/rmgpy/solver/plasmaEEDFStructuralContractTest.py",
         "test/rmgpy/solver/plasmaEEDFVibrationalTest.py"
       ],
-      "source_sha256": "439af7514a683214bd96cfbfc52b7d7aec82ddb3ffc5db92e32ba205233072d1",
+      "source_sha256": "dd44c30d391caab7498fb25e15c82808ed727ae4358f27812fc373a2dec471a6",
       "file": "rmgpy/solver/plasma.pyx",
       "line": 3265
     },
@@ -27671,7 +27671,7 @@
         "test/rmgpy/solver/plasmaEEDFBranchedTest.py",
         "test/rmgpy/solver/plasmaEEDFVibrationalTest.py"
       ],
-      "source_sha256": "6bfe54fc6d514717d9035a81dd32d46a8c68bba2ea269c47698c703de8f91121",
+      "source_sha256": "0b5d040756ad2e868f6c48164e6eb741788a5eea265c2e566228367bedaa8254",
       "file": "rmgpy/solver/plasma.pyx",
       "line": 2875
     },
@@ -34194,7 +34194,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/channelMapTest.py"
       ],
-      "source_sha256": "ada74037a5162d8668fb2d7fbcda67647d9a4de50b111975c00aa576d4371c12"
+      "source_sha256": "f648015863fd772a845114cec52eace922ee7e3e52d1a034c50c7212cc3f75fc"
     },
     "rmgpy/tools/eedf/channel_map.py:_build_declared_mixture_spec": {
       "verdict": "carried",
@@ -34354,7 +34354,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/channelMapTest.py"
       ],
-      "source_sha256": "9e6ed7eebbc3be086ac803bd8d5aaae58143fd3786f5c7fd2f28e644f29f9e56"
+      "source_sha256": "83f9c4b17df3797ae751a22fa79958d027c82477f5c7edc1d2bdc21e24e50474"
     },
     "rmgpy/tools/eedf/channel_map.py:convert_channel_maps.<lambda1>": {
       "verdict": "not-reachable-for-resolved",
@@ -34926,7 +34926,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/generateTest.py"
       ],
-      "source_sha256": "e6867cbf7a6aa9cb0470facc3c9ad6bc093a90b7e2f91808828937cceea685f4"
+      "source_sha256": "1c5956041d8cb0338a948ab75118cd99a4e2bae753e1e9bf1bf57a4719edca56"
     },
     "rmgpy/tools/eedf/generate.py:_model_inputs": {
       "verdict": "not-reachable-for-resolved",
@@ -34990,7 +34990,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/generateTest.py"
       ],
-      "source_sha256": "d55d6a7c678b469c12d48608ebb23f261bb45531ba3fd18d9f0217aed9e2c5b1"
+      "source_sha256": "d460637910106854c637e9f77f14f8899b7b52eb79d6b962d4f846ca59af68c7"
     },
     "rmgpy/tools/eedf/generate.py:qualify_interpolation.direct_solver": {
       "verdict": "carried",
@@ -35081,12 +35081,12 @@
     },
     "rmgpy/tools/eedf/integrity.py:_resolved_properties": {
       "verdict": "carried",
-      "reason": "Expands declared populations using sourced ladder levels and checks every level energy, weight and parent population against the explicit specification.",
+      "reason": "Expands declared vibrational and total-4s populations using their frozen conventions while retaining explicit state identities, energies, weights and ground populations.",
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py",
         "test/rmgpy/tools/eedf/vibrationalTest.py"
       ],
-      "source_sha256": "2495dc00025ad81815df9575e1ddb0a1c723536d664d44b9ac7ffbb337fb5ba9",
+      "source_sha256": "85e063dde2f74d22aa4856ff7f2c57f6ac4e25240ab220933e2fada27cd03b26",
       "file": "rmgpy/tools/eedf/integrity.py",
       "line": 247
     },
@@ -35567,7 +35567,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/branchYieldTest.py"
       ],
-      "source_sha256": "2d8bf86b87396dd32ca46f3500dcfc2c1b772802c5137dbfe067c1fc39860df6"
+      "source_sha256": "d6f81e8b4d35d2ad7511141fdbec75e4ec9c25f76f61b44f642b24c30267cebd"
     },
     "rmgpy/tools/eedf/ownership.py:make_branch_family.<lambda1>": {
       "verdict": "carried",
@@ -35591,7 +35591,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/branchYieldTest.py"
       ],
-      "source_sha256": "2a3f561ef4838f395196e3da702d7aa712eb79d935a9c03cd977c08f7d95097c"
+      "source_sha256": "cf0f37c68408b74f5145ee47df0a534d6e4ffac370a8d43f576be932fec93027"
     },
     "rmgpy/tools/eedf/ownership.py:require_cascade_yields": {
       "verdict": "carried",
@@ -35607,7 +35607,7 @@
       "evidence": [
         "test/rmgpy/solver/plasmaEEDFBranchedTest.py"
       ],
-      "source_sha256": "04458ce1e6af9b6828e44307da5cb0ffc7acb7900ef6ab731cfc4014e0257d8b"
+      "source_sha256": "b3c5a658ef2502f2453c2c5f4820e8de159728d694fa2b580dd72f03057c353f"
     },
     "rmgpy/tools/eedf/ownership.py:validate_branch_metadata": {
       "verdict": "not-reachable-for-resolved",
@@ -35914,7 +35914,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/schemaTest.py"
       ],
-      "source_sha256": "d7655ec23c9f862d6223678b669e70a9d3ae4fdac53b8adfda649e596018c010"
+      "source_sha256": "e8fb244a35cd984ca5240f7ddd7349e0d59e8a5863ca89eb583497ac553546d0"
     },
     "rmgpy/tools/eedf/schema.py:_comparator_metadata": {
       "verdict": "excluded",
@@ -35954,7 +35954,7 @@
       "evidence": [
         "test/rmgpy/tools/eedf/schemaTest.py"
       ],
-      "source_sha256": "a8e90f59faeea3603e44fd63ea7e72e259c54c29f964b34c1e1a5d447f9384a6"
+      "source_sha256": "d52f218d9d790e4fe8202ad08939aa805b290c8aa628e26711540977d5b92d3e"
     },
     "rmgpy/tools/eedf/schema.py:_provider_kind": {
       "verdict": "excluded",
@@ -35966,12 +35966,12 @@
     },
     "rmgpy/tools/eedf/schema.py:_row_inputs": {
       "verdict": "carried",
-      "reason": "Copies frozen vibrational ladder metadata into the row fingerprint so source, level and policy changes invalidate stale tables.",
+      "reason": "Fingerprints all explicit row inputs, including the frozen argon population convention and elimination limits; stale source or policy inputs fail closed.",
       "evidence": [
         "test/rmgpy/tools/eedf/schemaTest.py",
         "test/rmgpy/tools/eedf/vibrationalTest.py"
       ],
-      "source_sha256": "2feb2681b2381e086810c116f7bd307fe2328cb1fe1361ef99d7c432bd732e08",
+      "source_sha256": "c618e4c7d5fcea2e7706859fbb764d1c441559a0700c0d3d5aaf3a119426f253",
       "file": "rmgpy/tools/eedf/schema.py",
       "line": 470
     },
@@ -35982,7 +35982,7 @@
         "test/rmgpy/tools/eedf/schemaTest.py",
         "test/rmgpy/tools/eedf/vibrationalTest.py"
       ],
-      "source_sha256": "98bbc91edefde7cf6c66e4df45a32366efdfce694dfccc971dac45b6cad614d3",
+      "source_sha256": "aa002216b150fb1fc6960ea428eb5ba12924e3d88c6c4d885d91240c87caaae1",
       "file": "rmgpy/tools/eedf/schema.py",
       "line": 307
     },
@@ -36193,7 +36193,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "4da7d7e274a86b2653786d1d786d02af7a061901b9c645ab038e0536b9b838be"
+      "source_sha256": "461087288b7bbda1e7801495dae04d52cf84a1beb486cefbd77ecddb61cfb548"
     },
     "rmgpy/tools/eedf/validation.py:_split_branches": {
       "verdict": "carried",
@@ -38210,6 +38210,118 @@
         "test/rmgpy/solver/plasmaRadiationTest.py"
       ],
       "source_sha256": "ef01f827b46240fb9e40a222548b42215607f6a0dd32826ebf2e660d465ab858"
+    },
+    "rmgpy/solver/plasma.pyx:PlasmaReactor._check_argon_elimination_validity": {
+      "verdict": "carried",
+      "reason": "Checks the realized total 4s/ground ratio and electron density against explicit table limits using exact species indices; it refuses outside the declared domain and acquires no molecular data.",
+      "evidence": [
+        "test/rmgpy/solver/argonValidityTest.py"
+      ],
+      "source_sha256": "d4c1c84e63e5de904628d0b625cf363d7fc5ef5383428c6d8894a35c4a30fb56"
+    },
+    "rmgpy/tools/eedf/argon.py:main": {
+      "verdict": "carried",
+      "reason": "Routes explicit CLI inputs to the source-checked spec refresh and reports conversion counts; it does not infer molecular identity or data.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/argonSpecTest.py"
+      ],
+      "source_sha256": "ababd3acd500ad434ff948a1659f7ad4b12e827e750d0ac3208642bcea23cc50"
+    },
+    "rmgpy/tools/eedf/argon.py:refresh_spec": {
+      "verdict": "carried",
+      "reason": "Refreshes explicit collision inputs only after source hash and realization identity checks, retaining resolved molecular owner identities and sourced cascade declarations.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/argonSpecTest.py"
+      ],
+      "source_sha256": "f42f7fe256edf55623238346b74610f8aa6a3a229a6e9036557394d6090e8b2a"
+    },
+    "rmgpy/tools/eedf/argon.py:refresh_spec.<lambda1>": {
+      "verdict": "carried",
+      "reason": "Resolves user-supplied filesystem paths for the pinned spec, database and realization; it supplies no molecular data.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/argonSpecTest.py"
+      ],
+      "source_sha256": "c4f3abeea608def4da96b5c2db1db3709d320de2cb0ce8edc64dbd664d920e6e"
+    },
+    "rmgpy/tools/eedf/argon_population.py:check_zero_target_nodes": {
+      "verdict": "carried",
+      "reason": "Checks explicitly resolved target and reverse-source populations at every population grid node and refuses unsupported solver inputs without substituting data.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/argonPopulationTest.py"
+      ],
+      "source_sha256": "f13b9a89787232fe91f50970d26ae975714d73029004c38ae6aaaab7f937f76c"
+    },
+    "rmgpy/tools/eedf/argon_population.py:coordinate": {
+      "verdict": "carried",
+      "reason": "Transforms the declared physical fraction to its fixed linear/log interpolation coordinate; no species mapping or data acquisition.",
+      "evidence": [
+        "test/rmgpy/solver/eedfTableTest.py"
+      ],
+      "source_sha256": "eb7576a973c9fb615ce71503a04312752505449a969c4a8149b519f9902eec78"
+    },
+    "rmgpy/tools/eedf/argon_population.py:coordinate_derivative": {
+      "verdict": "carried",
+      "reason": "Returns the derivative of the frozen fraction interpolation coordinate without acquiring molecular data.",
+      "evidence": [
+        "test/rmgpy/solver/eedfTableTest.py"
+      ],
+      "source_sha256": "5114ceb5c70f6833af5a22789e4752cc6415b808cceb0394935a9d4b0316b5e0"
+    },
+    "rmgpy/tools/eedf/argon_population.py:populations": {
+      "verdict": "carried",
+      "reason": "Distributes a declared total-4s/ground ratio among the four explicitly named states by the frozen statistical weights, preserving those state identities.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/argonPopulationTest.py"
+      ],
+      "source_sha256": "5e9b0465bb406e2431f406df8013590be064ee2d43a5098d6ae2c30224264093"
+    },
+    "rmgpy/tools/eedf/argon_population.py:validate_population_axis": {
+      "verdict": "carried",
+      "reason": "Requires the frozen total-4s population convention and base nodes; no molecular data acquisition or ground-state substitution.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/argonPopulationTest.py"
+      ],
+      "source_sha256": "8690260a3432fd6d2b5ff1d79b432301eaec41588f954f437512f13a919ec32a"
+    },
+    "rmgpy/tools/eedf/channel_map.py:_paired_inverse": {
+      "verdict": "carried",
+      "reason": "Requires exactly one superelastic library owner with the same collision identity and verifies its reversed molecular stoichiometry against the forward owner.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/channelMapTest.py"
+      ],
+      "source_sha256": "5a72135d2113fb6866be6c1587d82d3c73fe74b5f6c10e89ab5c269e5e93b1b7"
+    },
+    "rmgpy/tools/eedf/channel_map.py:_reviewed_inverse": {
+      "verdict": "carried",
+      "reason": "Validates explicit sourced upper-level inverse exceptions and their density/population bounds; it never estimates missing state data or silently omits an owner.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/channelMapTest.py"
+      ],
+      "source_sha256": "9d448439c0224dd3af43bf6b90d52e1641321c35f13a4f4838091098b2696598"
+    },
+    "rmgpy/tools/eedf/channel_map.py:convert_channel_maps.<lambda3>": {
+      "verdict": "carried",
+      "reason": "Sorts explicitly validated paired-owner report rows by collision id without accessing molecular data.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/channelMapTest.py"
+      ],
+      "source_sha256": "e32a85d8e0b6e77fe96cc409c1c8365b0060cd54942d0879474c922507fb5895"
+    },
+    "rmgpy/tools/eedf/ownership.py:is_declared_branch_owner": {
+      "verdict": "carried",
+      "reason": "Admits a self-return only when its actual library entry and marker belong to a complete declared family with verified molecular products, common source identity and normalized yields.",
+      "evidence": [
+        "test/rmgpy/tools/eedf/branchYieldTest.py"
+      ],
+      "source_sha256": "056031d918a303420fcfc64a7f42ebd05a864b1b6323f99b4a437e5ad7d4ee9c"
+    },
+    "rmgpy/tools/eedf/schema.py:_argon_validity_declarations": {
+      "verdict": "carried",
+      "reason": "Validates optional positive finite argon elimination limits from explicit metadata; absent declarations do not trigger data estimation.",
+      "evidence": [
+        "test/rmgpy/solver/argonValidityTest.py"
+      ],
+      "source_sha256": "5e0de58868fbe612bb864a38c1e27c3a25dd45aa4120efa01a150dca6629c9a4"
     }
   }
 }

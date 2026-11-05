@@ -5655,5 +5655,20 @@
       "test/rmgpy/kinetics/kineticsDataExportTest.py::test_real_admitted_annotated_chemkin_round_trip_with_flux_pairs",
       "test/rmgpy/data/kinetics/superelasticRework3Test.py::test_exporter_checks_original_declaration"
     ]
+  },
+  "rmgpy/tools/eedf/channel_map.py::_paired_inverse::reaction-io": {
+    "verdict": "guarded",
+    "reason": "Validates a pair of explicitly irreversible EEDF owners, requiring opposite molecular stoichiometry and matching ine/sup collision markers; no thermal reverse rate is generated.",
+    "tests": [
+      "test/rmgpy/tools/eedf/channelMapTest.py::test_converter_reports_both_directional_owners",
+      "test/rmgpy/tools/eedf/channelMapTest.py::test_converter_refuses_missing_or_wrong_sup_owner"
+    ]
+  },
+  "rmgpy/tools/eedf/ownership.py::is_declared_branch_owner::reaction-io": {
+    "verdict": "guarded",
+    "reason": "Checks actual library/entry identity, irreversibility and all four declared branch members before permitting a self-return; does not construct or serialize a reverse rate.",
+    "tests": [
+      "test/rmgpy/tools/eedf/branchYieldTest.py::test_self_return_admission_requires_declared_complete_family"
+    ]
   }
 }
