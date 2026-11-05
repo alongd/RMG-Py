@@ -2732,3 +2732,22 @@ the owner's declared finite-cylinder extension; production validity requires the
 independent qualification and frozen thresholds described above. The default
 reference fixture in the tests echoes the production flux and checks the interface
 only; it does not establish scientific validity.
+
+
+Argon EEDF population coordinate
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Resolved-argon tables may declare ``argon_4s_population`` with axis ``f_Ar4s``:
+the sum of the four neutral 4s populations divided by neutral ground-state Ar.
+The spec refresher ``python -m rmgpy.tools.eedf.argon`` adds nodes 0, 1e-7,
+1e-6, 1e-5 and 1e-4 and the statistical split (5, 3, 1, 3)/12. The reactor
+computes the coordinate from species molecular identities each step and refuses
+accepted states above 1e-4. Tensor PCHIP uses f/1e-7 below the first positive
+node and 1+ln(f/1e-7) above it. The spec declares 1% mobility/field-power
+interpolation criteria and off-centre qualification points. Refreshing a spec
+does not generate or qualify a production table.
+
+Sourced self-return cascade branches survive library and seed admission when
+their source entry explicitly declares the complete four-member EEDF family.
+Their net species balance is zero; their collision energy and photon accounting
+remain part of the family. Other symmetric reactions retain the ordinary guard.

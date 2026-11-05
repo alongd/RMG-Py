@@ -648,8 +648,18 @@ class CoreEdgeReactionModel:
         # If reactants and products are identical, then something weird happened along
         # the way and we got a symmetrical reaction.
         if rxn.reactants == rxn.products:
-            logging.debug("Symmetrical reaction found. Returning no reaction")
-            return True, None
+            # A declared cascade self-return carries collision energy and photon
+            # flux even though its net species stoichiometry is zero.
+            from rmgpy.kinetics import EEDFChannel
+            declared = False
+            if isinstance(rxn.kinetics, EEDFChannel) and rxn.kinetics.branch_product is not None:
+                from rmgpy.tools.eedf.ownership import is_declared_branch_owner
+                library = get_family_library_object(rxn.family)
+                if isinstance(library, KineticsLibrary):
+                    declared = is_declared_branch_owner(rxn, library)
+            if not declared:
+                logging.debug("Symmetrical reaction found. Returning no reaction")
+                return True, None
 
         family_obj = get_family_library_object(rxn.family)
         shortlist = self.search_retrieve_reactions(rxn)

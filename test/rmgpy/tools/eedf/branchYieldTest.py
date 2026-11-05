@@ -458,3 +458,39 @@ def test_four_s_cascade_matches_molecular_source_at_binding_and_runtime(branch_f
         family_from_reactions(snapshot, reactions)
     with pytest.raises(SpecError, match='source'):
         validate_bound_branch(family, reactions[0])
+
+
+@pytest.mark.parametrize('mutation', [None, 'missing_declaration', 'missing_member', 'wrong_member', 'thermal'])
+def test_self_return_admission_requires_declared_complete_family(branch_fixture, monkeypatch, mutation):
+    from rmgpy.data.kinetics.library import KineticsLibrary
+    from rmgpy.rmg.model import CoreEdgeReactionModel
+    from rmgpy.kinetics import EEDFChannel, Arrhenius
+    import rmgpy.rmg.model as model_module
+    _, reactions, _ = branch_fixture
+    source = reactions[0].products[1]
+    indices = tuple(r.entry.index for r in reactions)
+    for r in reactions:
+        k = r.kinetics
+        r.reactants = [r.reactants[0], source]
+        r.kinetics = r.entry.data = EEDFChannel(
+            process=k.process.replace('Ar(1S0)', 'Ar(3P2)'), collision_set=k.collision_set,
+            branch_product=k.branch_product, branch_yield=k.branch_yield,
+            yield_table_sha256=k.yield_table_sha256)
+        r.entry.long_desc = f'EEDF branch family = {indices!r}'
+        r.duplicate = True
+    library = KineticsLibrary(label='PlasmaArgon')
+    library.entries = {r.entry.index: r.entry for r in reactions}
+    model = CoreEdgeReactionModel()
+    monkeypatch.setattr(model_module, 'get_family_library_object', lambda name: library)
+    target = reactions[0]
+    if mutation == 'missing_declaration':
+        target.entry.long_desc = ''
+    elif mutation == 'missing_member':
+        del library.entries[indices[-1]]
+    elif mutation == 'wrong_member':
+        target.entry.long_desc = 'EEDF branch family = (1, 2, 3, 4)'
+    elif mutation == 'thermal':
+        target.kinetics = Arrhenius(A=(1., 'm^3/(mol*s)'))
+    found, reaction = model.check_for_existing_reaction(target)
+    assert found is (mutation is not None)
+    assert reaction is None

@@ -375,6 +375,8 @@ class EEDFTable:
             from rmgpy.tools.eedf.channels import _validate_map
             _validate_map(manifest['channel_map'])
         _check_model(manifest, current_model, manifest['tolerances']['fingerprint_rtol'])
+        from rmgpy.tools.eedf.argon_population import validate_population_axis
+        validate_population_axis(manifest['row_inputs'])
         if manifest['row_inputs']['interpolant'] != _interpolant_identity():
             raise FingerprintMismatch('interpolant implementation')
         if manifest['axes'] != manifest['row_inputs']['axes']:
@@ -676,6 +678,14 @@ class EEDFTable:
         if branch_id not in self._data:
             raise AmbiguousBranch('unknown branch ' + str(branch_id))
         source = self._data[branch_id]
+        from rmgpy.tools.eedf.argon_population import AXIS, coordinate, coordinate_derivative
+        interpolation_axes = list(self._axes)
+        coordinate_scales = [1.] * len(point)
+        for dimension, name in enumerate(self._axis_names):
+            if name == AXIS:
+                coordinate_scales[dimension] = coordinate_derivative(point[dimension])
+                interpolation_axes[dimension] = coordinate(self._axes[dimension])
+                point[dimension] = float(coordinate(point[dimension]))
 
         def interpolate(derivative_dimension=None):
             data = source
@@ -683,12 +693,12 @@ class EEDFTable:
             for dimension in range(len(self._axes) - 1, 0, -1):
                 ordinate_data = np.moveaxis(data, dimension, 0)
                 interpolation = PchipInterpolator(
-                    self._axes[dimension], data, axis=dimension, extrapolate=False)
+                    interpolation_axes[dimension], data, axis=dimension, extrapolate=False)
                 if derivative_dimension == dimension:
-                    tangent = interpolation.derivative()(point[dimension])
+                    tangent = interpolation.derivative()(point[dimension]) * coordinate_scales[dimension]
                 elif tangent is not None:
                     tangent = _pchip_tangent(
-                        self._axes[dimension], ordinate_data,
+                        interpolation_axes[dimension], ordinate_data,
                         np.moveaxis(tangent, dimension, 0), point[dimension])
                 data = interpolation(point[dimension])
             ordinate_data = data
@@ -702,7 +712,7 @@ class EEDFTable:
 
         data = source
         for dimension in range(len(self._axes) - 1, 0, -1):
-            data = PchipInterpolator(self._axes[dimension], data, axis=dimension,
+            data = PchipInterpolator(interpolation_axes[dimension], data, axis=dimension,
                                      extrapolate=False)(point[dimension])
         layout = self._layout[branch_id]
         energy_start = layout['swarm/mean_energy_eV'][0]

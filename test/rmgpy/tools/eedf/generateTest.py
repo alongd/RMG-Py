@@ -478,8 +478,9 @@ def test_qualify_interpolation_refuses_a_partial_evaluated_point_set(
         })
 
 
+@pytest.mark.parametrize('frozen_in_spec', [False, True])
 def test_qualify_interpolation_runs_fresh_solver_at_persisted_held_out_points(
-        tmp_path, monkeypatch):
+        tmp_path, monkeypatch, frozen_in_spec):
     persisted = [
         {'u': .25},
         {'u': .5},
@@ -518,7 +519,12 @@ def test_qualify_interpolation_runs_fresh_solver_at_persisted_held_out_points(
         'mobility_N': {'rtol': 1.e-3, 'atol': 0.},
         'field_power': {'rtol': 1.e-3, 'atol': 0.},
     }
-    results = qualify_interpolation(table, spec, criteria=criteria)
+    if frozen_in_spec:
+        spec['interpolation_accuracy'] = criteria
+        with pytest.raises(SpecError, match='frozen interpolation_accuracy'):
+            qualify_interpolation(table, spec, criteria={
+                key: {'rtol': .1, 'atol': 0.} for key in criteria})
+    results = qualify_interpolation(table, spec, criteria=None if frozen_in_spec else criteria)
 
     assert len(results) == len(persisted)
     assert all(result['passed'] for result in results)

@@ -120,7 +120,7 @@ def _solve(driver, channel_map, spec, coordinate, u_values, label):
     return rows
 
 
-def qualify_interpolation(table, spec, *, criteria):
+def qualify_interpolation(table, spec, *, criteria=None):
     """Run fresh pinned LoKI-B solves for an existing table's T10 points.
 
     This is an offline accuracy check, not a runtime identity check. The caller
@@ -128,7 +128,10 @@ def qualify_interpolation(table, spec, *, criteria):
     before any solver is started.
     """
     spec, criteria = copy.deepcopy((spec, criteria))
-    criteria = _freeze_accuracy_criteria(criteria)
+    declared = spec.get('interpolation_accuracy')
+    criteria = _freeze_accuracy_criteria(declared if criteria is None else criteria)
+    if declared is not None and criteria != declared:
+        raise SpecError('T10 criteria differ from the frozen interpolation_accuracy')
     _validate_spec(spec)
     manifest = table.manifest
     channel_map = _load_channel_map(spec['channel_map'])

@@ -419,7 +419,13 @@ def _reviewed_inverse(row, spec, cascade_yields):
             or record['field_range_Td'] != [4., 25.] or record['field_node_count'] != 33
             or re.fullmatch('[0-9a-f]{64}', str(record['bounds_sha256'])) is None):
         raise SpecError('invalid reviewed argon inverse exception')
-    for key, maximum in (('argon_elimination_electron_density_max_m3', 1e18), ('excited_fraction_max', 1e-5)):
+    limits = [('argon_elimination_electron_density_max_m3', 1e18)]
+    if 'argon_4s_population' in spec:
+        from rmgpy.tools.eedf.argon_population import validate_population_axis
+        validate_population_axis(spec)
+    else:
+        limits.append(('excited_fraction_max', 1e-5))
+    for key, maximum in limits:
         value = spec.get(key)
         if type(value) not in (int, float) or not math.isfinite(value) or not 0 < value <= maximum:
             raise SpecError('reviewed inverse requires table validity declaration: ' + key)

@@ -26,8 +26,14 @@ def test_real_spec_refresh_preserves_grid_and_reports_all_argon_owners(tmp_path)
     assert len(report['branch_families']) == 137
     spec_path = destination / ('ar-n2-spec.json' if 'N2' in original['arm']['gases'] else 'pure-ar-spec.json')
     result = json.loads(spec_path.read_text())
-    assert result['axes'] == original['axes']
-    assert result['excited_fraction_max'] == 1.e-5
+    from rmgpy.tools.eedf.argon_population import AXIS, NODES, CONVENTION
+    assert {k: v for k, v in result['axes'].items() if k != AXIS} == original['axes']
+    assert result['axes'][AXIS] == NODES
+    assert result['argon_4s_population'] == CONVENTION
+    assert 'excited_fraction_max' not in result
+    assert report['zero_target_node_check']['passed']
+    assert result['interpolation_accuracy'] == {k: {'rtol': .01, 'atol': 0.} for k in ('mobility_N', 'field_power')}
+    assert any(0. < p[AXIS] < 1.e-7 for p in result['held_out']['off_centre'])
     assert result['argon_elimination_electron_density_max_m3'] == 1.e18
     assert all(f'Ar({state}) = 0' in result['state_properties']['population']
                for state in ('3P2', '3P1', '3P0', '1P1'))

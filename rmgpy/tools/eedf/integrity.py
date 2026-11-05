@@ -296,6 +296,9 @@ def _resolved_properties(spec, coordinates):
 
     fractions = numbers(gas['fraction'])
     populations = numbers(properties.get('population', []), population=True)
+    if 'argon_4s_population' in spec:
+        from rmgpy.tools.eedf.argon_population import AXIS, populations as argon_populations
+        populations.update(argon_populations(state[AXIS]))
     solver_populations = populations.copy()
     # Keep source-domain zero populations for accounting while omitting states
     # outside the solver's declared state table from emitted LoKI properties.

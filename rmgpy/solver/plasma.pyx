@@ -3065,7 +3065,7 @@ cdef class PlasmaReactor(ReactionSystem):
         for name in self.eedf_provider.axis_names[1:]:
             if name in self.eedf_axis_species:
                 continue
-            if name == 'n_e/N':
+            if name in ('n_e/N', 'f_Ar4s'):
                 self.eedf_axis_species[name] = None
                 continue
             label = self._eedf_coordinate_label(name, labels)
@@ -3098,7 +3098,8 @@ cdef class PlasmaReactor(ReactionSystem):
                     "EEDF envelope quantity 'Ar4s_total' cannot resolve any neutral "
                     'argon 4s electronic-state species from molecular identity')
             self.eedf_envelope_species['Ar4s_total'] = tuple(indices)
-        if 'excited_fraction_max' in self.eedf_provider.runtime_metadata:
+        if ('excited_fraction_max' in self.eedf_provider.runtime_metadata
+                or 'f_Ar4s' in self.eedf_provider.axis_names):
             ground_indices, excited_indices = [], []
             for spc in core_species:
                 index = self.species_index[spc]
@@ -3317,6 +3318,14 @@ cdef class PlasmaReactor(ReactionSystem):
                 volume = (constants.R * ((n_total - n_e) * self.T.value_si +
                                           n_e * self.Te.value_si) / self.P.value_si)
                 return n_e * constants.Na / volume if volume > 0. else float('nan')
+            if name == 'f_Ar4s':
+                ground = sum(float(y[j]) for j in self.eedf_envelope_species['argon_ground_validity'])
+                excited = sum(float(y[j]) for j in self.eedf_envelope_species['argon_4s_validity'])
+                fraction = excited / ground if ground > 0. else float('nan')
+                top = self.eedf_provider.axis(name)[-1]
+                if not clamp and (not np.isfinite(fraction) or not 0. <= fraction <= top):
+                    raise PlasmaStateError('argon f_Ar4s top node {0:g}, observed {1:g}'.format(top, fraction))
+                return fraction
             if name == 'Ar4s_total':
                 indices = self.eedf_envelope_species.get(name)
                 if not indices:
@@ -3684,6 +3693,14 @@ cdef class PlasmaReactor(ReactionSystem):
                 _, gradient = temperature(species_index['ladder']['levels'],
                                            [float(y[index]) for index in indices])
                 dc = sum(gradient[j] * float(rates[indices[j]]) for j in range(2))
+            elif name == 'f_Ar4s':
+                ground_indices = self.eedf_envelope_species['argon_ground_validity']
+                excited_indices = self.eedf_envelope_species['argon_4s_validity']
+                ground = sum(float(y[j]) for j in ground_indices)
+                excited = sum(float(y[j]) for j in excited_indices)
+                dground = sum(float(rates[j]) for j in ground_indices)
+                dexcited = sum(float(rates[j]) for j in excited_indices)
+                dc = (dexcited * ground - excited * dground) / ground**2 if ground > 0. else 0.
             elif species_index is None and name == 'n_e/N':
                 dc = ((float(rates[self.electron_index]) * neutral_mol -
                        ne * neutral_rate) / (neutral_mol * neutral_mol)
@@ -4129,15 +4146,18 @@ cdef class PlasmaReactor(ReactionSystem):
         if not self.eedf_mode or self.eedf_provider is None:
             return
         metadata = self.eedf_provider.runtime_metadata
-        if 'excited_fraction_max' in metadata:
+        population_axis = 'f_Ar4s' in self.eedf_provider.axis_names
+        if 'excited_fraction_max' in metadata or population_axis:
             ground = sum(float(y[j]) for j in self.eedf_envelope_species['argon_ground_validity'])
             excited = sum(float(y[j]) for j in self.eedf_envelope_species['argon_4s_validity'])
             fraction = excited / ground if ground > 0. else float('inf')
-            limit = metadata['excited_fraction_max']
+            limit = (metadata['axes']['f_Ar4s'][-1] if population_axis
+                     else metadata['excited_fraction_max'])
             if not np.isfinite(fraction) or not 0. <= fraction <= limit:
                 raise PlasmaStateError(
-                    'argon excited_fraction_max bound {0:g} (total Ar(4s)/Ar ground), '
-                    'observed {1:g}'.format(limit, fraction))
+                    'argon {0} {1:g} (total Ar(4s)/Ar ground), observed {2:g}'.format(
+                        'f_Ar4s top node' if population_axis else 'excited_fraction_max bound',
+                        limit, fraction))
         if 'argon_elimination_electron_density_max_m3' in metadata:
             current_volume = self.compute_volume(y) if volume is None else volume
             density = float(y[self.electron_index]) * constants.Na / current_volume

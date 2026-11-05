@@ -366,6 +366,51 @@ def validate_bound_branch(family, reaction):
     return product
 
 
+def is_declared_branch_owner(reaction, library):
+    """Allow admission only for a marker explicitly named by a complete family.
+
+    The declaration travels in entry.long_desc through library serialization.
+    Table binding still checks the sourced digest and full frozen family.
+    """
+    from rmgpy.kinetics import EEDFChannel
+    marker = reaction.kinetics
+    entry = getattr(reaction, 'entry', None)
+    if (not isinstance(marker, EEDFChannel) or marker.branch_product is None
+            or entry is None or getattr(reaction, 'library', None) != library.label
+            or library.entries.get(entry.index) is not entry
+            or repr(marker) != repr(entry.data) or reaction.reversible):
+        return False
+    declarations = re.findall(r'^EEDF branch family = (.+)$', entry.long_desc, re.M)
+    if len(declarations) != 1:
+        return False
+    try:
+        indices = ast.literal_eval(declarations[0])
+        if (not isinstance(indices, tuple) or len(indices) != 4
+                or any(type(index) is not int for index in indices)
+                or len(set(indices)) != 4 or entry.index not in indices):
+            return False
+        yields = {}
+        for index in indices:
+            sibling = library.entries[index]
+            kin = sibling.data
+            if (not isinstance(kin, EEDFChannel) or sibling.item.reversible
+                    or kin.process != marker.process
+                    or kin.collision_set != marker.collision_set
+                    or kin.yield_table_sha256 != marker.yield_table_sha256
+                    or kin.side != 'ine'
+                    or re.findall(r'^EEDF branch family = (.+)$', sibling.long_desc, re.M) != declarations
+                    or kin.branch_product in yields
+                    or reaction_product_state(sibling.item, kin.process) != kin.branch_product):
+                return False
+            yields[kin.branch_product] = kin.branch_yield
+        validate_yield_vector(yields)
+        validate_branch_metadata(marker.branch_product, marker.branch_yield,
+                                marker.yield_table_sha256, marker.side)
+        return reaction_product_state(reaction, marker.process) == marker.branch_product
+    except (ValueError, SyntaxError, KeyError, TypeError):
+        return False
+
+
 def check_branch_promotion(core, edge, proposed):
     """Preflight a complete promotion before changing any model membership.
 

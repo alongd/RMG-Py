@@ -1,12 +1,13 @@
 """Refresh an Ar or Ar/N2 generation spec for resolved argon electron owners.
 
 The collision realization is produced by the database collector. This tool
-preserves the supplied axes and non-argon data; it does not generate a table.
+preserves the supplied gas/field axes and non-argon data; it does not generate a table.
 """
 import argparse
 import copy
 import hashlib
 import json
+import math
 from pathlib import Path
 import tempfile
 
@@ -59,8 +60,29 @@ def refresh_spec(base_spec, database, realization, destination, *, max_parallel=
         if matches and spec['input_files'][key]['sha256'] not in (pins['base_sha256'], pins['sha256']):
             raise FingerprintMismatch('base spec argon collision source: ' + filename)
         spec['input_files'][key] = {'path': str(path), 'sha256': pins['sha256'], 'kind': 'cross_section'}
-    for key in ('excited_fraction_max', 'argon_elimination_electron_density_max_m3'):
-        spec[key] = actual[key]
+    from rmgpy.tools.eedf.argon_population import AXIS, NODES, CONVENTION, check_zero_target_nodes
+    if (actual.get('argon_4s_population') != CONVENTION
+            or actual.get('argon_4s_fraction_nodes') != NODES):
+        raise SpecError('realization requires the total argon 4s population axis')
+    spec.pop('excited_fraction_max', None)
+    spec['argon_elimination_electron_density_max_m3'] = actual['argon_elimination_electron_density_max_m3']
+    spec['argon_4s_population'] = copy.deepcopy(CONVENTION)
+    spec['axes'][AXIS] = list(NODES)
+    spec['envelopes'].pop('Ar4s_total', None)
+    spec['screen']['candidates'] = [item for item in spec['screen']['candidates']
+                                     if item['name'] not in ('Ar4s_total', AXIS)]
+    spec['screen']['candidates'].append({'name': AXIS, 'reference': 0., 'values': [0., NODES[-1]]})
+    spec['interpolation_accuracy'] = {key: {'rtol': .01, 'atol': 0.}
+                                     for key in ('mobility_N', 'field_power')}
+    off_centre = [dict(point, **{AXIS: 0.})
+                  for point in spec['held_out'].get('off_centre', [])]
+    centre = {name: values[0] for name, values in spec['axes'].items()}
+    centre['u'] = .63 * spec['axes']['u'][0] + .37 * spec['axes']['u'][1]
+    for lower, upper in zip(NODES[:-1], NODES[1:]):
+        fraction = (.37 * upper if lower == 0. else
+                    math.exp(.63 * math.log(lower) + .37 * math.log(upper)))
+        off_centre.append(dict(centre, **{AXIS: fraction}))
+    spec['held_out']['off_centre'] = off_centre
     states = maps['Ar']['states']
     resolved = ('Ar(1S0)', 'Ar(3P2)', 'Ar(3P1)', 'Ar(3P0)', 'Ar(1P1)')
     properties = spec['state_properties']
@@ -100,6 +122,9 @@ def refresh_spec(base_spec, database, realization, destination, *, max_parallel=
         cascade, cascade_provenance = _cascade_snapshot(database)
         converted, report = convert_channel_maps(spec, maps, libraries, 'IST-Lisbon-Ar-2021', cascade,
                                                  library_by_gas={gas: names[gas][1] for gas in gases})
+        report['zero_target_node_check'] = {'passed': True,
+            'population_nodes_checked': check_zero_target_nodes(spec, converted),
+            'field_nodes': len(spec['axes']['u'])}
         report['provenance'] = {'base_spec_sha256': hashlib.sha256(raw).hexdigest(),
                                 'frozen_map_sha256': map_hashes, 'library_sha256': library_hashes,
                                 'cascade_sources': cascade_provenance, 'collision_realization': actual,

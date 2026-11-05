@@ -1946,11 +1946,12 @@ class RMG(util.Subject):
                         "\n{2}\n{3}".format(spc.label, spc2.label, spc.to_adjacency_list(), spc2.to_adjacency_list())
                     )
 
-        # Check all core reactions (in both directions) for collision limit violation
+        # Thermal collision limits do not apply to EEDF-integrated electron rates.
+        from rmgpy.kinetics import EEDFChannel
         violators = []
         for rxn in self.reaction_model.core.reactions:
-            if rxn.is_surface_reaction():
-                # Don't check collision limits for surface reactions.
+            if rxn.is_surface_reaction() or isinstance(rxn.kinetics, EEDFChannel):
+                # EEDFChannel is evaluated only in its bound electron context.
                 continue
             violator_list = rxn.check_collision_limit_violation(t_min=self.Tmin, t_max=self.Tmax, p_min=self.Pmin, p_max=self.Pmax)
             if violator_list:

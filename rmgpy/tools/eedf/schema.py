@@ -338,7 +338,7 @@ def _validate_spec(spec):
                 'working_conditions', 'solver_options', 'tolerances', 'floors',
                 'held_out', 'repositories', 'output_root', 'scratch_root',
                 'omp_threads', 'max_parallel', 'timeout_s', 'refinement'}
-    optional = {'engine_state_map', 'qualification_quantity_rules', 'vibrational_ladders',
+    optional = {'engine_state_map', 'qualification_quantity_rules', 'vibrational_ladders', 'argon_4s_population', 'interpolation_accuracy',
                 *ARGON_VALIDITY_FIELDS}
     if (not isinstance(spec, dict) or not required <= set(spec) or
             set(spec) - required - optional):
@@ -346,6 +346,11 @@ def _validate_spec(spec):
                   (set(spec or {}) - required - optional))
         raise SpecError('spec fields: ' + str(fields))
     _argon_validity_declarations(spec)
+    from rmgpy.tools.eedf.argon_population import validate_population_axis
+    validate_population_axis(spec)
+    if 'interpolation_accuracy' in spec:
+        from rmgpy.tools.eedf.validation import _freeze_accuracy_criteria
+        _freeze_accuracy_criteria(spec['interpolation_accuracy'])
     if 'vibrational_ladders' in spec:
         from rmgpy.tools.eedf.vibrational import validate_ladders
         validate_ladders(spec['vibrational_ladders'])
@@ -492,7 +497,9 @@ def _validate_spec(spec):
 def _interpolant_identity():
     """Version and source hash checked at runtime."""
     from rmgpy.tools.eedf import __version__
-    return {'version': __version__, 'source_sha256': _file_hash(Path(__file__).parents[2] / 'solver' / 'eedf.py')}
+    return {'version': __version__, 'source_sha256': _content_hash({
+        'table': _file_hash(Path(__file__).parents[2] / 'solver' / 'eedf.py'),
+        'argon_population': _file_hash(Path(__file__).with_name('argon_population.py'))})}
 
 
 def _row_inputs(spec):
@@ -502,6 +509,10 @@ def _row_inputs(spec):
         'state_properties', 'working_conditions', 'solver_options', 'screen', 'envelopes',
         'floors', 'tolerances', 'held_out', 'refinement')}
     result.update(_argon_validity_declarations(spec))
+    if 'interpolation_accuracy' in spec:
+        result['interpolation_accuracy'] = copy.deepcopy(spec['interpolation_accuracy'])
+    if 'argon_4s_population' in spec:
+        result['argon_4s_population'] = copy.deepcopy(spec['argon_4s_population'])
     if 'engine_state_map' in spec:
         result['engine_state_map'] = copy.deepcopy(spec['engine_state_map'])
     if 'vibrational_ladders' in spec:

@@ -46,10 +46,10 @@ from rmgpy.tools.eedf.schema import _file_hash, _content_hash, _interpolant_iden
 def fixture_table(tmp_path, energies=(1., 2., 3., 4.), branches=1, composition=False,
                   transport_identity=True, corrupt_native_power=False,
                   include_field=True, composition_axis=(0., 1.),
-                  nonlinear_mobility=False, retained_held_out=()):
+                  nonlinear_mobility=False, retained_held_out=(), composition_name="x"):
     axes = {'u': [0., 1., 2., 3.]}
     if composition:
-        axes['x'] = list(composition_axis)
+        axes[composition_name] = list(composition_axis)
     shape = tuple(len(v) for v in axes.values())
     def values(row):
         arr = np.empty(shape, dtype=object)
@@ -76,13 +76,16 @@ def fixture_table(tmp_path, energies=(1., 2., 3., 4.), branches=1, composition=F
                 'power_groups': power_groups, 'f0': np.array([1.]),
                 'energy_eV': np.array([.5]), 'energy_edges_eV': np.array([0., 1.]),
                 'gas_fractions': {'Ar': 1.}, 'state_populations': {'Ar(1S0)': 1.},
-                'composition': {'x': axes['x'][index[1]]} if composition else {},
+                'composition': {composition_name: axes[composition_name][index[1]]} if composition else {},
                 'converged': True, 'iteration_count': -1, 'setup': 'fixture'}
         return arr
     inputs = {'axes': axes, 'Tg_K': 298.15, 'P_Pa': 666.61,
               'arm': {'gas': 'Ar'}, 'cross_sections': {'Ar': 'sha'},
               'channel_map_sha256': 'map', 'reactions': [], 'solver_options': {'growth': 'temporal'},
               'interpolant': _interpolant_identity(), 'state_populations': {'Ar(1S0)': 1.}}
+    if composition_name == 'f_Ar4s':
+        from rmgpy.tools.eedf.argon_population import CONVENTION
+        inputs['argon_4s_population'] = copy.deepcopy(CONVENTION)
     manifest = {'accepted': True,
         'T10 interpolation qualification': {
             'check': 'T10 interpolation qualification',
@@ -511,3 +514,29 @@ def test_field_power_owns_each_input_before_later_conversion():
 
     assert result[0] == pytest.approx(2. * (3.e-21) ** 2)
     assert not result.flags.writeable
+
+
+@pytest.mark.parametrize('fraction', [3.7e-8, 1.e-7, 2.3e-7, 4.1e-6, 6.3e-5])
+def test_argon_population_interpolation_and_chain_rule(tmp_path, fraction):
+    from rmgpy.tools.eedf.argon_population import NODES
+    path, model = fixture_table(tmp_path, composition=True, composition_name='f_Ar4s',
+                                composition_axis=NODES, nonlinear_mobility=True)
+    table = EEDFTable.load(path, model, artifact_sha256=_file_hash(path / 'table.h5'))
+    u = .7
+    row = table.row(u, {'f_Ar4s': fraction})
+    # Independent transformed-axis reference, including the zero interval.
+    axes = [0., 1.] + [1. + np.log(f / 1.e-7) for f in NODES[2:]]
+    point = fraction / 1.e-7 if fraction <= 1.e-7 else 1. + np.log(fraction / 1.e-7)
+    node_values = np.array([[(1. + .07*i*i + .12*j*j + .03*i*j)*1.e24
+                             for j in range(5)] for i in range(4)])
+    expected = PchipInterpolator([0., 1., 2., 3.],
+        PchipInterpolator(axes, node_values, axis=1)(point))(u)
+    assert row.swarm['mobility_N'] == pytest.approx(expected, rel=1.e-13)
+    step = fraction * 1.e-5
+    high = table.row(u, {'f_Ar4s': fraction + step})
+    low = table.row(u, {'f_Ar4s': fraction - step})
+    derivative = (high.power_groups['field'] - low.power_groups['field']) / (2*step)
+    assert row.derivatives['composition']['f_Ar4s']['power_groups']['field'] == pytest.approx(
+        derivative, rel=2.e-5)
+    with pytest.raises(OutOfDomain, match='f_Ar4s'):
+        table.row(u, {'f_Ar4s': 1.00001e-4})
