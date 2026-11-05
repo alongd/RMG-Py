@@ -869,31 +869,135 @@ def molecularity(family, direction):
     return te._molecularity(family, direction)
 
 
-def reference_cases(certifier, fam, systems, species):
-    """Every member case of every family direction on every subset of every
-    system's participants of the direction's molecularity, keyed by (family,
-    template-side species, template, other-side species)."""
-    out = defaultdict(list)
-    stats = Counter()
+def component_formulas(molecules) -> tuple:
+    """The element counts of every connected component of ``molecules``,
+    sorted: ((element, isotope), count) pairs per component.  Resonance forms,
+    the aromatic root and a relabelling keep every atom and every bond, so a
+    molecule and each of its forms have the same component formulas."""
+    out = []
+    for mol in molecules:
+        seen = set()
+        for start in mol.atoms:
+            if id(start) in seen:
+                continue
+            seen.add(id(start))
+            stack, counts = [start], Counter()
+            while stack:
+                atom = stack.pop()
+                counts[(atom.element.symbol, atom.element.isotope)] += 1
+                for other in atom.edges:
+                    if id(other) not in seen:
+                        seen.add(id(other))
+                        stack.append(other)
+            out.append(tuple(sorted(counts.items())))
+    return tuple(sorted(out))
+
+
+@dataclass(frozen=True)
+class CaseFilter:
+    """The reference cases some records can read: their keys (``record_key``)
+    and, per (family, direction), the component formulas the chosen roster
+    participants of a case with one of those keys must have.
+
+    A case of direction ``forward`` has the participants as its template side
+    (``template_molecules(witness, "forward")``: the reactant rows, the
+    participants' forms); a ``reverse`` case has them as its other side (the
+    template side is the generated products).  A case is kept under key K only
+    when its sides' species are K's, species are isomorphic modulo resonance
+    (``SpeciesKeys``), so the participants' component formulas are those of
+    K's template side (forward) or K's other side (reverse): a subset with any
+    other formulas yields no kept case and is not enumerated."""
+
+    keys: frozenset
+    sides: dict
+
+    def admits(self, family, direction, formulas) -> bool:
+        return formulas in self.sides.get((family, direction), ())
+
+
+def case_filter(certifier, records, species) -> CaseFilter:
+    """The ``CaseFilter`` of ``records`` (their keys as ``run_record`` computes
+    them).  A record whose key cannot be computed reads no case (``run_record``
+    fails on the same call) and adds nothing."""
+    keys, sides = set(), defaultdict(set)
+    for record in records:
+        try:
+            key, mols, others = record_parts(certifier, record, species)
+        except Exception as error:   # the row reports it
+            reraise_resource(error)
+            continue
+        keys.add(key)
+        sides[(key[0], "forward")].add(component_formulas(mols))
+        sides[(key[0], "reverse")].add(component_formulas(others))
+    return CaseFilter(frozenset(keys), {k: frozenset(v) for k, v in sides.items()})
+
+
+def participant_formulas(participant) -> tuple:
+    """The component formulas of one roster participant's build."""
+    molecules, _participants = b.witness_reactants([participant.build("formula")])
+    return component_formulas(molecules)
+
+
+def roster_subsets(fam, systems):
+    """(family name, family, direction, chosen participants, subset) for every
+    family direction (sorted by name; forward, then reverse when the family
+    has one) on every subset of every system's participants of the
+    direction's molecularity: the enumeration order of ``reference_cases``."""
     for name, family in sorted(fam.items()):
         directions = ["forward"] + (["reverse"] if family.reverse_template is not None else [])
         for direction in directions:
             n = molecularity(family, direction)
             for participants in systems.values():
                 for subset in sorted(set(combinations(range(len(participants)), n))):
-                    chosen = [participants[i] for i in subset]
-                    builds = [p.build(f"p{k}") for k, p in enumerate(chosen)]
-                    specs = [p.spec for p in chosen]
-                    cases = win.member_cases(certifier, family, builds, direction,
-                                             label=f"{name}|{direction}|{subset}")
-                    stats[f"{name}|{direction}"] += len(cases)
-                    for case in cases:
-                        mols = win.template_molecules(case.witness, case.direction)
-                        other = win.template_molecules(
-                            case.witness, "reverse" if case.direction == "forward" else "forward")
-                        key = (name, tuple(sorted(species(m) for m in mols)),
-                               ";".join(case.pathway), tuple(sorted(species(m) for m in other)))
-                        out[key].append((case, specs))
+                    yield name, family, direction, [participants[i] for i in subset], subset
+
+
+def subset_formulas(chosen, memo) -> tuple:
+    """The component formulas of the participants ``chosen`` (``memo``: per
+    participant object)."""
+    for p in chosen:
+        if id(p) not in memo:
+            memo[id(p)] = participant_formulas(p)
+    return tuple(sorted(f for p in chosen for f in memo[id(p)]))
+
+
+def reference_cases(certifier, fam, systems, species, wanted: Optional[CaseFilter] = None):
+    """Every member case of every family direction on every subset of every
+    system's participants of the direction's molecularity, keyed by (family,
+    template-side species, template, other-side species).
+
+    With ``wanted`` only the keys it names are kept, and a subset whose
+    participants it does not admit is skipped before ``member_cases``; the
+    kept keys' case lists are the unfiltered ones, in the same order (the
+    enumeration order is unchanged).  ``stats`` then also counts the subsets
+    enumerated and skipped."""
+    out = defaultdict(list)
+    stats = Counter()
+    formulas = {}
+    if wanted is not None:
+        names = {key[0] for key in wanted.keys}
+        fam = {name: family for name, family in fam.items() if name in names}
+    for name, family, direction, chosen, subset in roster_subsets(fam, systems):
+        if wanted is not None:
+            if not wanted.admits(name, direction, subset_formulas(chosen, formulas)):
+                stats["subsets_skipped"] += 1
+                continue
+            stats["subsets_enumerated"] += 1
+        builds = [p.build(f"p{k}") for k, p in enumerate(chosen)]
+        specs = [p.spec for p in chosen]
+        cases = win.member_cases(certifier, family, builds, direction,
+                                 label=f"{name}|{direction}|{subset}")
+        stats[f"{name}|{direction}"] += len(cases)
+        for case in cases:
+            mols = win.template_molecules(case.witness, case.direction)
+            other = win.template_molecules(
+                case.witness, "reverse" if case.direction == "forward" else "forward")
+            key = (name, tuple(sorted(species(m) for m in mols)),
+                   ";".join(case.pathway), tuple(sorted(species(m) for m in other)))
+            if wanted is not None and key not in wanted.keys:
+                stats["cases_dropped"] += 1
+                continue
+            out[key].append((case, specs))
     return out, dict(stats)
 
 
@@ -916,13 +1020,18 @@ def record_certificate(record, store):
     return store.get((record.get("rate_certificate") or {}).get("sha256"))
 
 
+def record_parts(certifier, record, species):
+    """(``record_key``, template-side molecules, other-side molecules)."""
+    _side, mols, others = certifier.template_side(record)
+    return (record["family"], tuple(sorted(species(m) for m in mols)), record["template"],
+            tuple(sorted(species(m) for m in others))), mols, others
+
+
 def record_key(certifier, record, species):
     """(family, template-side species, template, other-side species): the
     record's channel (members of other channels on the same species and
     template are other sites)."""
-    _side, mols, others = certifier.template_side(record)
-    return (record["family"], tuple(sorted(species(m) for m in mols)), record["template"],
-            tuple(sorted(species(m) for m in others)))
+    return record_parts(certifier, record, species)[0]
 
 
 def one_isomorphism(a, b, strict: bool = False) -> Optional[dict]:
@@ -1222,7 +1331,9 @@ class Emitter:
     def init(self, prepared=None):
         """Load the database, certify and build the reference cases.  With
         ``prepared`` (``emit_prepare.read_shard``: a shard's records already
-        certified with the whole artifact) nothing is parsed or certified."""
+        certified with the whole artifact) nothing is parsed or certified, and
+        only the reference cases of its own records' keys are built
+        (``case_filter``)."""
         from rmgpy.kmc import certificates as cm
         from rmgpy.kmc import channels as chm
         from rmgpy.kmc.reference_thermo import GasPhaseRMGReferenceThermo
@@ -1257,7 +1368,13 @@ class Emitter:
                  by_id={r["event_id"]: r for r in certified}, certifier=certifier)
         species = chm.SpeciesKeys()
         t = time.time()
-        cases, stats = reference_cases(certifier, fam, self.systems, species)
+        if prepared is None:
+            cases, stats = reference_cases(certifier, fam, self.systems, species)
+        else:
+            # a prepared shard builds only the reference cases its own records read
+            wanted = case_filter(certifier, prepared.picked, species)
+            cases, stats = reference_cases(certifier, fam, self.systems, species, wanted=wanted)
+            stats["wanted_keys"] = len(wanted.keys)
         S.update(cases=cases, case_stats=stats, cases_s=round(time.time() - t, 1), species=species,
                  bounds={n: win.span_bound(win.family_constants(f)) for n, f in fam.items()},
                  counter=te.RmgCounter(fam),
