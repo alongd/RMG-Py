@@ -1088,3 +1088,87 @@ def test_distinct_entries_can_share_one_kinetics_object():
     r.initialize_model(core, reactions, [], [])
     assert r.energy_reaction_keys == ['Toy:1', 'Toy:2', 'Toy:3']
     assert r.energy_threshold[1] > 0. and r.energy_threshold[2] < 0.
+
+
+def _seed_restart(tmp_path, core, reactions, edge=False, legacy=False):
+    """Use the production disk seed writer and reader, with reordered model entries."""
+    from types import SimpleNamespace
+    from rmgpy.data.kinetics.database import KineticsDatabase
+    from rmgpy.data.kinetics.library import KineticsLibrary
+    from rmgpy.rmg.main import RMG
+    from rmgpy.rmg.model import CoreEdgeReactionModel
+
+    job = RMG(output_directory=str(tmp_path))
+    job.reaction_model = CoreEdgeReactionModel()
+    job.database = SimpleNamespace(kinetics=SimpleNamespace(external_library_labels={}))
+    job.save_seed_to_database = False
+    job.save_seed_modulus = -1
+    job.reaction_model.core.species = [] if edge else core
+    job.reaction_model.core.reactions = [] if edge else reactions
+    job.reaction_model.edge.species = core if edge else []
+    job.reaction_model.edge.reactions = reactions if edge else []
+    (tmp_path / "seed").mkdir(exist_ok=True)
+    job.make_seed_mech()
+    seed_path = tmp_path / "seed" / ("seed_edge" if edge else "seed") / "reactions.py"
+    database = KineticsDatabase()
+    library = KineticsLibrary(label="seed", auto_generated=True)
+    library.load(str(seed_path), database.local_context, database.global_context)
+    if legacy:
+        for entry in library.entries.values():
+            entry.long_desc = "\n".join(
+                line for line in entry.long_desc.splitlines()
+                if not line.startswith("Original reaction library entry index: "))
+        library.save(str(seed_path))
+        library.load(str(seed_path), database.local_context, database.global_context)
+    restored = library.get_library_reactions()
+    # Admission interns the dictionary species against the model species. Keep the
+    # test focused on identity while using the real writer and disk reader above.
+    for reaction in restored:
+        for side in (reaction.reactants, reaction.products):
+            side[:] = [next(s for s in core if s.is_isomorphic(loaded)) for loaded in side]
+    return restored, seed_path
+
+
+@pytest.mark.parametrize("edge", [False, True])
+@pytest.mark.parametrize("source_indices", [(0, 1, 2), (1, 2, 3), (16, 23, 91)])
+@pytest.mark.parametrize("rate_rule_comment", [False, True])
+def test_energy_binding_survives_reordered_seed_restart(tmp_path, edge, source_indices, rate_rule_comment):
+    r, core, original = _build(metastable=True)
+    expected = np.array(r.energy_threshold, copy=True)
+    old_entries = dict(ToyLibraryReactor.toy_entries)
+    r.energy_declared = {("Toy", index): expected[j] for j, index in enumerate(source_indices)}
+    ToyLibraryReactor.toy_entries = dict(zip(source_indices, old_entries.values()))
+    for reaction, index in zip(original, source_indices):
+        reaction.entry.index = index
+        if rate_rule_comment:
+            reaction.kinetics.comment = "Estimated using rate rule [X]\nfamily: H_Abstraction"
+    reordered = [original[1], original[0], original[2]]
+    for generation in range(2):
+        directory = tmp_path / str(generation)
+        directory.mkdir()
+        restored, _ = _seed_restart(directory, core, reordered, edge=edge)
+        assert [reaction.entry.index for reaction in restored] == [0, 1, 2]
+        r.initialize_model(core, restored, [], [])
+        assert r.energy_reaction_keys == ["Toy:{0}".format(source_indices[j]) for j in (1, 0, 2)]
+        np.testing.assert_allclose(r.energy_threshold, expected[[1, 0, 2]])
+        # Copies and pickle round trips must retain the restored provenance too.
+        restored = pickle.loads(pickle.dumps(restored))
+        reordered = [reaction.copy() for reaction in restored]
+        for reaction in reordered:
+            for side in (reaction.reactants, reaction.products):
+                side[:] = [next(s for s in core if s.is_isomorphic(loaded)) for loaded in side]
+
+
+@pytest.mark.parametrize("edge", [False, True])
+def test_energy_binding_refuses_legacy_seed_without_source_index(tmp_path, edge):
+    r, core, reactions = _build(metastable=True)
+    restored, _ = _seed_restart(tmp_path, core, [reactions[1], reactions[0], reactions[2]],
+                               edge=edge, legacy=True)
+    with pytest.raises(PlasmaStateError, match="missing source entry index provenance"):
+        r.initialize_model(core, restored, [], [])
+    # Writing a legacy reload again must never bless its seed-local indices.
+    next_seed = tmp_path / "next"
+    next_seed.mkdir()
+    restored, _ = _seed_restart(next_seed, core, restored, edge=edge)
+    with pytest.raises(PlasmaStateError, match="missing source entry index provenance"):
+        r.initialize_model(core, restored, [], [])

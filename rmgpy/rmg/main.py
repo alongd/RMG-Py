@@ -59,7 +59,7 @@ from rmgpy.constraints import fails_species_constraints
 from rmgpy.data.auto_database import auto_select_libraries, to_reaction_library_tuples
 from rmgpy.data.base import Entry
 from rmgpy.data.kinetics.common import format_external_library_provenance
-from rmgpy.data.kinetics.library import KineticsLibrary, seed_placement_survives
+from rmgpy.data.kinetics.library import KineticsLibrary, LibraryReaction, seed_placement_survives
 from rmgpy.electron_balance import get_placement_owner, is_isomorphic_same_charge
 from rmgpy.data.rmg import RMGDatabase
 from rmgpy.data.vaporLiquidMassTransfer import vapor_liquid_mass_transfer
@@ -2096,15 +2096,16 @@ class RMG(util.Subject):
                     data=reaction.kinetics,
                 )
 
-                if "rate rule" in reaction.kinetics.comment:
-                    entry.long_desc = reaction.kinetics.comment
-                elif hasattr(reaction, "library") and reaction.library:
+                if hasattr(reaction, "library") and reaction.library:
                     library_source = None
                     for external_path, library_label in self.database.kinetics.external_library_labels.items():
                         if library_label == reaction.library:
                             library_source = external_path
                             break
                     entry.long_desc = "Originally from reaction library: " + reaction.library + "\n"
+                    source_index = reaction.get_source_entry_index() if isinstance(reaction, LibraryReaction) else None
+                    if source_index is not None:
+                        entry.long_desc += "Original reaction library entry index: {0}\n".format(source_index)
                     if library_source:
                         entry.long_desc += format_external_library_provenance(reaction.library, library_source) + "\n"
                     entry.long_desc += reaction.kinetics.comment
@@ -2131,6 +2132,9 @@ class RMG(util.Subject):
                             library_source = external_path
                             break
                     entry.long_desc = "Originally from reaction library: " + reaction.library + "\n"
+                    source_index = reaction.get_source_entry_index() if isinstance(reaction, LibraryReaction) else None
+                    if source_index is not None:
+                        entry.long_desc += "Original reaction library entry index: {0}\n".format(source_index)
                     if library_source:
                         entry.long_desc += format_external_library_provenance(reaction.library, library_source) + "\n"
                     entry.long_desc += reaction.kinetics.comment

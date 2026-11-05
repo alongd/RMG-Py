@@ -6642,6 +6642,16 @@
       ],
       "source_sha256": "58eed408f3b9ac86382b35b776d0571525b9c3a463595241f06121210d56fcb8"
     },
+    "rmgpy/data/kinetics/library.py:LibraryReaction.get_source_entry_index": {
+      "file": "rmgpy/data/kinetics/library.py",
+      "line": 144,
+      "source_sha256": "168943fb1680504269c6f883cc7206c3c229e4adb6201a25f81ad04781c07d55",
+      "verdict": "carried",
+      "reason": "Reads original library entry provenance from a reloaded seed without using seed-local numbering; missing source indices remain unknown and binding refuses.",
+      "evidence": [
+        "test/rmgpy/solver/plasmaEnergyBalanceTest.py"
+      ]
+    },
     "rmgpy/data/kinetics/library.py:LibraryReaction.get_sticking_coefficient": {
       "verdict": "carried",
       "reason": "Retains complete reaction/Entry identity in storage, reducers, duplicate handling and conversion; species-specific acquisition uses KineticsDatabase.generate_reactions_from_library.",
@@ -23477,7 +23487,7 @@
         "test/rmgpy/rmg/mainTest.py",
         "test/rmgpy/diagnosticModeTest.py"
       ],
-      "source_sha256": "b1a8aad3cd2039c3a10c02ba3fb28e86c6da84501c5db2cec97aca762f88515d"
+      "source_sha256": "fb3e6576210cd98a71d715733b6c7586f2d086d76590833167757e0f5d2120f1"
     },
     "rmgpy/rmg/main.py:RMG.make_species_labels_independent": {
       "verdict": "carried",
@@ -27351,7 +27361,7 @@
         "test/rmgpy/solver/plasmaEnergyBalanceTest.py",
         "test/rmgpy/rmg/mainTest.py"
       ],
-      "source_sha256": "bde9c51bae1377515af3f2ce26b2b0745b1efb1669d1a5e98b3bb73211a3675b",
+      "source_sha256": "590f7bcd1b8bbe99ff27f49e9ed145f212fca5b96da4e15e287a5d089e9d16dd",
       "file": "rmgpy/solver/plasma.pyx",
       "line": 2702
     },
@@ -27958,7 +27968,7 @@
       "evidence": [
         "test/rmgpy/solver/plasmaTest.py"
       ],
-      "source_sha256": "3862cb9928ab2f67fe1d32e826a5477b9c4a3a876077690ce2f9a9a30a372776",
+      "source_sha256": "a4832736c6bab592a7351e2b3f848adbe1be68103093616086caae5f56b53eaf",
       "file": "rmgpy/solver/plasma.pyx",
       "line": 2721
     },

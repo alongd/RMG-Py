@@ -141,6 +141,29 @@ class LibraryReaction(Reaction):
         self.family = library
         self.entry = entry
 
+    def get_source_entry_index(self):
+        """Original library index, separate from a serialized seed entry position.
+
+        The source library and index must come from the same provenance. Older
+        seeds without the source index return None and cannot bind energies.
+        """
+        if self.entry is None:
+            return None
+        lines = [line.strip() for line in (self.entry.long_desc or '').splitlines()]
+        if not any(line.startswith('Originally from reaction library: ') for line in lines):
+            return self.entry.index
+        prefix = 'Original reaction library entry index: '
+        indices = [line[len(prefix):] for line in lines if line.startswith(prefix)]
+        if not indices:
+            return None
+        try:
+            values = {int(index) for index in indices}
+        except ValueError:
+            raise DatabaseError('Invalid source entry index in seed library provenance.')
+        if len(values) != 1:
+            raise DatabaseError('Conflicting source entry indices in seed library provenance.')
+        return values.pop()
+
     def __reduce__(self):
         """
         A helper function used when pickling an object.

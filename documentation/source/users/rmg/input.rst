@@ -1855,6 +1855,9 @@ and power balances.  It needs a charged-particle wall::
   declaration as a cross-check.  An undeclared electron reaction in the core is refused.  An
   electron-consuming reaction is in addition charged 3/2 k_B Te per consumed electron.
   Binding uses the source library entry, so distinct entries may share identical kinetics.
+  Seed restarts preserve the source library and source entry index separately from the
+  seed-local numbering. Older seeds without the source index cannot bind these declarations
+  and must be regenerated with source entry provenance.
   A declared key must identify exactly one model reaction in the core or edge; unresolved
   or ambiguous keys are refused. The final collision audit checks every forward direction,
   and only reversible reactions with a thermodynamically defined reverse direction.

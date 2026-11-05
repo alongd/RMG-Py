@@ -2718,8 +2718,8 @@ cdef class PlasmaReactor(ReactionSystem):
     def _declared_entry(self, str library, int index):
         """Resolve a declared library/index key to its entry, independently of kinetics.
 
-        Model reaction indices are renumbered; LibraryReaction.entry retains the
-        source entry index even when its kinetics are copied or replaced.
+        Model and seed entry indices are renumbered; LibraryReaction.get_source_entry_index()
+        retains the source identity even when its kinetics are copied or replaced.
         """
         from rmgpy.data.rmg import get_db
         try:
@@ -2772,8 +2772,18 @@ cdef class PlasmaReactor(ReactionSystem):
         matched = set()
         bindings = {}
         for model_rxn in itertools.chain(core_reactions_model, edge_reactions_model):
-            identity = (getattr(model_rxn, 'library', None),
-                        getattr(getattr(model_rxn, 'entry', None), 'index', None))
+            library = getattr(model_rxn, 'library', None)
+            source_reader = getattr(model_rxn, 'get_source_entry_index', None)
+            source_index = (source_reader() if source_reader is not None else
+                            getattr(getattr(model_rxn, 'entry', None), 'index', None))
+            if source_index is None and any(lib == library for lib, _ in self.energy_declared):
+                raise PlasmaStateError(
+                    "electron_energy_balance cannot bind reaction {0!s} from library {1!r}: "
+                    "missing source entry index provenance (possibly an older seed). "
+                    "Regenerate the seed with source entry provenance; the seed-local index "
+                    "cannot identify the original entry. ({2})".format(
+                        model_rxn, library, self._identity()))
+            identity = (library, source_index)
             key = by_entry.get(identity)
             if key is None:
                 continue
