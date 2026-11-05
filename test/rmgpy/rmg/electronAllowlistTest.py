@@ -53,6 +53,55 @@ FORMS = ('method_default', 'method_kwdefault', 'static_default', 'class_default'
          'dunder_class_data')
 
 
+@pytest.mark.parametrize('identity', (None, ('ElectronDetachment', 1)))
+@pytest.mark.parametrize('source', (None, '/external/library'))
+@pytest.mark.parametrize('transport', ('direct', 'copy', 'pickle'))
+def test_library_identity_data_allows_ordinary_admission(identity, source, transport):
+    import pickle
+    reaction = helpers.cell_reaction(helpers.CENSUS_CELLS[0], False)
+    reaction.source_identity = identity
+    reaction.library_source = source
+    if transport == 'copy':
+        reaction = reaction.copy()
+    elif transport == 'pickle':
+        reaction = pickle.loads(pickle.dumps(reaction))
+    assert reaction.source_identity == identity
+    assert reaction.library_source == source
+    model = CoreEdgeReactionModel()
+    model.pressure_dependence = SimpleNamespace(maximum_atoms=None)
+    model.register_reaction(reaction)
+    network = pdep.PDepNetwork(source=reaction.reactants[:])
+    network.add_path_reaction(reaction)
+    assert network.path_reactions == [reaction]
+
+
+@pytest.mark.parametrize('field', ('source_identity', 'library_source'))
+@pytest.mark.parametrize('carrier', ('direct', 'tuple', 'entry'))
+@pytest.mark.parametrize('electron', (False, True))
+def test_library_identity_data_refuses_material_after_admission(field, carrier, electron):
+    from rmgpy.data.base import Entry
+    reaction = helpers.cell_reaction(helpers.CENSUS_CELLS[0], False)
+    reaction.source_identity = ('ElectronDetachment', 1)
+    reaction.library_source = '/external/library'
+    network = pdep.PDepNetwork(source=reaction.reactants[:])
+    network.add_path_reaction(reaction)
+    reference = (Species().from_adjacency_list('1 e u0 p0 c-1') if electron
+                 else Species().from_smiles('N#N'))
+    # Entry is normally opaque provenance. These fields must instead inspect
+    # their values as data, including after a previously successful admission.
+    value = reference if carrier == 'direct' else (
+        ('owner', reference) if carrier == 'tuple' else Entry(item=reference))
+    setattr(reaction, field, value)
+    model = CoreEdgeReactionModel()
+    model.pressure_dependence = SimpleNamespace(maximum_atoms=None)
+    before = helpers.admission_state(model)
+    with pytest.raises(NetworkError, match='reaction[.]' + field):
+        model.register_reaction(reaction)
+    assert helpers.admission_state(model) == before
+    with pytest.raises(NetworkError, match='reaction[.]' + field):
+        pdep._check_network_reactions(network)
+
+
 def carrier_rate(form, reference):
     if form == 'method_default':
         class Rate(kinetics.Arrhenius):

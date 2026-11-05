@@ -5914,7 +5914,7 @@
   {
     "site": "rmgpy/rmg/pdep.py::PDepNetwork.add_path_reaction::allows_reverse_match#1",
     "kind": "direction",
-    "line": 819,
+    "line": 823,
     "source": "elif (newReaction.allows_reverse_match(rxn)",
     "verdict": "guarded",
     "reason": "Inverse matching is gated by allows_reverse_match.",
@@ -5925,7 +5925,7 @@
   {
     "site": "rmgpy/rmg/pdep.py::PDepNetwork.add_path_reaction::check_resolved_species_reversibility#1",
     "kind": "reverse",
-    "line": 810,
+    "line": 814,
     "source": "newReaction.check_resolved_species_reversibility()",
     "verdict": "guarded",
     "reason": "Inverse matching is gated by allows_reverse_match.",
@@ -5936,7 +5936,7 @@
   {
     "site": "rmgpy/rmg/pdep.py::PDepNetwork.add_path_reaction::check_resolved_species_reversibility#2",
     "kind": "reverse",
-    "line": 812,
+    "line": 816,
     "source": "newReaction.check_resolved_species_reversibility(kinetics=newReaction.network_kinetics)",
     "verdict": "guarded",
     "reason": "Inverse matching is gated by allows_reverse_match.",
@@ -5947,7 +5947,7 @@
   {
     "site": "rmgpy/rmg/pdep.py::PDepNetwork.get_energy_filtered_reactions::is_isomorphic#1",
     "kind": "direction",
-    "line": 837,
+    "line": 841,
     "source": "if self.source[0].is_isomorphic(conf.species[0]):",
     "verdict": "guarded",
     "reason": "Network original-declaration checks precede rate work; representation retains reaction metadata.",
@@ -5959,7 +5959,7 @@
   {
     "site": "rmgpy/rmg/pdep.py::PDepNetwork.get_energy_filtered_reactions::is_isomorphic#2",
     "kind": "direction",
-    "line": 841,
+    "line": 845,
     "source": "boo00 = self.source[0].is_isomorphic(conf.species[0])",
     "verdict": "guarded",
     "reason": "Network original-declaration checks precede rate work; representation retains reaction metadata.",
@@ -5971,7 +5971,7 @@
   {
     "site": "rmgpy/rmg/pdep.py::PDepNetwork.get_energy_filtered_reactions::is_isomorphic#3",
     "kind": "direction",
-    "line": 842,
+    "line": 846,
     "source": "boo01 = self.source[0].is_isomorphic(conf.species[1])",
     "verdict": "guarded",
     "reason": "Network original-declaration checks precede rate work; representation retains reaction metadata.",
@@ -5983,7 +5983,7 @@
   {
     "site": "rmgpy/rmg/pdep.py::PDepNetwork.get_energy_filtered_reactions::is_isomorphic#4",
     "kind": "direction",
-    "line": 844,
+    "line": 848,
     "source": "boo10 = self.source[1].is_isomorphic(conf.species[0])",
     "verdict": "guarded",
     "reason": "Network original-declaration checks precede rate work; representation retains reaction metadata.",
@@ -5995,7 +5995,7 @@
   {
     "site": "rmgpy/rmg/pdep.py::PDepNetwork.get_energy_filtered_reactions::is_isomorphic#5",
     "kind": "direction",
-    "line": 845,
+    "line": 849,
     "source": "boo11 = self.source[1].is_isomorphic(conf.species[1])",
     "verdict": "guarded",
     "reason": "Network original-declaration checks precede rate work; representation retains reaction metadata.",
@@ -6007,7 +6007,7 @@
   {
     "site": "rmgpy/rmg/pdep.py::PDepNetwork.get_leak_coefficient::check_resolved_species_reversibility#1",
     "kind": "reverse",
-    "line": 689,
+    "line": 693,
     "source": "rxn.check_resolved_species_reversibility(reversible=True)",
     "verdict": "guarded",
     "reason": "Checks original kinetics before reverse equilibrium division.",
@@ -6018,7 +6018,7 @@
   {
     "site": "rmgpy/rmg/pdep.py::PDepNetwork.get_leak_coefficient::get_equilibrium_constant#1",
     "kind": "reverse",
-    "line": 690,
+    "line": 694,
     "source": "k = rxn.get_rate_coefficient(T, P) / rxn.get_equilibrium_constant(T)",
     "verdict": "guarded",
     "reason": "Checks original kinetics before reverse equilibrium division.",
@@ -6029,7 +6029,7 @@
   {
     "site": "rmgpy/rmg/pdep.py::PDepNetwork.get_leak_coefficient::reaction-io",
     "kind": "reader-exporter",
-    "line": 669,
+    "line": 673,
     "source": "def get_leak_coefficient(self, T, P):",
     "verdict": "guarded",
     "reason": "Checks original kinetics before reverse equilibrium division.",
@@ -6040,7 +6040,7 @@
   {
     "site": "rmgpy/rmg/pdep.py::PDepNetwork.get_rate_filtered_products::check_resolved_species_reversibility#1",
     "kind": "reverse",
-    "line": 880,
+    "line": 884,
     "source": "rxn.check_resolved_species_reversibility(reversible=True)",
     "verdict": "guarded",
     "reason": "Guards original declaration before reverse flux calculation and steady-state dependencies.",
@@ -6051,7 +6051,7 @@
   {
     "site": "rmgpy/rmg/pdep.py::PDepNetwork.get_rate_filtered_products::get_equilibrium_constant#1",
     "kind": "reverse",
-    "line": 881,
+    "line": 885,
     "source": "kr = rxn.get_rate_coefficient(T, P) / rxn.get_equilibrium_constant(T)",
     "verdict": "guarded",
     "reason": "Guards original declaration before reverse flux calculation and steady-state dependencies.",
@@ -6062,7 +6062,7 @@
   {
     "site": "rmgpy/rmg/pdep.py::PDepNetwork.get_rate_filtered_products::reaction-io",
     "kind": "reader-exporter",
-    "line": 861,
+    "line": 865,
     "source": "def get_rate_filtered_products(self, T, P, tol):",
     "verdict": "guarded",
     "reason": "Guards original declaration before reverse flux calculation and steady-state dependencies.",
@@ -6073,7 +6073,7 @@
   {
     "site": "rmgpy/rmg/pdep.py::PDepNetwork.solve_ss_network::check_resolved_species_reversibility#1",
     "kind": "reverse",
-    "line": 919,
+    "line": 923,
     "source": "rxn.check_resolved_species_reversibility(reversible=True)",
     "verdict": "guarded",
     "reason": "Checks original kinetics before either reverse equilibrium division.",
@@ -6084,7 +6084,7 @@
   {
     "site": "rmgpy/rmg/pdep.py::PDepNetwork.solve_ss_network::check_resolved_species_reversibility#2",
     "kind": "reverse",
-    "line": 934,
+    "line": 938,
     "source": "rxn.check_resolved_species_reversibility(reversible=True)",
     "verdict": "guarded",
     "reason": "Checks original kinetics before either reverse equilibrium division.",
@@ -6095,7 +6095,7 @@
   {
     "site": "rmgpy/rmg/pdep.py::PDepNetwork.solve_ss_network::get_equilibrium_constant#1",
     "kind": "reverse",
-    "line": 920,
+    "line": 924,
     "source": "kr = rxn.get_rate_coefficient(T, P) / rxn.get_equilibrium_constant(T)",
     "verdict": "guarded",
     "reason": "Checks original kinetics before either reverse equilibrium division.",
@@ -6106,7 +6106,7 @@
   {
     "site": "rmgpy/rmg/pdep.py::PDepNetwork.solve_ss_network::get_equilibrium_constant#2",
     "kind": "reverse",
-    "line": 935,
+    "line": 939,
     "source": "kr = rxn.get_rate_coefficient(T, P) / rxn.get_equilibrium_constant(T)",
     "verdict": "guarded",
     "reason": "Checks original kinetics before either reverse equilibrium division.",
@@ -6117,7 +6117,7 @@
   {
     "site": "rmgpy/rmg/pdep.py::PDepNetwork.solve_ss_network::reaction-io",
     "kind": "reader-exporter",
-    "line": 898,
+    "line": 902,
     "source": "def solve_ss_network(self, T, P):",
     "verdict": "guarded",
     "reason": "Checks original kinetics before either reverse equilibrium division.",
@@ -6128,7 +6128,7 @@
   {
     "site": "rmgpy/rmg/pdep.py::PDepNetwork.update::PDepReaction#1",
     "kind": "builder",
-    "line": 1427,
+    "line": 1431,
     "source": "net_reaction = PDepReaction(",
     "verdict": "guarded",
     "reason": "Original and selected rate checks precede fitting/Keq; overlap and net reuse use shared channel identity.",
@@ -6139,7 +6139,7 @@
   {
     "site": "rmgpy/rmg/pdep.py::PDepNetwork.update::calculate_rate_coefficients#1",
     "kind": "reverse",
-    "line": 1403,
+    "line": 1407,
     "source": "K = self.calculate_rate_coefficients(Tlist, Plist, method)",
     "verdict": "guarded",
     "reason": "PDepNetwork.update checks original and selected reaction declarations before the Arkane network solve, interpolation, equilibrium calculation, or channel reuse.",
@@ -6150,7 +6150,7 @@
   {
     "site": "rmgpy/rmg/pdep.py::PDepNetwork.update::check_resolved_species_reversibility#1",
     "kind": "reverse",
-    "line": 1266,
+    "line": 1270,
     "source": "reaction.check_resolved_species_reversibility(reversible=True)",
     "verdict": "guarded",
     "reason": "Original and selected rate checks precede fitting/Keq; overlap and net reuse use shared channel identity.",
@@ -6161,7 +6161,7 @@
   {
     "site": "rmgpy/rmg/pdep.py::PDepNetwork.update::check_resolved_species_reversibility#2",
     "kind": "reverse",
-    "line": 1268,
+    "line": 1272,
     "source": "reaction.check_resolved_species_reversibility(",
     "verdict": "guarded",
     "reason": "Original and selected rate checks precede fitting/Keq; overlap and net reuse use shared channel identity.",
@@ -6172,7 +6172,7 @@
   {
     "site": "rmgpy/rmg/pdep.py::PDepNetwork.update::check_resolved_species_reversibility#3",
     "kind": "reverse",
-    "line": 1470,
+    "line": 1474,
     "source": "net_reaction.check_resolved_species_reversibility()",
     "verdict": "guarded",
     "reason": "Original and selected rate checks precede fitting/Keq; overlap and net reuse use shared channel identity.",
@@ -6183,7 +6183,7 @@
   {
     "site": "rmgpy/rmg/pdep.py::PDepNetwork.update::check_resolved_species_reversibility#4",
     "kind": "reverse",
-    "line": 1500,
+    "line": 1504,
     "source": "pathReaction.check_resolved_species_reversibility(reversible=True)",
     "verdict": "guarded",
     "reason": "Original and selected rate checks precede fitting/Keq; overlap and net reuse use shared channel identity.",
@@ -6194,7 +6194,7 @@
   {
     "site": "rmgpy/rmg/pdep.py::PDepNetwork.update::check_resolved_species_reversibility#5",
     "kind": "reverse",
-    "line": 1502,
+    "line": 1506,
     "source": "pathReaction.check_resolved_species_reversibility(",
     "verdict": "guarded",
     "reason": "Original and selected rate checks precede fitting/Keq; overlap and net reuse use shared channel identity.",
@@ -6205,7 +6205,7 @@
   {
     "site": "rmgpy/rmg/pdep.py::PDepNetwork.update::fit_interpolation_model#1",
     "kind": "reverse",
-    "line": 1469,
+    "line": 1473,
     "source": "net_reaction.kinetics = job.fit_interpolation_model(Tlist, Plist, kdata, kunits)",
     "verdict": "guarded",
     "reason": "Original and selected rate checks precede fitting/Keq; overlap and net reuse use shared channel identity.",
@@ -6216,7 +6216,7 @@
   {
     "site": "rmgpy/rmg/pdep.py::PDepNetwork.update::get_equilibrium_constant#1",
     "kind": "reverse",
-    "line": 1505,
+    "line": 1509,
     "source": "Tlist[t]) / pathReaction.get_equilibrium_constant(Tlist[t])",
     "verdict": "guarded",
     "reason": "Original and selected rate checks precede fitting/Keq; overlap and net reuse use shared channel identity.",
@@ -6227,7 +6227,7 @@
   {
     "site": "rmgpy/rmg/pdep.py::PDepNetwork.update::get_equilibrium_constant#2",
     "kind": "reverse",
-    "line": 1508,
+    "line": 1512,
     "source": "Tlist[t]) / pathReaction.get_equilibrium_constant(Tlist[t])",
     "verdict": "guarded",
     "reason": "Original and selected rate checks precede fitting/Keq; overlap and net reuse use shared channel identity.",
@@ -6238,7 +6238,7 @@
   {
     "site": "rmgpy/rmg/pdep.py::PDepNetwork.update::has_template#1",
     "kind": "direction",
-    "line": 1423,
+    "line": 1427,
     "source": "if r.has_template(configurations[j], configurations[i]):",
     "verdict": "guarded",
     "reason": "Original and selected rate checks precede fitting/Keq; overlap and net reuse use shared channel identity.",
@@ -6249,7 +6249,7 @@
   {
     "site": "rmgpy/rmg/pdep.py::PDepNetwork.update::is_same_reaction#1",
     "kind": "direction",
-    "line": 1443,
+    "line": 1447,
     "source": "and rxn.is_same_reaction(net_reaction, either_direction=True) \\",
     "verdict": "guarded",
     "reason": "Original and selected rate checks precede fitting/Keq; overlap and net reuse use shared channel identity.",
@@ -6260,7 +6260,7 @@
   {
     "site": "rmgpy/rmg/pdep.py::PDepNetwork.update::is_same_reaction#2",
     "kind": "direction",
-    "line": 1455,
+    "line": 1459,
     "source": "and rxn.is_same_reaction(net_reaction, either_direction=True) \\",
     "verdict": "guarded",
     "reason": "Original and selected rate checks precede fitting/Keq; overlap and net reuse use shared channel identity.",
@@ -6271,7 +6271,7 @@
   {
     "site": "rmgpy/rmg/pdep.py::PDepNetwork.update::reaction-io",
     "kind": "reader-exporter",
-    "line": 1254,
+    "line": 1258,
     "source": "def update(self, reaction_model, pdep_settings, requires_rms=False):",
     "verdict": "guarded",
     "reason": "Original and selected rate checks precede fitting/Keq; overlap and net reuse use shared channel identity.",
@@ -6282,7 +6282,7 @@
   {
     "site": "rmgpy/rmg/pdep.py::PDepReaction.__init__::reaction-io",
     "kind": "reader-exporter",
-    "line": 427,
+    "line": 431,
     "source": "def __init__(self,",
     "verdict": "guarded",
     "reason": "Network original-declaration checks precede rate work; representation retains reaction metadata.",
@@ -6294,7 +6294,7 @@
   {
     "site": "rmgpy/rmg/pdep.py::PDepReaction.__reduce__::reaction-io",
     "kind": "reader-exporter",
-    "line": 460,
+    "line": 464,
     "source": "def __reduce__(self):",
     "verdict": "guarded",
     "reason": "Network original-declaration checks precede rate work; representation retains reaction metadata.",
@@ -6306,7 +6306,7 @@
   {
     "site": "rmgpy/rmg/pdep.py::PDepReaction.__reduce__::reaction_state#1",
     "kind": "reader-exporter",
-    "line": 478,
+    "line": 482,
     "source": "return (PDepReaction, (), reaction_state(self, _NOT_REPRODUCED,",
     "verdict": "guarded",
     "reason": "Network original-declaration checks precede rate work; representation retains reaction metadata.",
@@ -6318,7 +6318,7 @@
   {
     "site": "rmgpy/rmg/pdep.py::PDepReaction.__setstate__::apply_reaction_state#1",
     "kind": "reader-exporter",
-    "line": 487,
+    "line": 491,
     "source": "apply_reaction_state(self, state)",
     "verdict": "guarded",
     "reason": "Network original-declaration checks precede rate work; representation retains reaction metadata.",
@@ -6330,7 +6330,7 @@
   {
     "site": "rmgpy/rmg/pdep.py::PDepReaction.copy::copy_reaction#1",
     "kind": "reader-exporter",
-    "line": 505,
+    "line": 509,
     "source": "return copy_reaction(self, _NOT_COPIED_BY_REFERENCE)",
     "verdict": "guarded",
     "reason": "Network original-declaration checks precede rate work; representation retains reaction metadata.",
@@ -6342,7 +6342,7 @@
   {
     "site": "rmgpy/rmg/pdep.py::_check_electron_channel_routing::reaction-io",
     "kind": "reader-exporter",
-    "line": 368,
+    "line": 372,
     "source": "def _check_electron_channel_routing(reaction, library=None, seen=None, atomtype_seen=None):",
     "verdict": "refused",
     "reason": "The I-323 routing boundary refuses every electron reaction before pressure-dependent network state changes, so no such channel can reach network reversal or fitting.",

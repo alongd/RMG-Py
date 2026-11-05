@@ -178,10 +178,12 @@ def attachment_model(threshold):
     # existing A/B/C interface gates pass at the review's trace-electron state.
     neutralisation = LibraryReaction(reactants=[species[2], species[4]],
         products=[species[1], species[3]], reversible=False,
-        kinetics=Arrhenius(A=(1.e12, 'm^3/(mol*s)')), library='EN-test')
+        kinetics=Arrhenius(A=(1.e12, 'm^3/(mol*s)')), library='EN-test',
+        source_identity=('EN-test', 3))
     r.electron_energy_balance['electron_energies']['EN-test:2'] = (threshold, 'eV')
     r._configure_energy_balance(copy.deepcopy(r.electron_energy_balance))
     r.initialize_model(species, reactions+[neutralisation], [], [])
+    assert not r.energy_participates[2]  # Heavy-only entry has no electron energy term.
     r.kf[0] = 0.
     y = set_state(r, [1.e-30, 1., 1.e-6, 1.e-3, 1.e-6], 3., volume=1.)
     return r, y

@@ -230,6 +230,10 @@ _REACTION_DATA_FIELDS = frozenset((
     '_degeneracy', 'electrons', 'protons', '_protons', 'allow_pdep_route',
     'elementary_high_p', 'comment', 'k_effective_cache', 'is_forward',
     'allow_max_rate_violation', 'rank', 'estimator',
+    # Loader-selected (library name, entry index) and external path. Inspect
+    # these as data, not opaque provenance: only supported leaves/containers
+    # are allowed, so mutations cannot hide species or library/entry graphs.
+    'source_identity', 'library_source',
 ))
 
 _REACTION_FIELDS = (_REACTION_DATA_FIELDS | frozenset(_REACTION_MATERIAL_FIELDS)

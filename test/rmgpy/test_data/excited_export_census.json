@@ -5232,7 +5232,7 @@
       "reason": "Keeps the reviewed thermo guard and upstream original-network preflight/reversal checks before regeneration; unsupported resolved numerical network derivation still refuses.",
       "file": "rmgpy/rmg/pdep.py",
       "function": "PDepNetwork.update",
-      "line": 1254,
+      "line": 1258,
       "signature": "99811f5673835272c355bc20db99214a5ad23edc937c0f4de1da6162d3bb0b57",
       "evidence": [
         "rmgpy/rmg/pdep.py",
