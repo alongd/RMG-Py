@@ -582,6 +582,10 @@ def _loader_provenance(entry, library_name):
         # the comparison and cannot silently change the historical provenance.
         if fields.get('source_identity') is None:
             fields.pop('source_identity', None)
+        # The optional source is now a discoverable property even when no path
+        # was stored. Preserve historical absence, but keep every supplied path.
+        if fields.get('library_source') is None:
+            fields.pop('library_source', None)
         return fields
     finally:
         # The reader strips indentation in comments; preflight must not mutate.

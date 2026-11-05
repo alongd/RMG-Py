@@ -49,6 +49,24 @@ def test_historical_provenance_schema_omits_only_unknown_identity():
     assert red._loader_provenance(entry, 'seed')['source_identity'] == ['Toy', 23]
 
 
+def test_historical_provenance_schema_omits_only_absent_external_source():
+    from rmgpy.data.base import Entry
+    from rmgpy.kinetics import Arrhenius
+    from rmgpy.reaction import Reaction
+
+    entry = Entry(index=7, item=Reaction(reactants=[], products=[]), data=Arrhenius())
+    entry.source_identity = ('Toy', 23)
+    entry.source_provenance = ('Toy', None)
+    absent = red._loader_provenance(entry, 'seed')
+    assert 'library_source' not in absent
+    assert absent['source_identity'] == ['Toy', 23]
+
+    entry.source_provenance = ('Toy', '/external/Toy')
+    supplied = red._loader_provenance(entry, 'seed')
+    assert supplied['library_source'] == '/external/Toy'
+    assert red._differing_fields(absent, supplied) == ['library_source']
+
+
 def _private_library(view, name):
     library = view / 'kinetics/libraries' / name
     if library.is_symlink():

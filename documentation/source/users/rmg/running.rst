@@ -66,7 +66,11 @@ Run by restarting from a seed mechanism::
     python rmg.py -r path/to/seed/ input.py
 
 Generated seed library entries store their original library and entry index in
-``sourceIdentity``. An explicit ``None`` preserves unknown identity across further
+``sourceIdentity``. Identity and provenance fields accept only plain data: exact
+built-in strings, integers, floats, booleans, ``None``, and tuples of those
+(up to 32 tuple levels). Objects and subclasses are refused on assignment,
+serialization, restoration, and pressure-dependent network admission.
+An explicit ``None`` preserves unknown identity across further
 restarts; rate comments and descriptive prose cannot supply or override it.
 The companion ``sourceProvenance`` field stores the source owner and optional
 external-library path, or explicit ``None`` for an ownerless reaction. When

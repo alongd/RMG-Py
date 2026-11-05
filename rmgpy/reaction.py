@@ -2957,6 +2957,8 @@ def _native_reaction_species_references(reaction, seen=None, atomtype_seen=None)
     _PYTHON_RECORD_FIELDS = pdep._PYTHON_RECORD_FIELDS
     _REACTION_DATA_FIELDS = pdep._REACTION_DATA_FIELDS
     _REACTION_FIELDS = pdep._REACTION_FIELDS
+    _REACTION_IDENTITY_FIELDS = pdep._REACTION_IDENTITY_FIELDS
+    _validate_identity_data = pdep._validate_identity_data
     _REACTION_MATERIAL_FIELDS = pdep._REACTION_MATERIAL_FIELDS
     _REACTION_PROVENANCE_FIELDS = pdep._REACTION_PROVENANCE_FIELDS
     _REACTION_RATE_FIELDS = pdep._REACTION_RATE_FIELDS
@@ -3073,6 +3075,11 @@ def _native_reaction_species_references(reaction, seen=None, atomtype_seen=None)
                 if cls is not reaction_types[2]:
                     raise _UnclassifiedSpeciesReference('Unclassified atom labels at ' + position)
                 _check_template_atom_labels(value, fields['labeled_atoms'], position + '.labeled_atoms')
+            for name in _REACTION_IDENTITY_FIELDS:
+                try:
+                    _validate_identity_data(fields.get(name), position + '.' + name)
+                except ValueError as error:
+                    raise _UnclassifiedSpeciesReference(str(error)) from error
             for name in _REACTION_MATERIAL_FIELDS:
                 child = getattr(value, name)
                 if child is not None and (type(child) is not list or child):

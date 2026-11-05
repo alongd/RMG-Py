@@ -48,6 +48,32 @@ from rmgpy.species import Species
 ################################################################################
 
 
+def _validate_identity_data(value, field):
+    """Require reference-free data, with at most 32 nested exact tuples.
+
+    Inspect no user attributes and invoke no reducers, iterators or comparisons
+    on unknown types. Shared tuples are checked at their deepest occurrence.
+    """
+    pending = [(value, 0)]
+    depths = {}
+    while pending:
+        item, depth = pending.pop()
+        cls = type(item)
+        if (cls is str or cls is int or cls is float or cls is bool
+                or item is None):
+            continue
+        if cls is not tuple:
+            raise ValueError(field + ' must contain only plain data: exact str, int, '
+                             'float, bool, None, or tuples of those.')
+        if depth >= 32:
+            raise ValueError(field + ' plain data exceeds the maximum tuple depth of 32.')
+        if depths.get(id(item), -1) >= depth:
+            continue
+        depths[id(item)] = depth
+        pending.extend((child, depth + 1) for child in item)
+    return value
+
+
 _EXTERNAL_PROVENANCE_START = '[RMG external library provenance v1] '
 _EXTERNAL_PROVENANCE_END = ' [/RMG external library provenance v1]'
 
@@ -310,9 +336,11 @@ def save_entry(f, entry, declarations=None):
     f.write('entry(\n')
     f.write('    index = {0:d},\n'.format(entry.index))
     if hasattr(entry, 'source_identity'):
-        f.write('    sourceIdentity = {0!r},\n'.format(entry.source_identity))
+        f.write('    sourceIdentity = {0!r},\n'.format(
+            _validate_identity_data(entry.source_identity, 'source_identity')))
     if hasattr(entry, 'source_provenance'):
-        f.write('    sourceProvenance = {0!r},\n'.format(entry.source_provenance))
+        f.write('    sourceProvenance = {0!r},\n'.format(
+            _validate_identity_data(entry.source_provenance, 'source_provenance')))
     if label != '':
         f.write('    label = "{0}",\n'.format(label))
 

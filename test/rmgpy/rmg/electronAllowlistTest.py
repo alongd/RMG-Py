@@ -91,7 +91,10 @@ def test_library_identity_data_refuses_material_after_admission(field, carrier, 
     # their values as data, including after a previously successful admission.
     value = reference if carrier == 'direct' else (
         ('owner', reference) if carrier == 'tuple' else Entry(item=reference))
-    setattr(reaction, field, value)
+    with pytest.raises(ValueError, match='plain data'):
+        setattr(reaction, field, value)
+    # Emulate corrupted legacy state that bypassed the public setter.
+    reaction.__dict__[field] = value
     model = CoreEdgeReactionModel()
     model.pressure_dependence = SimpleNamespace(maximum_atoms=None)
     before = helpers.admission_state(model)

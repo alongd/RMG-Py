@@ -159,7 +159,9 @@ def test_plain_source_comment_is_not_restart_provenance():
     library = _recorded_restart_library('owner', '/plain/comment/owner')
     library.entries[1].long_desc = ('Originally from reaction library: owner\n'
                                     'External library source: /plain/comment/owner\n')
-    assert not hasattr(library.get_library_reactions()[0], 'library_source')
+    reaction = library.get_library_reactions()[0]
+    assert reaction.library_source is None
+    assert 'library_source' not in reaction.__dict__
 
 
 @pytest.mark.parametrize('conflict', ['source', 'owner', 'duplicate-json-key', 'malformed'])

@@ -4874,9 +4874,10 @@
       "verdict": "carried",
       "reason": "Storage/format administration of Entry/item/data, without a resolved species query. Modern molecular/group serialization carries state; derived state-bearing group text output is checked by Database._check_data_serialization.",
       "evidence": [
-        "test/rmgpy/data/kinetics/kineticsTest.py"
+        "test/rmgpy/data/kinetics/kineticsTest.py",
+        "test/rmgpy/rmg/identityDataTest.py"
       ],
-      "source_sha256": "4d59b1d5fce1aa7b4466523a0ee58139652a9c9ac122f950bc7babdcb180820e"
+      "source_sha256": "da9fdc9fdbe693739ed4c3168640b5f2a3df8a9ba7e80b0ff903ba69b79746bd"
     },
     "rmgpy/data/kinetics/common.py:save_entry.sort_efficiencies": {
       "verdict": "carried",
@@ -6485,9 +6486,10 @@
       "verdict": "carried",
       "reason": "Retains complete reaction/Entry identity in storage, reducers, duplicate handling and conversion; species-specific acquisition uses KineticsDatabase.generate_reactions_from_library.",
       "evidence": [
-        "test/rmgpy/data/kinetics/libraryTest.py"
+        "test/rmgpy/data/kinetics/libraryTest.py",
+        "test/rmgpy/rmg/identityDataTest.py"
       ],
-      "source_sha256": "550a57e45d5ab11e248bc6eb3321df8bff6677c01dfb2d22bf7a60a6f866367b"
+      "source_sha256": "8c23e1bfc5325e9a8d34eccf636007e74e2e651b7d6f07fc97ca713eaef8ca6f"
     },
     "rmgpy/data/kinetics/library.py:KineticsLibrary.load": {
       "verdict": "carried",
@@ -6501,9 +6503,10 @@
       "verdict": "carried",
       "reason": "Storage/format administration of Entry/item/data, without a resolved species query. Modern molecular/group serialization carries state; derived state-bearing group text output is checked by Database._check_data_serialization.",
       "evidence": [
-        "test/rmgpy/data/kinetics/libraryTest.py"
+        "test/rmgpy/data/kinetics/libraryTest.py",
+        "test/rmgpy/rmg/identityDataTest.py"
       ],
-      "source_sha256": "7bcbdf289bb7dc57ea689259a21bdbe033a332a56dddd534df9d7345d196e770"
+      "source_sha256": "7046af47b79f4f3a3de4a9e35fcf0841cb5e5a73f5fff851b794209a8aa0fb92"
     },
     "rmgpy/data/kinetics/library.py:KineticsLibrary.load_old": {
       "verdict": "carried",
@@ -6606,9 +6609,10 @@
       "verdict": "carried",
       "reason": "Retains complete reaction/Entry identity in storage, reducers, duplicate handling and conversion; species-specific acquisition uses KineticsDatabase.generate_reactions_from_library.",
       "evidence": [
-        "test/rmgpy/data/kinetics/libraryTest.py"
+        "test/rmgpy/data/kinetics/libraryTest.py",
+        "test/rmgpy/rmg/identityDataTest.py"
       ],
-      "source_sha256": "451d269e970d7a9783a4f9329afd02899909c454971b99b3a9d5641eee0583e4"
+      "source_sha256": "a3fa374b387dfa9b06fea8406417df999ffeb6632509d2e257ed4fa02d1a4f8a"
     },
     "rmgpy/data/kinetics/library.py:LibraryReaction.apply_solvent_correction": {
       "verdict": "carried",
@@ -6689,9 +6693,10 @@
       "verdict": "carried",
       "reason": "Retains complete reaction/Entry identity in storage, reducers, duplicate handling and conversion; species-specific acquisition uses KineticsDatabase.generate_reactions_from_library.",
       "evidence": [
-        "test/rmgpy/data/kinetics/libraryTest.py"
+        "test/rmgpy/data/kinetics/libraryTest.py",
+        "test/rmgpy/rmg/identityDataTest.py"
       ],
-      "source_sha256": "d909e2e648d42aba0a931e2b9a9e5b52a7c2b1080f3e3e195d1f7182661b87a4"
+      "source_sha256": "078de5fee5ab8745b1465746823485a9c026606867b702cd399d412b93bb7cfa"
     },
     "rmgpy/data/kinetics/quarantine.py:KineticsQuarantine.__init__": {
       "verdict": "not-reachable-for-resolved",
@@ -22549,9 +22554,10 @@
       "reason": "Walks the original supplied reaction and each declared kinetics, provenance and physical record in compiled code using the existing complete schemas, preserving material order and operation-local identities without projecting electronic state or acquiring substitutes.",
       "evidence": [
         "test/rmgpy/rmg/electronAllowlistTest.py",
-        "test/rmgpy/data/stateProvenanceTest.py"
+        "test/rmgpy/data/stateProvenanceTest.py",
+        "test/rmgpy/rmg/identityDataTest.py"
       ],
-      "source_sha256": "2b2082a6e7737453bb6c1cb9aa81cd88e85dc9bb8befde2e91f4cd7b78aa5efe"
+      "source_sha256": "8d8b12497fbba55cfe1e07c08cc43d9493983b75c34d6ec7595d954e55dc3d26"
     },
     "rmgpy/reaction.py:_native_record_graph_verdict": {
       "verdict": "carried",
@@ -38342,6 +38348,56 @@
         "test/rmgpy/diagnosticModeTest.py"
       ],
       "source_sha256": "c8ab70b5acb94b1d3b2dd1ec44f4fe3dc3fde57eeb36db139eab88f9b48d7a20"
+    },
+    "rmgpy/data/kinetics/common.py:_validate_identity_data": {
+      "file": "rmgpy/data/kinetics/common.py",
+      "line": 51,
+      "source_sha256": "426aeef447c73b4fb5b2dec3cb50d235a8de576ae97ebe91f917559dcdbdaae7",
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Identity/provenance plain-data validation only; no molecular or scientific data acquisition. Exact scalar/tuple values contain no species references.",
+      "evidence": [
+        "test/rmgpy/rmg/identityDataTest.py"
+      ]
+    },
+    "rmgpy/data/kinetics/library.py:LibraryReaction.library_source": {
+      "file": "rmgpy/data/kinetics/library.py",
+      "line": 183,
+      "source_sha256": "de7bb833ad7e6c42b2329045cc28b4e4bda9f659b7aedc5088a9792185e41317",
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Identity/provenance plain-data validation only; no molecular or scientific data acquisition. Exact scalar/tuple values contain no species references.",
+      "evidence": [
+        "test/rmgpy/rmg/identityDataTest.py"
+      ]
+    },
+    "rmgpy/data/kinetics/library.py:LibraryReaction.library_source[setter]": {
+      "file": "rmgpy/data/kinetics/library.py",
+      "line": 188,
+      "source_sha256": "aa348c3625561d1f9c14971db0c726a536653d2383ce8df6294ec5ab5a6ad557",
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Identity/provenance plain-data validation only; no molecular or scientific data acquisition. Exact scalar/tuple values contain no species references.",
+      "evidence": [
+        "test/rmgpy/rmg/identityDataTest.py"
+      ]
+    },
+    "rmgpy/data/kinetics/library.py:LibraryReaction.source_identity": {
+      "file": "rmgpy/data/kinetics/library.py",
+      "line": 174,
+      "source_sha256": "737e217254b6abe1efc3ec8c73397024113593e7c194b5101d271110061bd817",
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Identity/provenance plain-data validation only; no molecular or scientific data acquisition. Exact scalar/tuple values contain no species references.",
+      "evidence": [
+        "test/rmgpy/rmg/identityDataTest.py"
+      ]
+    },
+    "rmgpy/data/kinetics/library.py:LibraryReaction.source_identity[setter]": {
+      "file": "rmgpy/data/kinetics/library.py",
+      "line": 179,
+      "source_sha256": "cd054e2ec96859e36e88755b2d22c8f1cea1cfb385901a5e4b19cd645864107b",
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Identity/provenance plain-data validation only; no molecular or scientific data acquisition. Exact scalar/tuple values contain no species references.",
+      "evidence": [
+        "test/rmgpy/rmg/identityDataTest.py"
+      ]
     }
   }
 }

@@ -43,7 +43,7 @@ import numpy as np
 from rmgpy.data.base import DatabaseError, Database, Entry
 from rmgpy.data.kinetics.common import (save_entry, parse_external_library_provenance,
                                         validate_generic_collider_dictionary,
-                                        validate_dictionary_participant_labels)
+                                        validate_dictionary_participant_labels, _validate_identity_data)
 # The shared definition of what reaction state *is* lives in `family.py`, because this
 # module imports `TemplateReaction` from there and the import cannot run both ways.
 # The names below are re-exported: every importer round 102 and 105 wrote --
@@ -170,6 +170,24 @@ class LibraryReaction(Reaction):
         # mutable model/seed numbering and historical description text.
         self.source_identity = source_identity
 
+    @property
+    def source_identity(self):
+        """Loader identity as plain data, checked again on reads of restored state."""
+        return _validate_identity_data(self.__dict__.get('source_identity'), 'source_identity')
+
+    @source_identity.setter
+    def source_identity(self, value):
+        self.__dict__['source_identity'] = _validate_identity_data(value, 'source_identity')
+
+    @property
+    def library_source(self):
+        """Read an absent external source as None without adding a state key."""
+        return _validate_identity_data(self.__dict__.get('library_source'), 'library_source')
+
+    @library_source.setter
+    def library_source(self, value):
+        self.__dict__['library_source'] = _validate_identity_data(value, 'library_source')
+
     def get_source_entry_index(self):
         """Read the identity attached by the loader; never reinterpret provenance."""
         identity = self.source_identity
@@ -194,6 +212,9 @@ class LibraryReaction(Reaction):
         Restore what `__reduce__` sent; see `TemplateReaction.__setstate__` for why the
         default unpickling path will not do.
         """
+        for field in ('source_identity', 'library_source'):
+            if field in state:
+                _validate_identity_data(state[field], field)
         apply_reaction_state(self, state)
 
     def copy(self):
@@ -415,8 +436,9 @@ def seed_placement_survives(entry, owner):
     """
     long_desc = entry.long_desc or ''
     if hasattr(entry, 'source_identity'):
-        provenance = getattr(entry, 'source_provenance', None)
-        identity = entry.source_identity
+        provenance = _validate_identity_data(
+            getattr(entry, 'source_provenance', None), 'source_provenance')
+        identity = _validate_identity_data(entry.source_identity, 'source_identity')
         if provenance is not None:
             return provenance[0] == owner
         if identity is not None:
@@ -492,6 +514,9 @@ class KineticsLibrary(Database):
             # when the kinetics comment has been stripped. Constructing the reaction
             # without it discards that provenance at the one point it is still in hand.
             explicit_identity = getattr(entry, 'source_identity', _SOURCE_IDENTITY_UNSET)
+            if explicit_identity is not _SOURCE_IDENTITY_UNSET:
+                _validate_identity_data(explicit_identity, 'source_identity')
+            _validate_identity_data(getattr(entry, 'source_provenance', None), 'source_provenance')
             # Only field-omitting legacy seeds interpret library provenance in prose.
             # Owner/source compatibility is independent of identity authority.
             # An explicit sourceProvenance=None also makes prose inert.
@@ -891,15 +916,15 @@ class KineticsLibrary(Database):
         """
 
         if sourceIdentity is not _SOURCE_IDENTITY_UNSET and sourceIdentity is not None:
-            if (not isinstance(sourceIdentity, tuple) or len(sourceIdentity) != 2
-                    or not isinstance(sourceIdentity[0], str) or not sourceIdentity[0]
+            if (type(sourceIdentity) is not tuple or len(sourceIdentity) != 2
+                    or type(sourceIdentity[0]) is not str or not sourceIdentity[0]
                     or type(sourceIdentity[1]) is not int):
                 raise DatabaseError('Invalid source identity in seed library provenance.')
         if sourceProvenance is not _SOURCE_IDENTITY_UNSET and sourceProvenance is not None:
-            if (not isinstance(sourceProvenance, tuple) or len(sourceProvenance) != 2
-                    or not isinstance(sourceProvenance[0], str) or not sourceProvenance[0]
+            if (type(sourceProvenance) is not tuple or len(sourceProvenance) != 2
+                    or type(sourceProvenance[0]) is not str or not sourceProvenance[0]
                     or (sourceProvenance[1] is not None
-                        and (not isinstance(sourceProvenance[1], str)
+                        and (type(sourceProvenance[1]) is not str
                              or not os.path.isabs(sourceProvenance[1])))):
                 raise DatabaseError('Invalid source provenance in seed library provenance.')
 
