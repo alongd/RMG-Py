@@ -1,0 +1,185 @@
+# Unmodified RMG.make_seed_mech from 1ffe3fe47 (sourceIdentity-only format).
+def make_seed_mech(self):
+        """
+        Save a seed mechanism (both core and edge) in the 'seed' sub-folder of the output directory. Additionally, save
+        the filter tensors to the 'seed/filters' sub-folder so that the RMG job can be restarted from a seed mechanism.
+        If `self.save_seed_to_database` is True then the seed mechanism is also saved as libraries (one each for the
+        core and edge) in the RMG-database.
+
+        Notes:
+            `initialize_seed_mech` should be called one time before this function is ever called.
+
+        """
+        logging.info("Making seed mechanism...")
+
+        name = self.name
+
+        seed_dir = os.path.join(self.output_directory, "seed")
+        filter_dir = os.path.join(seed_dir, "filters")
+        previous_seeds_dir = os.path.join(self.output_directory, "previous_seeds")
+        temp_seed_dir = os.path.join(self.output_directory, "seed_tmp")
+
+        # Move the seed from the previous iteration to a temporary directory in case we run into errors
+
+        # First, remove the temporary seed mechanism if it exists from a previous run
+        if os.path.exists(temp_seed_dir):
+            shutil.rmtree(temp_seed_dir)
+        try:
+            os.rename(seed_dir, temp_seed_dir)
+        except PermissionError:  # The Windows Subsystem for Linux (WSL) can have problems with renaming
+            # Try copying over the files instead. Unfortunately, this takes more time
+            if os.path.exists(temp_seed_dir):  # First, delete the contents of the old folder if it exists
+                shutil.rmtree(temp_seed_dir)
+            shutil.copytree(seed_dir, temp_seed_dir)
+
+            # Now remove the contents of the seed directory
+            shutil.rmtree(seed_dir)
+
+        # Now that we have moved the seed mechanism folder, create a new one
+        os.mkdir(seed_dir)
+
+        try:
+            species_list = self.reaction_model.core.species
+            reaction_list = self.reaction_model.core.reactions
+            edge_species_list = self.reaction_model.edge.species
+            edge_reaction_list = self.reaction_model.edge.reactions
+
+            # Make species labels independent
+            old_labels = self.make_species_labels_independent(species_list)
+            edge_old_labels = self.make_species_labels_independent(edge_species_list)
+
+            # load kinetics library entries
+            kinetics_library = KineticsLibrary(name=name, auto_generated=True)
+            kinetics_library.entries = {}
+            for i in range(len(reaction_list)):
+                reaction = reaction_list[i]
+                entry = Entry(
+                    index=i + 1,
+                    label=reaction.to_labeled_str(),
+                    item=reaction,
+                    data=reaction.kinetics,
+                )
+
+                entry.source_identity = getattr(reaction, 'source_identity', None)
+                if getattr(reaction, 'source_identity', None) is not None or getattr(reaction, 'library', None):
+                    identity = getattr(reaction, 'source_identity', None)
+                    source_library, source_index = identity if identity is not None else (reaction.library, None)
+                    library_source = None
+                    for external_path, library_label in self.database.kinetics.external_library_labels.items():
+                        if library_label == source_library:
+                            library_source = external_path
+                            break
+                    entry.long_desc = "Originally from reaction library: " + source_library + "\n"
+                    if source_index is not None:
+                        entry.long_desc += "Original reaction library entry index: {0}\n".format(source_index)
+                    if library_source:
+                        entry.long_desc += format_external_library_provenance(source_library, library_source) + "\n"
+                    entry.long_desc += "\n" + reaction.kinetics.comment
+                else:
+                    entry.long_desc = reaction.kinetics.comment
+
+                warn_if_seed_loses_placement(reaction, entry, "core")
+                kinetics_library.entries[i + 1] = entry
+
+            # load kinetics library entries
+            edge_kinetics_library = KineticsLibrary(name=name + "_edge", auto_generated=True)
+            edge_kinetics_library.entries = {}
+            for i, reaction in enumerate(edge_reaction_list):
+                entry = Entry(
+                    index=i + 1,
+                    label=reaction.to_labeled_str(),
+                    item=reaction,
+                    data=reaction.kinetics,
+                )
+                entry.source_identity = getattr(reaction, 'source_identity', None)
+                try:
+                    identity = getattr(reaction, 'source_identity', None)
+                    source_library, source_index = identity if identity is not None else (reaction.library, None)
+                    library_source = None
+                    for external_path, library_label in self.database.kinetics.external_library_labels.items():
+                        if library_label == source_library:
+                            library_source = external_path
+                            break
+                    entry.long_desc = "Originally from reaction library: " + source_library + "\n"
+                    if source_index is not None:
+                        entry.long_desc += "Original reaction library entry index: {0}\n".format(source_index)
+                    if library_source:
+                        entry.long_desc += format_external_library_provenance(source_library, library_source) + "\n"
+                    entry.long_desc += "\n" + reaction.kinetics.comment
+                except AttributeError:
+                    entry.long_desc = reaction.kinetics.comment
+                warn_if_seed_loses_placement(reaction, entry, "edge")
+                edge_kinetics_library.entries[i + 1] = entry
+
+            # save in database
+            if self.save_seed_to_database:
+                database_directory = settings["database.directory"]
+                try:
+                    os.makedirs(os.path.join(database_directory, "kinetics", "libraries", name))
+                except:
+                    pass
+                kinetics_library.save(os.path.join(database_directory, "kinetics", "libraries", name, "reactions.py"), provenance_source=self)
+
+                try:
+                    os.makedirs(os.path.join(database_directory, "kinetics", "libraries", name + "_edge"))
+                except:
+                    pass
+                edge_kinetics_library.save(os.path.join(database_directory, "kinetics", "libraries", name + "_edge", "reactions.py"), provenance_source=self)
+
+            # save in output directory
+            # Rename for the output directory, as these names should not be dynamic
+            kinetics_library.name = "seed"
+            kinetics_library.save(os.path.join(seed_dir, "seed", "reactions.py"), provenance_source=self)
+
+            edge_kinetics_library.name = "seed_edge"
+            edge_kinetics_library.save(os.path.join(seed_dir, "seed_edge", "reactions.py"), provenance_source=self)
+
+            # Save the filter tensors
+            if not os.path.exists(filter_dir):
+                os.mkdir(filter_dir)
+            with h5py.File(os.path.join(filter_dir, "filters.h5"), "w") as f:
+                lines = run_provenance_lines(self)
+                if lines:
+                    f.attrs["diagnostic_modes"] = "\n".join(run_diagnostic_modes(self))
+                    f.attrs["run_provenance"] = "\n".join(lines)
+                if self.unimolecular_threshold is not None:
+                    f.create_dataset("unimolecular_threshold", data=self.unimolecular_threshold)
+                if self.bimolecular_threshold is not None:
+                    f.create_dataset("bimolecular_threshold", data=self.bimolecular_threshold)
+                if self.trimolecular_threshold is not None:
+                    f.create_dataset("trimolecular_threshold", data=self.trimolecular_threshold)
+
+            # Save a map of species indices
+            spcs_map = [spc.molecule[0].to_adjacency_list() for spc in self.reaction_model.core.species]
+
+            with open(os.path.join(filter_dir, "species_map.yml"), "w", encoding="utf-8") as f:
+                f.write(comment_block(self, "#"))
+                yaml.dump(data=spcs_map, stream=f)
+
+            # Also, save the seed to the previous_seeds directory on specified iterations
+            if self.save_seed_modulus != -1 and self.reaction_model.iteration_num % self.save_seed_modulus == 0:
+                dst = os.path.join(previous_seeds_dir, "iteration_number_{0}".format(self.reaction_model.iteration_num))
+                logging.info("Copying seed from seed directory to {0}".format(dst))
+                shutil.copytree(seed_dir, dst)
+
+            # Finally, delete the seed mechanism from the previous iteration (if it exists)
+            if os.path.exists(temp_seed_dir):
+                shutil.rmtree(temp_seed_dir)
+
+        except Exception as e:
+            # Move the seed mechanism from the previous iteration (if it exists) back
+            if os.path.exists(temp_seed_dir):
+                shutil.rmtree(seed_dir)  # Delete the bad save of the current seed mechanism
+                os.rename(temp_seed_dir, seed_dir)
+                logging.error(
+                    "Error in writing the seed mechanism for the current iteration. The seed mechanism from "
+                    "the previous iteration has been restored"
+                )
+            raise e
+
+        # change labels back so species aren't renamed
+        for i, label in enumerate(old_labels):
+            species_list[i].label = label
+
+        for i, label in enumerate(edge_old_labels):
+            edge_species_list[i].label = label

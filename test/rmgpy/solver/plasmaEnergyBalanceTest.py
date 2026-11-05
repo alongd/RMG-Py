@@ -1449,6 +1449,78 @@ def test_seed_comment_owner_and_source_admission(tmp_path, monkeypatch, edge, co
         assert [line.strip() for line in reaction.kinetics.comment.splitlines()] == comments[comment_kind].splitlines()
 
 
+@pytest.mark.parametrize('edge', [False, True])
+@pytest.mark.parametrize('known_identity', [False, True])
+def test_predecessor_seed_owner_and_source_admission(tmp_path, monkeypatch, edge, known_identity):
+    """Untouched sourceIdentity-only seeds retain their external owner and source."""
+    from pathlib import Path
+    from types import SimpleNamespace
+    from rmgpy.data.base import ForbiddenStructures
+    from rmgpy.data.kinetics.database import KineticsDatabase
+    from rmgpy.data.kinetics.library import KineticsLibrary
+    from rmgpy.rmg.main import RMG
+    from rmgpy.rmg.model import CoreEdgeReactionModel
+    import rmgpy.rmg.main as main_module
+    import rmgpy.rmg.model as model_module
+    import rmgpy.rmg.input as input_module
+
+    # Freeze the review probe's exact historical writer so this regression also
+    # runs from source archives without git or the predecessor commit available.
+    writer_path = Path(__file__).parents[1] / 'test_data' / 'predecessor_seed_writer.txt'
+    namespace = dict(vars(main_module))
+    exec(compile(writer_path.read_text(), str(writer_path), 'exec'), namespace)
+    monkeypatch.setattr(RMG, 'make_seed_mech', namespace['make_seed_mech'])
+    h = Species(label='H').from_smiles('[H]')
+    h2 = Species(label='H2').from_smiles('[H][H]')
+    for species in (h, h2):
+        species.thermo = _thermo(0.)
+    original = Reaction(reactants=[h2], products=[h, h], reversible=False,
+                        kinetics=Arrhenius(A=(1., 's^-1'), n=0, Ea=(0., 'J/mol'),
+                                          comment='ordinary thermal rate'))
+    source_path = tmp_path / 'external' / 'Real'
+    source_path.mkdir(parents=True)
+    source = KineticsLibrary(label='Real')
+    source.entries[0] = Entry(index=0, item=original, data=original.kinetics)
+    source.save(str(source_path / 'reactions.py'))
+    db = KineticsDatabase()
+    reactions = db.resolve_library('Real', source=str(source_path)).get_library_reactions()
+    if not known_identity:
+        reactions[0].source_identity = None
+    database = SimpleNamespace(kinetics=db, forbidden_structures=ForbiddenStructures())
+    monkeypatch.setattr(rmg_data_module, 'database', database)
+    monkeypatch.setattr(input_module, 'rmg', RMG())
+    # Only thermal-data submission is stubbed; resolution and admission are real.
+    monkeypatch.setattr(model_module, 'submit', lambda spec, solvent: setattr(spec, 'thermo', _thermo(0.)))
+    _, path = _seed_restart(tmp_path, [h, h2], reactions, edge=edge,
+                            external_library_labels=db.external_library_labels)
+    untouched = path.read_bytes()
+    text = untouched.decode()
+    assert 'sourceIdentity =' in text and 'sourceProvenance =' not in text
+    assert str(source_path) in text and 'Originally from reaction library: Real' in text
+
+    # Empty source cache forces both real admission paths to use the disk record.
+    db = KineticsDatabase()
+    database.kinetics = db
+    seed = KineticsLibrary(label='restart')
+    seed.load(str(path), db.local_context, db.global_context)
+    db.libraries['restart'] = seed
+    model = CoreEdgeReactionModel()
+    if edge:
+        model.add_reaction_library_to_edge('restart')
+    else:
+        model.add_seed_mechanism_to_core('restart')
+    admitted = model.edge if edge else model.core
+    assert len(admitted.species) == 2
+    [reaction] = admitted.reactions
+    assert reaction.library == 'Real'
+    assert reaction.library_source == str(source_path)
+    assert reaction.source_identity == (('Real', 0) if known_identity else None)
+    assert reaction.is_isomorphic(original, either_direction=False)
+    assert not reaction.reversible
+    assert reaction.kinetics.get_rate_coefficient(1000.) == pytest.approx(1.)
+    assert path.read_bytes() == untouched
+
+
 @pytest.mark.parametrize("edge", [False, True])
 @pytest.mark.parametrize("source_indices", [(0, 1, 2), (1, 2, 3), (16, 23, 91)])
 @pytest.mark.parametrize("rate_rule_comment", [False, True])

@@ -116,7 +116,8 @@ def test_explicit_seed_identity_ignores_description_and_rate_comments(identity):
                    'Original reaction library entry index: 23')
     library = KineticsLibrary(label='seed', auto_generated=True)
     library.load_entry(index=7, label='H2 => H + H', kinetics=Arrhenius(comment=description),
-                       longDesc=description, sourceIdentity=identity)
+                       longDesc=description, sourceIdentity=identity,
+                       sourceProvenance=(identity[0], None) if identity else None)
     reaction = library.get_library_reactions()[0]
     assert reaction.source_identity == identity
     assert reaction.library == (identity[0] if identity else None)
@@ -285,6 +286,20 @@ class TestLibrary:
         assert reaction.source_identity == identity
         assert reaction.library == ('Real' if identity else None)
         assert getattr(reaction, 'library_source', None) == ('/real' if identity else None)
+
+    @pytest.mark.parametrize('identity', [None, ('Real', 0)])
+    def test_explicit_no_source_provenance_keeps_identity_and_ignores_text(self, identity):
+        from rmgpy.kinetics import Arrhenius
+
+        library = KineticsLibrary(label='restart', auto_generated=True)
+        library.load_entry(index=77, label='H2 => H + H', sourceIdentity=identity,
+                           sourceProvenance=None, kinetics=Arrhenius(),
+                           longDesc='Originally from reaction library: Forged\n'
+                                    'Original reaction library entry index: 88')
+        [reaction] = library.get_library_reactions()
+        assert reaction.source_identity == identity
+        assert reaction.library is None
+        assert getattr(reaction, 'library_source', None) is None
 
     def test_conflicting_dedicated_owner_source_refuses(self):
         from rmgpy.kinetics import Arrhenius

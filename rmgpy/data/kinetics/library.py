@@ -493,25 +493,20 @@ class KineticsLibrary(Database):
             # without it discards that provenance at the one point it is still in hand.
             explicit_identity = getattr(entry, 'source_identity', _SOURCE_IDENTITY_UNSET)
             # Only field-omitting legacy seeds interpret library provenance in prose.
-            # Even malformed lookalikes are inert when a dedicated identity is present.
-            legacy = self.auto_generated and explicit_identity is _SOURCE_IDENTITY_UNSET
+            # Owner/source compatibility is independent of identity authority.
+            # An explicit sourceProvenance=None also makes prose inert.
+            legacy = self.auto_generated and not hasattr(entry, 'source_provenance')
             header = _leading_library_provenance(entry.long_desc) if legacy else ''
             provenance = parse_external_library_provenance(header) if legacy else None
             source_provenance = getattr(entry, 'source_provenance', None) if not legacy else None
-            if self.auto_generated and ((explicit_identity is not _SOURCE_IDENTITY_UNSET
-                                         and explicit_identity is not None) or source_provenance or provenance
+            if self.auto_generated and (source_provenance or provenance
                                         or 'Originally from reaction library: ' in header):
                 declarations = [line.strip().replace('Originally from reaction library: ', '', 1)
                                 for line in header.splitlines()
                                 if line.strip().startswith('Originally from reaction library: ')]
-                if explicit_identity is not _SOURCE_IDENTITY_UNSET:
-                    # The dedicated field is authoritative, including explicit None.
-                    # Description and rate comments cannot supply either component.
-                    identity = explicit_identity
-                    lib = source_provenance[0] if source_provenance else identity[0]
-                    if identity is not None and lib != identity[0]:
-                        raise DatabaseError('Conflicting dedicated source provenance labels.')
-                    if source_provenance and source_provenance[1] is not None:
+                if source_provenance:
+                    lib = source_provenance[0]
+                    if source_provenance[1] is not None:
                         provenance = {'label': lib, 'source': source_provenance[1]}
                 elif provenance:
                     lib = provenance['label']
@@ -520,7 +515,12 @@ class KineticsLibrary(Database):
                 else:
                     lib = [line for line in header.split('\n') if 'Originally from reaction library: ' in line]
                     lib = lib[0].replace('Originally from reaction library: ', '').strip()
-                if explicit_identity is _SOURCE_IDENTITY_UNSET:
+                if explicit_identity is not _SOURCE_IDENTITY_UNSET:
+                    # Identity remains authoritative even for a legacy owner/source record.
+                    identity = explicit_identity
+                    if identity is not None and lib != identity[0]:
+                        raise DatabaseError('Conflicting dedicated source provenance labels.')
+                else:
                     # Legacy recovery is limited to the writer's leading record.
                     # Keep the conflict guard within that authoritative record.
                     prefix = 'Original reaction library entry index: '
@@ -586,7 +586,9 @@ class KineticsLibrary(Database):
                                       reversible=entry.item.reversible, allow_pdep_route=entry.item.allow_pdep_route,
                                       elementary_high_p=entry.item.elementary_high_p,
                                       electrons=entry.item.electrons, entry=entry,
-                                      source_identity=None if self.auto_generated else (self.label, entry.index))
+                                      source_identity=(None if explicit_identity is _SOURCE_IDENTITY_UNSET
+                                                       else explicit_identity) if self.auto_generated
+                                      else (self.label, entry.index))
                 _carry_entry_fields(rxn, entry.item)
                 if self.auto_generated and not legacy:
                     rxn.family = self.label  # admission container, not a source owner
