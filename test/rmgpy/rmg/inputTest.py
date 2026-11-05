@@ -1051,6 +1051,27 @@ class TestInputPlasmaReactor:
         for label in mf1:
             assert mf2[label] == pytest.approx(mf1[label], rel=1e-5)
 
+    def test_atomic_recombination_retains_cylinder_with_scalar_mobility(self, tmp_path):
+        """The surface V/S must survive the input and writer with either mobility form."""
+        from rmgpy.rmg.input import _format_plasma_wall
+        preamble = self._preamble() + (
+            "species(label='N', reactive=True, structure=adjacencyList('multiplicity 4\\n1 N u3 p1 c0'))\n"
+            "species(label='N2', reactive=True, structure=SMILES('N#N'))\n")
+        entry = {'kind': 'homonuclearRecombination', 'product': 'N2',
+                 'diffusivity': (7.05616e20, '1/(m*s)'), 'recombinationProbability': 5e-5}
+        body = preamble + self._plasma_block(
+            "    chamberGeometry={{'shape':'cylinder','radius':(5,'cm'),'length':(30,'cm')}},\n"
+            "    ionReducedMobility=(1.535e-4,'m^2/(V*s)'),\n"
+            "    wallNeutralDiffusion={0!r},\n".format({'N': entry}),
+            mole_fractions="{'Ar':0.9,'N':0.01,'N2':0.089999,'e-':1e-6}")
+        r = self._read(tmp_path, body).reaction_systems[0]
+        assert r.wall_chamber_geometry == {'shape': 'cylinder', 'radius': .05, 'length': .30}
+        assert r.wall_neutral_diffusion['N'] == entry
+        saved = _format_plasma_wall(r)
+        assert 'homonuclearRecombination' in saved
+        assert 'recombinationProbability' in saved
+        assert 'cylinder' in saved
+
     # ---- wallNeutralDiffusion (I-269) --------------------------------------
 
     _WALL = ("    chamberGeometry={'diffusionLength': (2.03, 'cm')},\n"

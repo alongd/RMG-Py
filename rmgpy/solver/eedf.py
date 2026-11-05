@@ -69,6 +69,38 @@ class IllConditionedCoordinate(EEDFError):
     """Mean energy folds or its u derivative is unusable."""
 
 
+def _linear_axis(axis, data, value, dimension, derivative=False):
+    """Piecewise linear value or its one-sided coordinate derivative."""
+    hi = min(max(int(np.searchsorted(axis, value, side='right')), 1), len(axis)-1)
+    lo = hi-1
+    left, right = np.take(data, lo, axis=dimension), np.take(data, hi, axis=dimension)
+    width = axis[hi]-axis[lo]
+    if derivative:
+        return (right-left)/width
+    weight = (value-axis[lo])/width
+    return (1.-weight)*left + weight*right
+
+
+def _linear_atomic_axis(axis, data, value, dimension, layout):
+    """Interpolate atomic axes in physical values, including chemical rates.
+
+    Other axes keep the established PCHIP/log-rate convention. Decode each
+    rate before an atomic interpolation and re-encode it with the interpolated
+    floor, so midpoint refinement cannot silently switch atomic rates to PCHIP
+    or geometric averaging.
+    """
+    result = _linear_axis(axis, data, value, dimension)
+    floor_start, floor_stop, _ = layout['rate_floors']
+    floors = data[..., floor_start:floor_stop]
+    new_floors = result[..., floor_start:floor_stop]
+    for direction in ('k_ine', 'k_sup'):
+        start, stop, _ = layout[direction]
+        physical = np.maximum(0., np.expm1(data[..., start:stop]))*floors
+        averaged = _linear_axis(axis, physical, value, dimension)
+        result[..., start:stop] = np.log1p(averaged/new_floors)
+    return result
+
+
 def _finite_scalar(value, name, error_type):
     """Return one finite Python float without retaining a caller array/view."""
     try:
@@ -377,6 +409,12 @@ class EEDFTable:
         _check_model(manifest, current_model, manifest['tolerances']['fingerprint_rtol'])
         from rmgpy.tools.eedf.argon_population import validate_population_axis
         validate_population_axis(manifest['row_inputs'])
+        from rmgpy.tools.eedf.atomic_population import validate_atomic_axes
+        from rmgpy.tools.eedf.schema import SpecError
+        try:
+            validate_atomic_axes(manifest['row_inputs'])
+        except SpecError as error:
+            raise FingerprintMismatch(str(error)) from error
         if manifest['row_inputs']['interpolant'] != _interpolant_identity():
             raise FingerprintMismatch('interpolant implementation')
         if manifest['axes'] != manifest['row_inputs']['axes']:
@@ -686,11 +724,23 @@ class EEDFTable:
                 coordinate_scales[dimension] = coordinate_derivative(point[dimension])
                 interpolation_axes[dimension] = coordinate(self._axes[dimension])
                 point[dimension] = float(coordinate(point[dimension]))
+        layout = self._layout[branch_id]
+        from rmgpy.tools.eedf.atomic_population import AXES as atomic_axes
 
         def interpolate(derivative_dimension=None):
             data = source
             tangent = None
             for dimension in range(len(self._axes) - 1, 0, -1):
+                if self._axis_names[dimension] in atomic_axes:
+                    if derivative_dimension == dimension:
+                        tangent = _linear_axis(self._axes[dimension], data,
+                                               point[dimension], dimension, derivative=True)
+                    elif tangent is not None:
+                        tangent = _linear_axis(self._axes[dimension], tangent,
+                                               point[dimension], dimension)
+                    data = _linear_atomic_axis(self._axes[dimension], data,
+                                               point[dimension], dimension, layout)
+                    continue
                 ordinate_data = np.moveaxis(data, dimension, 0)
                 interpolation = PchipInterpolator(
                     interpolation_axes[dimension], data, axis=dimension, extrapolate=False)
@@ -712,8 +762,12 @@ class EEDFTable:
 
         data = source
         for dimension in range(len(self._axes) - 1, 0, -1):
-            data = PchipInterpolator(interpolation_axes[dimension], data, axis=dimension,
-                                     extrapolate=False)(point[dimension])
+            if self._axis_names[dimension] in atomic_axes:
+                data = _linear_atomic_axis(self._axes[dimension], data,
+                                           point[dimension], dimension, layout)
+            else:
+                data = PchipInterpolator(interpolation_axes[dimension], data, axis=dimension,
+                                         extrapolate=False)(point[dimension])
         layout = self._layout[branch_id]
         energy_start = layout['swarm/mean_energy_eV'][0]
         energy = data[:, energy_start]

@@ -968,6 +968,11 @@ cdef class PlasmaReactor(ReactionSystem):
     cdef public set wall_neutral_absent_warned
     cdef public np.ndarray wall_neutral_dn
     cdef public np.ndarray wall_neutral_target
+    cdef public np.ndarray wall_neutral_yield
+    cdef public np.ndarray wall_neutral_surface_time
+    cdef public np.ndarray wall_recombination_delta_h
+    cdef public object wall_recombination_energy_flux
+    cdef public bint wall_has_recombination
     # --- M8-B electron energy balance (I-274) ------------------------------------
     # Declared by electron_energy_balance; absent (None, energy_balance False) by
     # default, in which case NOTHING below is read and Te stays the prescribed input.
@@ -1467,6 +1472,7 @@ cdef class PlasmaReactor(ReactionSystem):
         self.electronegative_wall_diagnostics.update(
             wall_electron_energy_flux=self.wall_electron_energy_flux,
             wall_neutralization_energy_flux=self.wall_neutralization_energy_flux,
+            wall_recombination_energy_flux=self.wall_recombination_energy_flux,
             wall_ion_energy_flux=self.wall_ion_energy_flux,
             energy_budget=(copy.deepcopy(self.energy_budget) if self.energy_balance else None))
         self.electronegative_wall_history[t] = self.electronegative_wall_manifest()
@@ -1532,6 +1538,10 @@ cdef class PlasmaReactor(ReactionSystem):
             expected = ((2.405 / chamber['radius'])**2, (np.pi / chamber['length'])**2)
             if components is None or not np.allclose(expected, components, rtol=1.e-14, atol=0.):
                 raise PlasmaStateError('declared cylinder dimensions must match wall_diffusion_components')
+        if self.wall_has_recombination and chamber is None:
+            raise PlasmaStateError(
+                'homonuclearRecombination requires a declared cylinder chamber geometry; '
+                'a bare diffusion length does not specify the surface resistance V/S')
         self.wall_chamber_geometry = copy.deepcopy(chamber)
         self.electronegative_wall_model = model
         self.electronegative_wall_geometry = geometry
@@ -2362,6 +2372,15 @@ cdef class PlasmaReactor(ReactionSystem):
         exponent of ``D*N`` itself, i.e. ``m_p - 1``. The stored declaration keeps both
         keys, so a copy or a saved input file carries the law.
 
+        The distinct ``kind: 'homonuclearRecombination'`` requires an explicit
+        ``recombinationProbability`` in [0,1] and cylinder geometry. A neutral atom
+        returns as half its declared homonuclear diatomic, with matching isotopes.
+        The lifetime is Lambda^2/D + 2(V_ch/S_ch)(2-gamma)/(gamma*vbar), from Guerra
+        et al., doi:10.1088/1361-6595/ab252c, Eq.33. At gamma=0 the wall flux is zero.
+        Its material enthalpy drop is reported as ``wall_recombination_energy_flux``;
+        it is deposited at the wall, not credited to gas or electron heating.
+        The ordinary same-skeleton rule is unchanged when this kind is not declared.
+
         Shape, units and the sign/finiteness of the number are checked here, and so is
         the label graph: a chain of declarations that leads back to its start (Ar* -> Ar
         with Ar -> Ar*) is a cycle and is refused. The labels are resolved against the
@@ -2369,6 +2388,11 @@ cdef class PlasmaReactor(ReactionSystem):
         """
         self.wall_neutral_dn = None
         self.wall_neutral_target = None
+        self.wall_neutral_yield = None
+        self.wall_neutral_surface_time = None
+        self.wall_recombination_delta_h = None
+        self.wall_recombination_energy_flux = None
+        self.wall_has_recombination = False
         self.wall_neutral_dn_by_label = {}
         self.wall_neutral_diffusion = {}
         self.wall_neutral_absent_warned = set()
@@ -2398,7 +2422,8 @@ cdef class PlasmaReactor(ReactionSystem):
             missing = [k for k in ('product', 'diffusivity') if k not in entry]
             unknown = sorted(repr(k) for k in entry
                              if k not in ('product', 'diffusivity', 'referenceTemperature',
-                                          'temperatureExponent'))
+                                          'temperatureExponent', 'kind',
+                                          'recombinationProbability'))
             if missing or unknown:
                 raise PlasmaStateError(
                     "wall_neutral_diffusion[{0!r}] must have the keys 'product' and "
@@ -2406,6 +2431,25 @@ cdef class PlasmaReactor(ReactionSystem):
                     "'temperatureExponent'; missing {1}, unknown {2}. There is no default "
                     "for either required key, and an unknown key is refused rather than "
                     "ignored. ({3})".format(label, missing, unknown, self._identity()))
+            kind = entry.get('kind', 'deexcitation')
+            if kind not in ('deexcitation', 'homonuclearRecombination'):
+                raise PlasmaStateError('Unknown neutral wall kind {0!r} for {1!r}'.format(kind, label))
+            if kind == 'homonuclearRecombination':
+                probability = entry.get('recombinationProbability')
+                if (isinstance(probability, (bool, str)) or probability is None):
+                    raise PlasmaStateError(
+                        'homonuclearRecombination requires a numeric recombinationProbability in [0,1]')
+                try:
+                    probability = float(probability)
+                except (TypeError, ValueError, OverflowError):
+                    raise PlasmaStateError('recombinationProbability must be a finite number in [0,1]')
+                if not np.isfinite(probability) or not 0.0 <= probability <= 1.0:
+                    raise PlasmaStateError('recombinationProbability must be a finite number in [0,1]')
+                self.wall_has_recombination = True
+            elif 'recombinationProbability' in entry:
+                raise PlasmaStateError(
+                    'recombinationProbability requires kind homonuclearRecombination; '
+                    'ordinary wall de-excitation has no recombination probability')
             if ('referenceTemperature' in entry) != ('temperatureExponent' in entry):
                 raise PlasmaStateError(
                     "wall_neutral_diffusion[{0!r}] gives only one of 'referenceTemperature' "
@@ -2451,6 +2495,10 @@ cdef class PlasmaReactor(ReactionSystem):
             declaration[label] = {'product': product,
                                   'diffusivity': (dict(diffusivity) if isinstance(diffusivity, dict)
                                                   else diffusivity)}
+            if 'kind' in entry:
+                declaration[label]['kind'] = kind
+            if kind == 'homonuclearRecombination':
+                declaration[label]['recombinationProbability'] = probability
             if law:
                 declaration[label]['referenceTemperature'] = entry['referenceTemperature']
                 declaration[label]['temperatureExponent'] = entry['temperatureExponent']
@@ -3070,6 +3118,12 @@ cdef class PlasmaReactor(ReactionSystem):
             raise PlasmaStateError('EEDF provider construction failed: {0}'.format(exc)) from exc
         self.eedf_reaction_map = reaction_map
         self.eedf_axis_species = {}
+        if 'atomic_nitrogen_population' in manifest['row_inputs']:
+            from rmgpy.tools.eedf.atomic_population import resolve_atomic_species
+            try:
+                self.eedf_axis_species.update(resolve_atomic_species(core_species))
+            except ValueError as exc:
+                raise PlasmaStateError('EEDF atomic species binding: {0}'.format(exc)) from exc
         labels = {spc.label: self.species_index[spc] for spc in core_species}
         from rmgpy.tools.eedf.vibrational import (
             validate_ladders, resolve_levels, validate_bound_channels)
@@ -3319,8 +3373,19 @@ cdef class PlasmaReactor(ReactionSystem):
         labels = {spc.label: self.species_index[spc]
                   for spc in self._en_core_species}
 
+        from rmgpy.tools.eedf.atomic_population import AXES as atomic_axes
+
         def resolve(name):
             entry = self.eedf_axis_species.get(name)
+            if name in atomic_axes:
+                if entry is None:
+                    raise PlasmaStateError('EEDF atomic axis has no bound species: ' + name)
+                fraction = float(y[entry]) / neutral if neutral > 0. else float('nan')
+                top = float(self.eedf_provider.axis(name)[-1])
+                if not np.isfinite(fraction) or fraction > top:
+                    raise PlasmaStateError(
+                        'atomic axis {0} top node {1:g}, observed {2:g}'.format(name, top, fraction))
+                return fraction
             if isinstance(entry, dict):
                 from rmgpy.tools.eedf.vibrational import temperature
                 return temperature(entry['ladder']['levels'],
@@ -4667,8 +4732,12 @@ cdef class PlasmaReactor(ReactionSystem):
                         target = self.wall_neutral_target[j]
                         if target >= 0:
                             derivative = frequencies[j]*y[j]*dv[it]/V
+                            if self.wall_has_recombination:
+                                diffusion_frequency = (self._neutral_dn_effective(y)[j] if self.wall_blanc
+                                                       else self.wall_neutral_dn[j]) * self._neutral_wall_scale(y,V)
+                                derivative *= self._neutral_wall_surface_factor(diffusion_frequency, j)
                             pd[j,it] -= derivative
-                            pd[target,it] += derivative
+                            pd[target,it] += self.wall_neutral_yield[j]*derivative
         # Chemical energy and electron stoichiometry share one reduced
         # mass-action expression, before division by the electron inventory.
         chemical, gradient = self._en_chemical_energy(y,V,dv,dk,other)
@@ -4725,19 +4794,25 @@ cdef class PlasmaReactor(ReactionSystem):
     def _energy_jacobian(self, double t, np.ndarray y, np.ndarray dydt, double cj):
         """Energy Jacobian: analytic for finite EN states; historical central
         differences on the electropositive branch, with inward population
-        differences at Tv bounds, in the same convention as :meth:`jacobian`: dG/dy - cj I,
+        differences at population bounds, in the same convention as :meth:`jacobian`: dG/dy - cj I,
         with no -cj on the algebraic charge row. The fixed-Te analytic Jacobian has no Te
         column and assumes constant kf, so it is not used in this mode."""
         cdef Py_ssize_t n = self.neq, k, i
         cdef double h
         if self._finite_en_state(y) and not self.eedf_mode:
             return self._en_energy_jacobian(t,y,cj)
-        tv_columns = set()
+        population_columns = set()
         if self.eedf_mode:
             for entry in self.eedf_axis_species.values():
                 if isinstance(entry, dict):
-                    tv_columns.update(entry['indices'][:2])
-        if tv_columns:
+                    population_columns.update(entry['indices'][:2])
+            from rmgpy.tools.eedf.atomic_population import AXES as atomic_axes
+            if any(name in self.eedf_axis_species for name in atomic_axes):
+                # Every neutral changes the denominator of each atomic fraction,
+                # including bath species that have no population axis of their own.
+                population_columns.update(j for j in range(self.num_core_species)
+                                          if self.neutral_heavy_mask[j])
+        if population_columns:
             from rmgpy.tools.eedf.vibrational import VibrationalPopulationError
             # Validate the state being differentiated before admitting trials.
             # An out-of-domain base state must never gain a one-sided escape.
@@ -4750,8 +4825,8 @@ cdef class PlasmaReactor(ReactionSystem):
             base = None
             for k in range(n):
                 h = 6.0e-6*max(abs(y[k]),self.atol_array[k])
-                if k in tv_columns:
-                    # Tv depends on the v0/v1 ratio. Near a domain face, a
+                if k in population_columns:
+                    # Tv and atomic fractions depend on population ratios. Near a domain face, a
                     # central population perturbation can leave the table.
                     # Check coordinates before evaluating either residual;
                     # shrink only if neither direction fits the domain.
@@ -4773,7 +4848,7 @@ cdef class PlasmaReactor(ReactionSystem):
                         h *= .5
                     else:
                         raise PlasmaStateError(
-                            'Tv Jacobian has no admissible perturbation for state column {0}'.format(k))
+                            'Population Jacobian has no admissible perturbation for state column {0}'.format(k))
                     if all(admissible):
                         rp = np.asarray(self.residual(t,yp,dydt)[0]).copy()
                         rm = np.asarray(self.residual(t,ym,dydt)[0]).copy()
@@ -4800,11 +4875,11 @@ cdef class PlasmaReactor(ReactionSystem):
                 rp = np.asarray(self.residual(t,yp,dydt)[0]).copy()
                 rm = np.asarray(self.residual(t,ym,dydt)[0]).copy()
                 pd[:, k] = (rp-rm)/(yp[k]-ym[k])
-            if not tv_columns:
+            if not population_columns:
                 self.residual(t, y, dydt)      # leave the scratch at y
         finally:
             try:
-                if tv_columns:
+                if population_columns:
                     self.residual(t, y, dydt)  # restore also after a failed trial
             finally:
                 self._en_legacy_energy_trial = legacy_trial
@@ -6788,6 +6863,9 @@ cdef class PlasmaReactor(ReactionSystem):
         cdef Py_ssize_t i, j
         dn = np.zeros(n, float)
         target = np.full(n, -1, dtype=np.int_)
+        yields = np.ones(n, float)
+        surface_time = np.zeros(n, float)
+        recombination_dh = np.zeros(n, float)
         labels = [getattr(s, 'label', None) for s in core_species]
         for label, entry in self.wall_neutral_diffusion.items():
             product = entry['product']
@@ -6832,15 +6910,45 @@ cdef class PlasmaReactor(ReactionSystem):
                 raise PlasmaStateError(
                     "wall_neutral_diffusion maps {0!r} to itself. ({1})".format(
                         label, self._identity()))
-            key_i = self._skeleton_key(core_species[i])
-            key_j = self._skeleton_key(core_species[j])
-            if key_i is None or key_j is None or key_i != key_j:
-                raise PlasmaStateError(
-                    "wall_neutral_diffusion maps {0!r} ({1}) to {2!r} ({3}): not the same "
-                    "nuclei and skeleton, so the wall would create, destroy or transmute "
-                    "atoms (element or isotope). The product must be the ground state of "
-                    "the same species. ({4})".format(
-                        label, key_i, product, key_j, self._identity()))
+            recombines = entry.get('kind') == 'homonuclearRecombination'
+            if recombines:
+                source_atoms = core_species[i].molecule[0].atoms
+                product_atoms = core_species[j].molecule[0].atoms
+                if (len(source_atoms) != 1 or len(product_atoms) != 2
+                        or source_atoms[0].element.number <= 0
+                        or product_atoms[1] not in product_atoms[0].edges
+                        or any((atom.element.number, atom.element.isotope) !=
+                               (source_atoms[0].element.number, source_atoms[0].element.isotope)
+                               for atom in product_atoms)):
+                    raise PlasmaStateError(
+                        'homonuclearRecombination requires one neutral atom returning as '
+                        'half a connected homonuclear diatomic of the same element and isotope: '
+                        '{0!r} -> {1!r}'.format(label, product))
+                yields[i] = 0.5
+                gamma = entry['recombinationProbability']
+                chamber = self.wall_chamber_geometry
+                radius, length = chamber['radius'], chamber['length']
+                vs = radius * length / (2.0 * (radius + length))
+                mass = core_species[i].molecular_weight.value_si
+                if not np.isfinite(mass) or mass <= 0.0:
+                    raise PlasmaStateError('homonuclearRecombination requires a positive atomic mass')
+                speed = np.sqrt(8.0 * constants.R * self.T.value_si / (np.pi * mass))
+                if gamma == 0.0:
+                    surface_time[i] = float('inf')
+                else:
+                    surface_time[i] = 2.0 * vs * (2.0 - gamma) / (gamma * speed)
+                    if not np.isfinite(surface_time[i]) or surface_time[i] <= 0.0:
+                        raise PlasmaStateError('homonuclearRecombination surface resistance is outside numeric range')
+            else:
+                key_i = self._skeleton_key(core_species[i])
+                key_j = self._skeleton_key(core_species[j])
+                if key_i is None or key_j is None or key_i != key_j:
+                    raise PlasmaStateError(
+                        "wall_neutral_diffusion maps {0!r} ({1}) to {2!r} ({3}): not the same "
+                        "nuclei and skeleton, so the wall would create, destroy or transmute "
+                        "atoms (element or isotope). The product must be the ground state of "
+                        "the same species. ({4})".format(
+                            label, key_i, product, key_j, self._identity()))
             h_i = self._species_enthalpy(core_species[i], 298.15)
             h_j = self._species_enthalpy(core_species[j], 298.15)
             if h_i is None or h_j is None:
@@ -6853,6 +6961,7 @@ cdef class PlasmaReactor(ReactionSystem):
                                                 if h is None) + (" have" if h_i is None and h_j is None
                                                                  else " has"),
                                    self._identity()))
+            h_j *= yields[i]
             if not h_i > h_j:
                 raise PlasmaStateError(
                     "wall_neutral_diffusion maps {0!r} (H298={1!r} kJ/mol) to {2!r} "
@@ -6861,6 +6970,14 @@ cdef class PlasmaReactor(ReactionSystem):
                     "pair. Declare the excited state as the source and its ground state as "
                     "the product. ({4})".format(label, h_i / 1000.0, product, h_j / 1000.0,
                                                 self._identity()))
+            if recombines:
+                h_source = self._species_enthalpy(core_species[i], self.T.value_si)
+                h_product = self._species_enthalpy(core_species[j], self.T.value_si)
+                if h_source is None or h_product is None:
+                    raise PlasmaStateError('homonuclearRecombination requires thermo at the gas temperature')
+                recombination_dh[i] = h_source - yields[i] * h_product
+                if not np.isfinite(recombination_dh[i]) or recombination_dh[i] <= 0.0:
+                    raise PlasmaStateError('homonuclearRecombination must lower material enthalpy at the gas temperature')
             target[i] = j
             if isinstance(self.wall_neutral_dn_by_label[label], dict):
                 # Per-bath (Blanc's-law): D*N is a function of the state, resolved in
@@ -6878,6 +6995,9 @@ cdef class PlasmaReactor(ReactionSystem):
                          "wall_neutral_diffusion.", label, dn[i], product)
         self.wall_neutral_dn = dn
         self.wall_neutral_target = target
+        self.wall_neutral_yield = yields
+        self.wall_neutral_surface_time = surface_time
+        self.wall_recombination_delta_h = recombination_dh
 
     def _resolve_bath_transport(self, list core_species):
         """
@@ -7450,13 +7570,32 @@ cdef class PlasmaReactor(ReactionSystem):
         in the core; zero for every other species, charged or neutral. The diffusion
         length is the wall's ``Lambda`` and ``n_neutral`` is the same (floored) neutral
         density :meth:`compute_nu_wall` uses, so ``nu_m/nu_wall`` is independent of the
-        gas density.
+        gas density for ordinary de-excitation. Declared atomic recombination adds
+        its surface lifetime, so it does not obey that density scaling.
         """
+        cdef Py_ssize_t j
+        cdef np.ndarray frequencies
         if not self.has_wall or self.wall_neutral_dn is None:
             return np.zeros(self.num_core_species, float)
         if self.wall_blanc:
-            return self._neutral_dn_effective(y) * self._neutral_wall_scale(y, V)
-        return self.wall_neutral_dn * self._neutral_wall_scale(y, V)
+            frequencies = self._neutral_dn_effective(y) * self._neutral_wall_scale(y, V)
+        else:
+            frequencies = self.wall_neutral_dn * self._neutral_wall_scale(y, V)
+        if self.wall_has_recombination:
+            for j in range(self.num_core_species):
+                frequencies[j] *= self._neutral_wall_surface_factor(frequencies[j], j)
+        return frequencies
+
+    cdef double _neutral_wall_surface_factor(self, double diffusion_frequency, Py_ssize_t j):
+        """Guerra Eq.33: diffusion and surface lifetimes add, not probabilities.
+
+        Also the logarithmic derivative d(log nu)/d(log nu_diff), since the
+        gas temperature and declared chamber V/S are fixed reactor parameters.
+        """
+        cdef double tau = self.wall_neutral_surface_time[j]
+        if tau == float('inf'):
+            return 0.0
+        return 1.0 / (1.0 + diffusion_frequency * tau)
 
     cdef np.ndarray _neutral_dn_effective(self, np.ndarray y):
         """Per-core-species D*N of the declared metastables at state ``y``: the Blanc's-law
@@ -7852,6 +7991,7 @@ cdef class PlasmaReactor(ReactionSystem):
                     state=np.asarray(y).tolist(), energy_budget=budget,
                     wall_electron_energy_flux=self.wall_electron_energy_flux,
                     wall_neutralization_energy_flux=self.wall_neutralization_energy_flux,
+                    wall_recombination_energy_flux=self.wall_recombination_energy_flux,
                     wall_ion_energy_flux=(budget['Q_wall_ion'] if budget is not None else None))
                 if self.energy_balance and finite_anions:
                     self._en_energy_acceptances += 1
@@ -8138,8 +8278,9 @@ cdef class PlasmaReactor(ReactionSystem):
             flux[self.electron_index] -= electron_loss
             e_loss_rate = electron_loss
             nu = electron_loss / y[self.electron_index] if electron_loss > 0.0 and y[self.electron_index] > 0.0 else float('nan')
-        # Declared excited neutrals: lost at nu_m and returned in full as the ground state.
-        # The excitation energy they deposit at the surface is not modelled.
+        # Ordinary de-excitation returns one molecule; declared recombination
+        # returns half a diatomic and accounts for the surface enthalpy separately.
+        recombination_power = 0.0
         if self.wall_neutral_target is not None:
             nu_m_all = self._compute_neutral_wall_frequencies(y, V)
             for j in range(self.num_core_species):
@@ -8148,7 +8289,15 @@ cdef class PlasmaReactor(ReactionSystem):
                     continue
                 loss = nu_m_all[j] * y[j]
                 flux[j] -= loss
-                flux[tgt] += loss
+                flux[tgt] += self.wall_neutral_yield[j] * loss
+                recombination_power += self.wall_recombination_delta_h[j] * loss
+        if self.wall_has_recombination:
+            if np.isfinite(recombination_power):
+                self.wall_recombination_energy_flux = recombination_power
+                self.wall_energy_availability['wall_recombination_energy_flux'] = 'available'
+            else:
+                self.wall_recombination_energy_flux = None
+                self.wall_energy_availability['wall_recombination_energy_flux'] = 'unavailable'
         self.wall_flux = flux
         if self.electronegative_wall_model is not None:
             h, factor = self._electronegative_wall_factor(y)
@@ -8272,14 +8421,15 @@ cdef class PlasmaReactor(ReactionSystem):
                     if self.wall_energy_availability[_field] == 'available':
                         self.wall_energy_availability[_field] = (
                             'available-blanc-threshold-approximation')
-            elif _neutral_threshold_applies:
-                if self.wall_energy_availability['wall_flux'] == 'available':
-                    self.wall_energy_availability['wall_flux'] = (
-                        'available-blanc-threshold-approximation')
+            if _neutral_threshold_applies:
+                for _field in ('wall_flux', 'wall_recombination_energy_flux'):
+                    if self.wall_energy_availability.get(_field) == 'available':
+                        self.wall_energy_availability[_field] = (
+                            'available-blanc-threshold-approximation')
         elif self.wall_bath_is_mixture:
             for _field in ('wall_flux', 'wall_electron_energy_flux',
-                           'wall_neutralization_energy_flux'):
-                if self.wall_energy_availability[_field] == 'available':
+                           'wall_neutralization_energy_flux', 'wall_recombination_energy_flux'):
+                if self.wall_energy_availability.get(_field) == 'available':
                     self.wall_energy_availability[_field] = 'available-single-bath-approximation'
 
     cpdef double get_non_chemical_char_rate(self):
@@ -9188,22 +9338,20 @@ cdef class PlasmaReactor(ReactionSystem):
             wall[self.electron_index] -= electron_loss
             self.nu_wall = electron_loss / y[self.electron_index] if y[self.electron_index] > 0.0 and electron_loss > 0.0 else float('nan')
 
-        # Declared excited neutrals diffuse to the wall and return as their ground
-        # state: every lost molecule comes back (no pumping, no gamma), so the term moves
-        # moles between two neutral columns and changes neither the neutral total nor V.
+        # Ordinary de-excitation conserves particle number; atomic recombination
+        # returns half a molecule, conserving nuclei while changing total moles/V.
         # Undeclared species have target -1 and are not visited.
         if self.wall_neutral_target is not None:
-            scale = self._neutral_wall_scale(y, V)
-            dn_state = self._neutral_dn_effective(y) if self.wall_blanc else self.wall_neutral_dn
+            frequencies = self._compute_neutral_wall_frequencies(y, V)
             for j in range(self.num_core_species):
                 target = self.wall_neutral_target[j]
                 if target < 0:
                     continue
-                loss = dn_state[j] * scale * y[j]
+                loss = frequencies[j] * y[j]
                 res[j] -= loss
                 wall[j] -= loss
-                res[target] += loss
-                wall[target] += loss
+                res[target] += self.wall_neutral_yield[j] * loss
+                wall[target] += self.wall_neutral_yield[j] * loss
 
         # External volumetric source of ion-electron pairs (the declared physical
         # mechanism that replaces the numerical seed). Its total production is
@@ -9406,7 +9554,7 @@ cdef class PlasmaReactor(ReactionSystem):
                               np.ndarray[np.float64_t, ndim=2] pd):
         """Partial derivatives of exactly the terms :meth:`_apply_wall_terms` adds."""
         cdef double nu, y_neutral = 0.0, loss, dnu_rel, dloss, source_total, term, dterm, y_ionisable = 0.0
-        cdef double scale, nu_m, recycle, k_eff = 0.0, y_decl = 0.0, charged_pressure = 0.0
+        cdef double scale, nu_m, recycle, surface_factor, k_eff = 0.0, y_decl = 0.0, charged_pressure = 0.0
         cdef int n_weighted = 0
         cdef Py_ssize_t i, k, target, g
         cdef double gamma = self.wall_recycling
@@ -9543,6 +9691,8 @@ cdef class PlasmaReactor(ReactionSystem):
                     nu_m = k_eff * scale
                 else:
                     nu_m = self.wall_neutral_dn[i] * scale
+                surface_factor = self._neutral_wall_surface_factor(nu_m, i)
+                nu_m *= surface_factor
                 loss = nu_m * y[i]
                 for k in range(self.num_core_species):
                     if neutral_floored:
@@ -9555,11 +9705,11 @@ cdef class PlasmaReactor(ReactionSystem):
                         g = self.wall_bath_group[k]
                         if g >= 0 and k_row[g] > 0.0:
                             dnu_rel += (1.0 - k_eff / k_row[g]) / y_decl
-                    dloss = loss * dnu_rel
+                    dloss = loss * dnu_rel * surface_factor
                     if k == i:
                         dloss += nu_m
                     pd[i, k] -= dloss
-                    pd[target, k] += dloss
+                    pd[target, k] += self.wall_neutral_yield[i] * dloss
 
         # Denominator is the ionisable-neutral total, matching _apply_wall_terms; the
         # d/dy term therefore fires only on an ionisable neutral (the only species in

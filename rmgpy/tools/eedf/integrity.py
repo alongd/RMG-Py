@@ -299,6 +299,9 @@ def _resolved_properties(spec, coordinates):
     if 'argon_4s_population' in spec:
         from rmgpy.tools.eedf.argon_population import AXIS, populations as argon_populations
         populations.update(argon_populations(state[AXIS]))
+    if 'atomic_nitrogen_population' in spec:
+        from rmgpy.tools.eedf.atomic_population import realize_atomic_populations
+        fractions, populations = realize_atomic_populations(spec, state, fractions, populations)
     solver_populations = populations.copy()
     # Keep source-domain zero populations for accounting while omitting states
     # outside the solver's declared state table from emitted LoKI properties.

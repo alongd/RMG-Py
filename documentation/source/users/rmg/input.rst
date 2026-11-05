@@ -1196,6 +1196,46 @@ The remaining keywords are all optional:
   the surface is not modelled.
   Requires a wall (``chamberGeometry`` and ``ionReducedMobility``).
 
+  A separate ``kind: 'homonuclearRecombination'`` allows a neutral atom to return as
+  **half** a connected homonuclear diatomic, with identical element and isotope. For example::
+
+      wallNeutralDiffusion = {
+          'N': {'kind': 'homonuclearRecombination', 'product': 'N2',
+                'diffusivity': (7.05616e20, '1/(m*s)'),
+                'recombinationProbability': 5e-5},
+      }
+
+  This is an explicit wall boundary operator with linear atom loss; it is not a
+  second-order gas-phase reaction. The ordinary same-skeleton de-excitation rule
+  above remains unchanged. Both species must have thermo, and the atom enthalpy
+  must exceed half the molecular enthalpy at 298 K and at the gas temperature.
+  The probability must be declared and finite in [0,1]; zero disables that flux.
+  A cylinder ``chamberGeometry`` with radius and length is required, since a bare
+  diffusion length cannot determine the chamber volume/surface ratio.
+  The loss frequency includes the surface resistance of Guerra et al.,
+  doi:10.1088/1361-6595/ab252c, Eq.33:
+
+  .. math::
+
+      \nu_N = \left[\frac{\Lambda^2}{D_N}
+          + \frac{2 V_{ch}(2-\gamma_N)}{S_{ch}\gamma_N\bar v_N}\right]^{-1}.
+
+  The operator returns 0.5 molecules per atom lost, conserving atoms and charge,
+  while the heavy-particle count decreases. The residual, Jacobian, and accepted
+  wall-flux diagnostic use the same probability and half-yield. The separate
+  ``wall_recombination_energy_flux`` diagnostic is the molar atom loss rate times
+  :math:`H_N(T_g)-\frac12 H_{N_2}(T_g)`, in W; positive values represent energy
+  delivered to the wall. It is not added to gas heating or electron cooling.
+  Its availability/transport approximation is reported in ``wall_energy_availability``.
+
+  In this N-in-Ar example Dn is a transferred Chapman--Enskog estimate near 300 K,
+  held constant by declaration. The Lennard-Jones inputs are N sigma=3.298 Angstrom,
+  epsilon/k=71.4 K and Ar sigma=3.33 Angstrom, epsilon=1134.93 J/mol. Neither
+  this transport transfer nor a constant probability is a measured 300--600 K law.
+  The declared Pyrex/silica reference probability 5e-5 should be bracketed over
+  1e-5--1e-3; surface history and temperature matter (Kutasi and Loureiro,
+  doi:10.1088/0022-3727/40/18/017). No probability or material is inferred by the solver.
+
 * ``ionisationSource`` -- a volumetric external production rate of ion-electron pairs,
   ``(6.6e4, 'm^-3/s')`` or ``(0.066, 'cm^-3/s')``.  This is where a *declared physical mechanism*
   such as the cosmic-ray background goes; for a noble gas at a few torr it is of order
@@ -2759,3 +2799,53 @@ Sourced self-return cascade branches survive library and seed admission when
 their source entry explicitly declares the complete four-member EEDF family.
 Their net species balance is zero; their collision energy and photon accounting
 remain part of the family. Other symmetric reactions retain the ordinary guard.
+
+Resolved atomic nitrogen EEDF coordinates
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+An EEDF table declaring ``atomic_nitrogen_population`` uses the total neutral
+gas fractions ``x_N(4S)``, ``x_N(2D)`` and ``x_N(2P)``. Their initial nodes are
+``[0, 5e-4]``, ``[0, 2e-4]`` and ``[0, 2e-4]``. Atomic nitrogen displaces the same
+fraction of Ar. Each coordinate is linear, jointly multilinear; inserting the
+single permitted midpoint does not switch interpolation to PCHIP. Physical
+rate coefficients are averaged linearly along atomic axes.
+
+The reactor binds these coordinates by the atom's electronic identity,
+independently of species labels, and derives them from the current amounts at
+every evaluation. It includes their composition derivatives in electron energy
+storage. Above-top values are refused with the axis name and top node even
+during trial evaluations. All three atomic terms must be present in the core.
+
+All three atomic elastic channels and the excitation/superelastic pairs,
+including N(2D) to N(2P), belong to the Boltzmann solution. Excitations use
+ordinary ``EEDFChannel`` owners and table electron energy accounting.
+Do not add a duplicate electron energy declaration for those reactions.
+
+The declared within-N population floor of ``1e-20`` keeps inverse assembly
+active in the pinned solver when a forward target has zero population and its
+reverse source is populated. It perturbs a total-gas fraction by less than
+``1e-23``; when all atomic fractions are zero their collision densities remain
+exactly zero. The three electronic populations are then all zero, matching
+LoKI's zero root population for an absent gas. This is declared by
+``zero_gas_populations: all-zero`` in the population convention.
+Solver inputs and table population metadata use the same values.
+This convention must be fingerprinted and checked in reduced qualification.
+
+Atomic-axis qualification includes individual, pairwise and joint cell
+midpoints. The automatic thirds-based refinement is disabled for these tables:
+use fresh T10-directed qualification after at most one midpoint insertion on
+each failing atomic axis. Mobility and field-power criteria are relative
+``0.01`` with zero absolute tolerance. Further refinement requires a new
+scientific decision. Reduced qualification does not confer production-table
+acceptance.
+
+The spec-only converter ``python -m rmgpy.tools.eedf.atomic`` takes
+``--base-spec``, ``--database``, ``--sources`` and ``--output``. Supply an
+Ar/N2 spec already refreshed for the Ar(4s) population axis, the matching
+database checkout, and a local directory containing the pinned
+``N_LXCat.txt`` and ``N_LXCat_extra.txt`` downloads. The database's
+``input/eedf/atomic_nitrogen_channel_map.json`` pins both downloads and the
+six-block solver realization. The converter preserves the existing collision
+map and verifies the three ordinary excitation/superelastic owner pairs.
+It writes ``atomic-spec.json`` and a provenance/node-count report; it does
+not run the solver or qualify the resulting table.

@@ -133,6 +133,8 @@ def qualify_interpolation(table, spec, *, criteria=None):
     if declared is not None and criteria != declared:
         raise SpecError('T10 criteria differ from the frozen interpolation_accuracy')
     _validate_spec(spec)
+    from rmgpy.tools.eedf.atomic_population import validate_atomic_qualification
+    validate_atomic_qualification(spec, criteria)
     manifest = table.manifest
     channel_map = _load_channel_map(spec['channel_map'])
     fingerprint = _content_hash(_model_inputs(spec, channel_map))
@@ -169,6 +171,7 @@ def qualify_interpolation(table, spec, *, criteria=None):
     if not declared_points:
         raise SpecError(
             'T10 qualification requires a nonempty pinned held-out point set')
+    validate_atomic_qualification(spec, criteria, declared_points)
     declared_set = {
         tuple(point[name] for name in axis_names)
         for point in declared_points}
@@ -240,22 +243,27 @@ def _screen(spec, driver, channel_map, prefix):
                         maximum, worst = ratio, {'u': a['u'], 'value': value, 'quantity': verdict['quantity']}
         significant = maximum > spec['screen']['threshold_fraction']
         name = candidate['name']
-        if significant and name not in spec['axes']:
+        from rmgpy.tools.eedf.atomic_population import AXES as atomic_axes
+        # The bounded atomic-target screen is a prior scientific decision.
+        # A zero-reference single-axis perturbation cannot discard one of its
+        # coupled populations just because this local screen is insensitive.
+        selected = significant or name in atomic_axes
+        if selected and name not in spec['axes']:
             raise AxisScreenRefusal(name + ' moves a quantity beyond the frozen screen threshold; supply its axis')
-        if not significant and name in spec['axes']:
+        if not selected and name in spec['axes']:
             if name not in spec['envelopes']:
                 raise AxisScreenRefusal(name + ' needs a refusing envelope before dropping its axis')
             del spec['axes'][name]
             _reconcile_off_centre_after_axis_drop(spec, name)
-        if significant and (min(candidate['values']) > spec['axes'][name][0] or max(candidate['values']) < spec['axes'][name][-1]):
+        if selected and (min(candidate['values']) > spec['axes'][name][0] or max(candidate['values']) < spec['axes'][name][-1]):
             raise AxisScreenRefusal('screen does not cover axis ' + name)
-        if not significant:
+        if not selected:
             bounds = spec['envelopes'][name]
             if min(candidate['values']) > bounds['min'] or max(candidate['values']) < bounds['max']:
                 raise AxisScreenRefusal('screen does not cover envelope ' + name)
         results.append({'coordinate': name, 'reference': candidate['reference'], 'values': candidate['values'],
                         'max_fraction_of_held_out_tolerance': maximum, 'worst': worst,
-                        'selected_axis': significant})
+                        'selected_axis': selected})
     screened = {result['coordinate'] for result in results}
     if any(bounds['min'] != bounds['max'] and name not in screened for name, bounds in spec['envelopes'].items()):
         raise AxisScreenRefusal('nonzero-width envelope has no sensitivity screen')

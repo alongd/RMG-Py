@@ -122,6 +122,10 @@ def _held_out_points(axes, policy):
                for axis, value in zip(grid, values)):
             raise SpecError('held_out off_centre domain')
         points.add(values)
+    from rmgpy.tools.eedf.atomic_population import AXES, atomic_held_out_points
+    if set(AXES).issubset(axes):
+        points.update(tuple(point[name] for name in names)
+                      for point in atomic_held_out_points(axes))
     training = set(itertools.product(*grid))
     return [dict(zip(names, map(float, p))) for p in sorted(points - training)]
 

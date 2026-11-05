@@ -339,7 +339,7 @@ def _validate_spec(spec):
                 'held_out', 'repositories', 'output_root', 'scratch_root',
                 'omp_threads', 'max_parallel', 'timeout_s', 'refinement'}
     optional = {'engine_state_map', 'qualification_quantity_rules', 'vibrational_ladders', 'argon_4s_population', 'interpolation_accuracy',
-                *ARGON_VALIDITY_FIELDS}
+                'atomic_nitrogen_population', *ARGON_VALIDITY_FIELDS}
     if (not isinstance(spec, dict) or not required <= set(spec) or
             set(spec) - required - optional):
         fields = ((required - set(spec or {})) |
@@ -351,6 +351,8 @@ def _validate_spec(spec):
     if 'interpolation_accuracy' in spec:
         from rmgpy.tools.eedf.validation import _freeze_accuracy_criteria
         _freeze_accuracy_criteria(spec['interpolation_accuracy'])
+    from rmgpy.tools.eedf.atomic_population import validate_atomic_axes
+    validate_atomic_axes(spec)
     if 'vibrational_ladders' in spec:
         from rmgpy.tools.eedf.vibrational import validate_ladders
         validate_ladders(spec['vibrational_ladders'])
@@ -513,6 +515,8 @@ def _row_inputs(spec):
         result['interpolation_accuracy'] = copy.deepcopy(spec['interpolation_accuracy'])
     if 'argon_4s_population' in spec:
         result['argon_4s_population'] = copy.deepcopy(spec['argon_4s_population'])
+    if 'atomic_nitrogen_population' in spec:
+        result['atomic_nitrogen_population'] = copy.deepcopy(spec['atomic_nitrogen_population'])
     if 'engine_state_map' in spec:
         result['engine_state_map'] = copy.deepcopy(spec['engine_state_map'])
     if 'vibrational_ladders' in spec:

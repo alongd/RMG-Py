@@ -1877,6 +1877,9 @@ def plasma_reactor(temperature,
         for label in anionReducedMobilities:
             if _plasma_species_charge(label,species_dict,'anionReducedMobilities') != -1:
                 raise InputError('anionReducedMobilities requires singly charged anions: ' + label)
+    neutral_recombination = isinstance(wallNeutralDiffusion, dict) and any(
+        isinstance(entry, dict) and entry.get('kind') == 'homonuclearRecombination'
+        for entry in wallNeutralDiffusion.values())
     if wallDiffusionComponents is not None:
         if not isinstance(wallDiffusionComponents, dict) or set(wallDiffusionComponents) != {'radial','axial'}:
             raise InputError('wallDiffusionComponents requires radial and axial inverse-square lengths')
@@ -1887,11 +1890,11 @@ def plasma_reactor(temperature,
                 raise InputError('wallDiffusionComponents must have dimensions m^-2')
             parts.append(q.value_si)
         wall_kwargs['wall_diffusion_components'] = tuple(parts)
-    elif isinstance(chamberGeometry,dict) and chamberGeometry.get('shape') == 'cylinder' and ionReducedMobilities is not None:
+    elif isinstance(chamberGeometry,dict) and chamberGeometry.get('shape') == 'cylinder' and (ionReducedMobilities is not None or neutral_recombination):
         radius = Quantity(chamberGeometry['radius']).value_si
         length = Quantity(chamberGeometry['length']).value_si
         wall_kwargs['wall_diffusion_components'] = ((2.405/radius)**2,(np.pi/length)**2)
-    if isinstance(chamberGeometry, dict) and chamberGeometry.get('shape') == 'cylinder' and ionReducedMobilities is not None:
+    if isinstance(chamberGeometry, dict) and chamberGeometry.get('shape') == 'cylinder' and (ionReducedMobilities is not None or neutral_recombination):
         wall_kwargs['wall_chamber_geometry'] = dict(shape='cylinder',
             radius=Quantity(chamberGeometry['radius']).value_si,
             length=Quantity(chamberGeometry['length']).value_si)
