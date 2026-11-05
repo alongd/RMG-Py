@@ -590,8 +590,7 @@ class CoreEdgeReactionModel:
         if generate_thermo:
             # Rename from thermo library label only if no user-provided label exists yet.
             self.generate_thermo(spec, rename=not bool(spec.label),
-                                 generate_energy_transfer=self.pressure_dependence is not None
-                                 or not any(m.vibrational_level >= 0 for m in spec.molecule))
+                                 generate_energy_transfer=self._should_generate_energy_transfer(spec))
 
         # If the species still does not have a label, set initial label as the SMILES
         # (applies when generate_thermo is False, or when no library match was found)
@@ -1279,8 +1278,7 @@ class CoreEdgeReactionModel:
         # Serial thermo calculation for other methods
         for spc in self.new_species_list:
             self.generate_thermo(spc, rename=True,
-                                 generate_energy_transfer=self.pressure_dependence is not None
-                                 or not any(m.vibrational_level >= 0 for m in spc.molecule))
+                                 generate_energy_transfer=self._should_generate_energy_transfer(spc))
 
     def generate_thermo(self, spc, rename=False, generate_energy_transfer=True):
         """
@@ -2630,6 +2628,11 @@ class CoreEdgeReactionModel:
             return self.reaction_dict[family_label][key1][key2][:]
         except KeyError:  # no such short-list: must be new, unless in seed.
             return []
+
+    def _should_generate_energy_transfer(self, species):
+        """Return whether model assembly should request default energy transfer."""
+        return (self.pressure_dependence is not None
+                or not any(molecule.has_resolved_state() for molecule in species.molecule))
 
 
 def generate_reaction_key(rxn, useProducts=False):

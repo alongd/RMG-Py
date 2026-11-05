@@ -23788,6 +23788,14 @@
       ],
       "source_sha256": "da06023850aef7f990af38575dd1bc556be49161f2bc1eaac98953f421a1b13e"
     },
+    "rmgpy/rmg/model.py:CoreEdgeReactionModel._should_generate_energy_transfer": {
+      "verdict": "excluded",
+      "reason": "Eligibility routing only: this helper does not acquire, transform, or supply scientific data; it routes energy-transfer estimation to the existing refusal for pressure-dependent resolved states and suppresses it for non-pressure-dependent resolved states.",
+      "evidence": [
+        "test/rmgpy/rmg/vibrationalManifoldTest.py"
+      ],
+      "source_sha256": "6b835b7302270d03775cc345ca234dd9410fc5d2bbbff24c9a6ed6885729bb9a"
+    },
     "rmgpy/rmg/model.py:CoreEdgeReactionModel.add_completed_pdep_network": {
       "verdict": "carried",
       "reason": "Model/configuration administration retains explicit species/reaction objects. Scientific acquisition delegates to original-species thermo/transport/statmech, opted-in family/exact library and refusing QM/ML/default-transfer boundaries.",
@@ -23900,7 +23908,7 @@
         "test/rmgpy/rmg/modelTest.py",
         "test/rmgpy/rmg/vibrationalManifoldTest.py"
       ],
-      "source_sha256": "b19934a3f7904b81b54ab369e8a1a7b9773ceb8ac1c1b2546094cabac84b95f6"
+      "source_sha256": "6e51e31e2b4c198458c0295e56b7fa321c868507d0eac58eeabb7483f369ef8b"
     },
     "rmgpy/rmg/model.py:CoreEdgeReactionModel.check_for_existing_reaction": {
       "verdict": "carried",
@@ -24032,7 +24040,7 @@
         "test/rmgpy/rmg/modelTest.py",
         "test/rmgpy/rmg/vibrationalManifoldTest.py"
       ],
-      "source_sha256": "605f0a626cdcbdda9f51899f83fc1e666eaeeb62dec95e48bda959116095e93d"
+      "source_sha256": "827fb3947a6f235ec3678833f611eb1dd8d53af63d026425ed38b0c73cecf0e4"
     },
     "rmgpy/rmg/model.py:CoreEdgeReactionModel.mark_chemkin_duplicates": {
       "verdict": "carried",

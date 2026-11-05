@@ -244,9 +244,9 @@ def test_model_qm_batch_leaves_resolved_species_to_libraries(database, monkeypat
     monkeypatch.setattr(inp, 'rmg', job)
     species = Species(label='N2A').from_adjacency_list('electronicstate A3Su+\n' + N2)
     job.reaction_model.new_species_list = [species]
-    with pytest.raises(StateProvenanceError, match="energy transfer"):
-        job.reaction_model.apply_thermo_to_species(procnum=1)
+    job.reaction_model.apply_thermo_to_species(procnum=1)
     assert species.thermo.label == 'N2A'
+    assert species.energy_transfer_model is None
 
 
 def test_declaration_keeps_input_label_during_thermo_renaming(database, tmp_path, monkeypatch):
@@ -264,10 +264,40 @@ def test_resolved_input_label_survives_batch_thermo_assignment(database, monkeyp
     monkeypatch.setattr(inp, 'rmg', job)
     molecule = Species().from_adjacency_list('electronicstate A3Su+\n' + N2).molecule[0]
     species, _ = job.reaction_model.make_new_species(molecule, label='DeclaredN2A', generate_thermo=False)
-    with pytest.raises(StateProvenanceError, match="energy transfer"):
-        job.reaction_model.apply_thermo_to_species(procnum=1)
+    job.reaction_model.apply_thermo_to_species(procnum=1)
     assert species.label == 'DeclaredN2A'
     assert species.thermo.label == 'N2A'
+    assert species.energy_transfer_model is None
+
+
+def test_electronic_resolved_model_assembly_skips_energy_transfer_without_pdep(database, tmp_path, monkeypatch):
+    job = load_deck(tmp_path, monkeypatch, level=False)
+    install_database(monkeypatch, database)
+    electronic = Species(label='N2A').from_adjacency_list('electronicstate A3Su+\n' + N2)
+    added, _ = job.reaction_model.make_new_species(electronic.molecule[0], generate_thermo=True)
+    assert added.thermo.label == 'N2A'
+    assert added.energy_transfer_model is None
+
+
+def test_unresolved_model_assembly_keeps_default_energy_transfer(database, monkeypatch):
+    job = RMG()
+    job.reaction_model = CoreEdgeReactionModel()
+    monkeypatch.setattr(inp, 'rmg', job)
+    install_database(monkeypatch, database)
+    unresolved = Species().from_smiles('N#N')
+    added, _ = job.reaction_model.make_new_species(unresolved, generate_thermo=True)
+    assert added.energy_transfer_model is not None
+
+
+def test_pressure_dependent_batch_thermo_keeps_resolved_refusal(database, monkeypatch):
+    job = RMG()
+    job.reaction_model = CoreEdgeReactionModel()
+    job.reaction_model.pressure_dependence = SimpleNamespace()
+    monkeypatch.setattr(inp, 'rmg', job)
+    molecule = Species().from_adjacency_list('electronicstate A3Su+\n' + N2).molecule[0]
+    job.reaction_model.make_new_species(molecule, label='DeclaredN2A', generate_thermo=False)
+    with pytest.raises(StateProvenanceError, match="energy transfer"):
+        job.reaction_model.apply_thermo_to_species(procnum=1)
 
 
 def test_saved_input_refuses_explicit_resolved_levels(database, tmp_path, monkeypatch):
