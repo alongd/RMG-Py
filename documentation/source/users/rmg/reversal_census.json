@@ -5290,7 +5290,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel._add_reaction_to_core::check_resolved_species_reversibility#1",
     "kind": "reverse",
-    "line": 1942,
+    "line": 1940,
     "source": "rxn.check_resolved_species_reversibility()",
     "verdict": "guarded",
     "reason": "Admission executor retains the existing irreversible resolved-state guard; public single admission and preflighted batch promotion both reach it.",
@@ -5313,7 +5313,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.add_reaction_library_to_edge::log_enlarge_summary#1",
     "kind": "direction",
-    "line": 2294,
+    "line": 2292,
     "source": "self.log_enlarge_summary(",
     "verdict": "guarded",
     "reason": "Library load and edge admission check resolved reversibility before execution.",
@@ -5324,7 +5324,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.add_reaction_library_to_edge::make_new_reaction#1",
     "kind": "builder",
-    "line": 2209,
+    "line": 2207,
     "source": "r, isNew = self.make_new_reaction(rxn)  # updates self.new_species_list and self.new_reaction_list",
     "verdict": "guarded",
     "reason": "Library load and edge admission check resolved reversibility before execution.",
@@ -5335,7 +5335,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.add_reaction_library_to_edge::mark_duplicate_reaction#1",
     "kind": "direction",
-    "line": 2291,
+    "line": 2289,
     "source": "mark_duplicate_reaction(rxn, checked_reactions)",
     "verdict": "guarded",
     "reason": "Library load and edge admission check resolved reversibility before execution.",
@@ -5346,7 +5346,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.add_reaction_to_edge::check_resolved_species_reversibility#1",
     "kind": "reverse",
-    "line": 1975,
+    "line": 1973,
     "source": "rxn.check_resolved_species_reversibility()",
     "verdict": "guarded",
     "reason": "Copies explicit direction and original kinetics into library/model reactions; core/edge admissions apply the resolved policy.",
@@ -5357,7 +5357,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.add_reaction_to_unimolecular_networks::add_path_reaction#1",
     "kind": "direction",
-    "line": 2406,
+    "line": 2404,
     "source": "network.add_path_reaction(newReaction)",
     "verdict": "guarded",
     "reason": "Copies explicit direction and original kinetics into library/model reactions; core/edge admissions apply the resolved policy.",
@@ -5368,7 +5368,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.add_reaction_to_unimolecular_networks::check_resolved_species_reversibility#1",
     "kind": "reverse",
-    "line": 2338,
+    "line": 2336,
     "source": "newReaction.check_resolved_species_reversibility()",
     "verdict": "guarded",
     "reason": "Copies explicit direction and original kinetics into library/model reactions; core/edge admissions apply the resolved policy.",
@@ -5379,7 +5379,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.add_reaction_to_unimolecular_networks::check_resolved_species_reversibility#2",
     "kind": "reverse",
-    "line": 2340,
+    "line": 2338,
     "source": "newReaction.check_resolved_species_reversibility(kinetics=newReaction.network_kinetics)",
     "verdict": "guarded",
     "reason": "Copies explicit direction and original kinetics into library/model reactions; core/edge admissions apply the resolved policy.",
@@ -5390,7 +5390,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.add_seed_mechanism_to_core::log_enlarge_summary#1",
     "kind": "direction",
-    "line": 2150,
+    "line": 2148,
     "source": "self.log_enlarge_summary(",
     "verdict": "guarded",
     "reason": "Library load and core admission check resolved reversibility before execution.",
@@ -5401,7 +5401,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.add_seed_mechanism_to_core::make_new_reaction#1",
     "kind": "builder",
-    "line": 2072,
+    "line": 2070,
     "source": "r, isNew = self.make_new_reaction(rxn)  # updates self.new_species_list and self.new_reaction_list",
     "verdict": "guarded",
     "reason": "Library load and core admission check resolved reversibility before execution.",
@@ -5412,7 +5412,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.apply_kinetics_to_reaction::check_resolved_species_reversibility#1",
     "kind": "reverse",
-    "line": 1381,
+    "line": 1379,
     "source": "reaction.check_resolved_species_reversibility()",
     "verdict": "guarded",
     "reason": "Copies explicit direction and original kinetics into library/model reactions; core/edge admissions apply the resolved policy.",
@@ -5423,7 +5423,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.apply_kinetics_to_reaction::generate_kinetics#1",
     "kind": "reverse",
-    "line": 1357,
+    "line": 1355,
     "source": "kinetics, source, entry, is_forward = self.generate_kinetics(reaction)",
     "verdict": "guarded",
     "reason": "Copies explicit direction and original kinetics into library/model reactions; core/edge admissions apply the resolved policy.",
@@ -5434,7 +5434,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.check_for_existing_reaction::are_identical_species_references#1",
     "kind": "direction",
-    "line": 666,
+    "line": 665,
     "source": "if rxn_id == rxn_id0 and are_identical_species_references(rxn, rxn0):",
     "verdict": "guarded",
     "reason": "Reference identity and inverse-key lookup use allows_reverse_match before deduplicating.",
@@ -5445,7 +5445,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.check_for_existing_reaction::are_identical_species_references#2",
     "kind": "direction",
-    "line": 681,
+    "line": 680,
     "source": "and rxn_id == rxn_id0[::-1] and are_identical_species_references(rxn, rxn0)):",
     "verdict": "guarded",
     "reason": "Reference identity and inverse-key lookup use allows_reverse_match before deduplicating.",
@@ -5456,7 +5456,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.check_for_existing_reaction::are_identical_species_references#3",
     "kind": "direction",
-    "line": 709,
+    "line": 708,
     "source": "if (are_identical_species_references(rxn, rxn0)",
     "verdict": "guarded",
     "reason": "Reference identity and inverse-key lookup use allows_reverse_match before deduplicating.",
@@ -5467,7 +5467,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.check_for_existing_reaction::are_identical_species_references#4",
     "kind": "direction",
-    "line": 721,
+    "line": 720,
     "source": "if (are_identical_species_references(rxn, rxn0)",
     "verdict": "guarded",
     "reason": "Reference identity and inverse-key lookup use allows_reverse_match before deduplicating.",
@@ -5500,7 +5500,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.enlarge::log_enlarge_summary#1",
     "kind": "direction",
-    "line": 1106,
+    "line": 1105,
     "source": "self.log_enlarge_summary(",
     "verdict": "guarded",
     "reason": "Copies explicit direction and original kinetics into library/model reactions; core/edge admissions apply the resolved policy.",
@@ -5511,7 +5511,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.enlarge::mark_duplicate_reaction#1",
     "kind": "direction",
-    "line": 1100,
+    "line": 1099,
     "source": "mark_duplicate_reaction(rxn, checked_reactions)",
     "verdict": "guarded",
     "reason": "Copies explicit direction and original kinetics into library/model reactions; core/edge admissions apply the resolved policy.",
@@ -5522,7 +5522,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.enlarge::mark_duplicate_reaction#2",
     "kind": "direction",
-    "line": 1104,
+    "line": 1103,
     "source": "mark_duplicate_reaction(rxn, checked_reactions)",
     "verdict": "guarded",
     "reason": "Copies explicit direction and original kinetics into library/model reactions; core/edge admissions apply the resolved policy.",
@@ -5533,7 +5533,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.log_enlarge_summary::allows_reverse_match#1",
     "kind": "direction",
-    "line": 1510,
+    "line": 1508,
     "source": "(r.allows_reverse_match(rxn) and r.products == rxn.reactants",
     "verdict": "guarded",
     "reason": "Inverse participant removal is gated by allows_reverse_match.",
@@ -5544,7 +5544,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.make_new_reaction::check_resolved_species_reversibility#1",
     "kind": "reverse",
-    "line": 784,
+    "line": 783,
     "source": "forward.check_resolved_species_reversibility()",
     "verdict": "guarded",
     "reason": "Admission checks original kinetics before normalization or conversion; reverse reconstruction delegates to Reaction guard.",
@@ -5555,7 +5555,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.make_new_reaction::check_resolved_species_reversibility#2",
     "kind": "reverse",
-    "line": 852,
+    "line": 851,
     "source": "forward.check_resolved_species_reversibility()",
     "verdict": "guarded",
     "reason": "Admission checks original kinetics before normalization or conversion; reverse reconstruction delegates to Reaction guard.",
@@ -5566,7 +5566,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.make_new_reaction::check_resolved_species_reversibility#3",
     "kind": "reverse",
-    "line": 889,
+    "line": 888,
     "source": "forward.check_resolved_species_reversibility(reversible=True)",
     "verdict": "guarded",
     "reason": "Admission checks original kinetics before normalization or conversion; reverse reconstruction delegates to Reaction guard.",
@@ -5577,7 +5577,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.make_new_reaction::check_resolved_species_reversibility#4",
     "kind": "reverse",
-    "line": 928,
+    "line": 927,
     "source": "forward.check_resolved_species_reversibility()",
     "verdict": "guarded",
     "reason": "Admission checks original kinetics before normalization or conversion; reverse reconstruction delegates to Reaction guard.",
@@ -5588,7 +5588,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.make_new_reaction::generate_reverse_rate_coefficient#1",
     "kind": "reverse",
-    "line": 916,
+    "line": 915,
     "source": "reverse_kinetics = forward.generate_reverse_rate_coefficient()",
     "verdict": "guarded",
     "reason": "Admission checks original kinetics before normalization or conversion; reverse reconstruction delegates to Reaction guard.",
@@ -5599,7 +5599,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.make_new_reaction::reaction-io",
     "kind": "reader-exporter",
-    "line": 768,
+    "line": 767,
     "source": "def make_new_reaction(self, forward, check_existing=True, generate_thermo=True, generate_kinetics=True, perform_cut=True):",
     "verdict": "guarded",
     "reason": "Admission checks original kinetics before normalization or conversion; reverse reconstruction delegates to Reaction guard.",
@@ -5610,7 +5610,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.mark_chemkin_duplicates::mark_duplicate_reactions#1",
     "kind": "direction",
-    "line": 2539,
+    "line": 2537,
     "source": "mark_duplicate_reactions(rxn_list)",
     "verdict": "guarded",
     "reason": "Copies explicit direction and original kinetics into library/model reactions; core/edge admissions apply the resolved policy.",
@@ -5621,7 +5621,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.process_new_reactions::make_new_reaction#1",
     "kind": "builder",
-    "line": 1191,
+    "line": 1190,
     "source": "rxn, is_new = self.make_new_reaction(rxn, generate_thermo=generate_thermo, generate_kinetics=generate_kinetics)",
     "verdict": "guarded",
     "reason": "Calls guarded make_new_reaction before inserting generated reactions.",
@@ -5632,7 +5632,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.update_unimolecular_reaction_networks::allows_reverse_match#1",
     "kind": "direction",
-    "line": 2483,
+    "line": 2481,
     "source": "and not reaction.allows_reverse_match(other)), None)",
     "verdict": "guarded",
     "reason": "Original declarations are checked before Keq comparisons and reversible promotion; supplied thermal directions remain independent.",
@@ -5643,7 +5643,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.update_unimolecular_reaction_networks::check_resolved_species_reversibility#1",
     "kind": "reverse",
-    "line": 2421,
+    "line": 2419,
     "source": "reaction.check_resolved_species_reversibility()",
     "verdict": "guarded",
     "reason": "Original declarations are checked before Keq comparisons and reversible promotion; supplied thermal directions remain independent.",
@@ -5654,7 +5654,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.update_unimolecular_reaction_networks::check_resolved_species_reversibility#2",
     "kind": "reverse",
-    "line": 2476,
+    "line": 2474,
     "source": "reaction.check_resolved_species_reversibility(reversible=True)",
     "verdict": "guarded",
     "reason": "Original declarations are checked before Keq comparisons and reversible promotion; supplied thermal directions remain independent.",
@@ -5665,7 +5665,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.update_unimolecular_reaction_networks::check_resolved_species_reversibility#3",
     "kind": "reverse",
-    "line": 2485,
+    "line": 2483,
     "source": "explicit_reverse.check_resolved_species_reversibility(reversible=True)",
     "verdict": "guarded",
     "reason": "Original declarations are checked before Keq comparisons and reversible promotion; supplied thermal directions remain independent.",
@@ -5676,7 +5676,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.update_unimolecular_reaction_networks::check_resolved_species_reversibility#4",
     "kind": "reverse",
-    "line": 2490,
+    "line": 2488,
     "source": "reaction2.check_resolved_species_reversibility(reversible=True)",
     "verdict": "guarded",
     "reason": "Original declarations are checked before Keq comparisons and reversible promotion; supplied thermal directions remain independent.",
@@ -5687,7 +5687,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.update_unimolecular_reaction_networks::get_equilibrium_constant#1",
     "kind": "reverse",
-    "line": 2494,
+    "line": 2492,
     "source": "kr = reaction.get_rate_coefficient(1000, 1e5) / reaction.get_equilibrium_constant(1000)",
     "verdict": "guarded",
     "reason": "Original declarations are checked before Keq comparisons and reversible promotion; supplied thermal directions remain independent.",
@@ -5698,7 +5698,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.update_unimolecular_reaction_networks::get_equilibrium_constant#2",
     "kind": "reverse",
-    "line": 2495,
+    "line": 2493,
     "source": "kf2 = reaction2.get_rate_coefficient(1000, 1e5) / reaction2.get_equilibrium_constant(1000)",
     "verdict": "guarded",
     "reason": "Original declarations are checked before Keq comparisons and reversible promotion; supplied thermal directions remain independent.",
@@ -5709,7 +5709,7 @@
   {
     "site": "rmgpy/rmg/model.py::CoreEdgeReactionModel.update_unimolecular_reaction_networks::reaction-io",
     "kind": "reader-exporter",
-    "line": 2408,
+    "line": 2406,
     "source": "def update_unimolecular_reaction_networks(self):",
     "verdict": "guarded",
     "reason": "Original declarations are checked before Keq comparisons and reversible promotion; supplied thermal directions remain independent.",
@@ -5765,7 +5765,7 @@
   {
     "site": "rmgpy/rmg/model.py::are_identical_species_references::allows_reverse_match#1",
     "kind": "direction",
-    "line": 2758,
+    "line": 2761,
     "source": "(rxn1.allows_reverse_match(rxn2) and identical_opposite_directions)) and identical_collider",
     "verdict": "not-reachable-for-resolved",
     "reason": "Species identity normalizes participants without identifying reaction directions.",
