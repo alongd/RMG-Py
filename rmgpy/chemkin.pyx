@@ -1706,6 +1706,25 @@ def get_species_identifier(species):
     species identifier, unresolved identifiers retain the legacy 10-character
     convention. Resolved species use explicit state tags and the full 16-character
     limit; the final numeric parenthesis, if present, remains the RMG index.
+
+    Electronic tags use these disjoint, reversible namespaces::
+
+        State token                       Tag
+        <multiplicity>Sigma_<g/u><+/-/none> t<multiplicity>S<g/u><p/m/none>
+        <multiplicity>Pi_<g/u><+/-/none>    t<multiplicity>P<g/u><p/m/none>
+        <multiplicity>Delta_<g/u><+/-/none> t<multiplicity>D<g/u><p/m/none>
+        Other electronic tokens           e<escaped literal>
+        Vibrational level                 v<decimal level>
+
+    Term patterns match the entire token and a positive decimal multiplicity
+    without leading zeros. For example, ``3Sigma_u+`` becomes ``t3Sup``, while
+    the literal ``3Sup`` remains ``e3Sup``. Literal escapes are ``_`` -> ``__``,
+    ``+`` -> ``_p``, ``-`` -> ``_m``, ``,`` -> ``_c``, ``(`` -> ``_l``, and
+    ``)`` -> ``_r``. Electronic and vibrational tags are comma separated.
+    The adjacent species dictionary retains the exact state headers for import.
+    Declaration sets validate identifiers through SpeciesReferences, refusing
+    collisions between distinct identities. An identifier that still exceeds
+    16 characters raises ChemkinError; no state is dropped or truncated.
     """
     # Resolved states must never fall back to a state-blind label or formula.
     from rmgpy.export import export_molecule
@@ -1714,8 +1733,16 @@ def get_species_identifier(species):
         tags = []
         if mol.electronic_state:
             escapes = {'_': '__', '+': '_p', '-': '_m', ',': '_c', '(': '_l', ')': '_r'}
-            token = ''.join(escapes.get(char, char) for char in mol.electronic_state)
-            tags.append('e' + token)
+            term = re.fullmatch(r'([1-9][0-9]*)(Sigma|Pi|Delta)_([gu])([+-]?)',
+                                mol.electronic_state)
+            if term:
+                multiplicity, symbol, parity, reflection = term.groups()
+                symbols = {'Sigma': 'S', 'Pi': 'P', 'Delta': 'D'}
+                signs = {'': '', '+': 'p', '-': 'm'}
+                tags.append('t' + multiplicity + symbols[symbol] + parity + signs[reflection])
+            else:
+                token = ''.join(escapes.get(char, char) for char in mol.electronic_state)
+                tags.append('e' + token)
         if mol.vibrational_level >= 0:
             tags.append('v{0:d}'.format(mol.vibrational_level))
         name = '{0}({1})'.format(mol.get_formula(), ','.join(tags))

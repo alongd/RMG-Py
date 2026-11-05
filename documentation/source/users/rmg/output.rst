@@ -440,3 +440,19 @@ context they raise ``SpeciesIdentityError`` before writing an entry.
 Pure-ground equations retain their historical bytes and lookup behavior,
 including conflicting exact names selecting the first saved dictionary record.
 Dictionary name conflicts refuse when either colliding identity is resolved.
+
+
+Resolved species identifiers
+----------------------------
+
+Chemkin files and native simulation profiles preserve electronic and vibrational
+states in identifiers of at most 16 characters. Canonical molecular term symbols
+use a ``t`` tag: Sigma, Pi, and Delta become S, P, and D; multiplicity and g/u
+parity remain; reflection signs + and - become p and m. For example,
+``3Sigma_u+`` at species index 9999 is ``N2(t3Sup)(9999)``. Other electronic
+tokens retain an ``e`` tag with escaped punctuation, and vibrational levels
+retain ``v<level>``. The final numeric parentheses remain the species index.
+The accompanying species dictionary records the exact original state headers
+and is required to import those states with the Chemkin mechanism. Identifiers
+that still exceed 16 characters, including long combinations of electronic and
+vibrational tags, are refused rather than truncated or stripped of state.

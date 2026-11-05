@@ -3780,7 +3780,7 @@
       "source_sha256": "69dde0686c1478505b84b26d652eaca05dedbf01af9c9a3bb09576de21426a08"
     },
     "rmgpy/chemkin.pyx:get_species_identifier": {
-      "source_sha256": "2cc0a6f322a7c2534501bfba1722435db7a620fff980aaffcdaddf45f5233c5c",
+      "source_sha256": "81a334160c68fb22147545d6b58b10da2bc3806dab1d2ddb09e631d5813a223d",
       "verdict": "carried",
       "reason": "Allocates a state-qualified identifier from the copied explicit v0 export graph; original header-free owners and ground identifier behavior are preserved.",
       "evidence": [

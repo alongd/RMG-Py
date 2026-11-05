@@ -1,0 +1,714 @@
+{
+  "database_pin": "5f566a3a93fe06a79a89a0be69525e25ec26331d",
+  "rows": [
+    {
+      "formula": "Ar",
+      "electronic": "1P1",
+      "vibrational": -1,
+      "labels": [
+        "Ar(1s2)"
+      ],
+      "sources": [
+        "input/kinetics/libraries/PlasmaArgon/dictionary.txt",
+        "input/thermo/libraries/PlasmaExcitedNeutralThermo.py",
+        "input/transport/libraries/PrimaryTransportLibrary.py"
+      ],
+      "adjacency": "multiplicity 1\nelectronicstate 1P1\n1 Ar u0 p4 c0"
+    },
+    {
+      "formula": "Ar",
+      "electronic": "3P0",
+      "vibrational": -1,
+      "labels": [
+        "Ar(1s3)"
+      ],
+      "sources": [
+        "input/kinetics/libraries/PlasmaArgon/dictionary.txt",
+        "input/thermo/libraries/PlasmaExcitedNeutralThermo.py",
+        "input/transport/libraries/PrimaryTransportLibrary.py"
+      ],
+      "adjacency": "multiplicity 3\nelectronicstate 3P0\n1 Ar u2 p3 c0"
+    },
+    {
+      "formula": "Ar",
+      "electronic": "3P1",
+      "vibrational": -1,
+      "labels": [
+        "Ar(1s4)"
+      ],
+      "sources": [
+        "input/kinetics/libraries/PlasmaArgon/dictionary.txt",
+        "input/thermo/libraries/PlasmaExcitedNeutralThermo.py",
+        "input/transport/libraries/PrimaryTransportLibrary.py"
+      ],
+      "adjacency": "multiplicity 3\nelectronicstate 3P1\n1 Ar u2 p3 c0"
+    },
+    {
+      "formula": "Ar",
+      "electronic": "3P2",
+      "vibrational": -1,
+      "labels": [
+        "Ars",
+        "Ar(3P2)"
+      ],
+      "sources": [
+        "input/kinetics/libraries/PlasmaArgon/dictionary.txt",
+        "input/kinetics/libraries/PlasmaArgonDimer/dictionary.txt",
+        "input/kinetics/libraries/PlasmaArgonLegacy/dictionary.txt",
+        "input/kinetics/libraries/PlasmaOxygenHeavy/dictionary.txt",
+        "input/thermo/libraries/PlasmaExcitedNeutralThermo.py",
+        "input/transport/libraries/PrimaryTransportLibrary.py"
+      ],
+      "adjacency": "multiplicity 3\nelectronicstate 3P2\n1 Ar u2 p3 c0"
+    },
+    {
+      "formula": "N2",
+      "electronic": "",
+      "vibrational": 0,
+      "labels": [
+        "N2v0"
+      ],
+      "sources": [
+        "input/thermo/libraries/N2Vibrational.py"
+      ],
+      "adjacency": "vibrationallevel 0\n1 N u0 p1 c0 {2,T}\n2 N u0 p1 c0 {1,T}"
+    },
+    {
+      "formula": "N2",
+      "electronic": "",
+      "vibrational": 1,
+      "labels": [
+        "N2v1"
+      ],
+      "sources": [
+        "input/kinetics/libraries/N2HeavyParticleRelaxation/dictionary.txt",
+        "input/thermo/libraries/N2Vibrational.py"
+      ],
+      "adjacency": "multiplicity 1\nvibrationallevel 1\n1 N u0 p1 c0 {2,T}\n2 N u0 p1 c0 {1,T}"
+    },
+    {
+      "formula": "N2",
+      "electronic": "",
+      "vibrational": 2,
+      "labels": [
+        "N2v2"
+      ],
+      "sources": [
+        "input/kinetics/libraries/N2HeavyParticleRelaxation/dictionary.txt",
+        "input/thermo/libraries/N2Vibrational.py"
+      ],
+      "adjacency": "multiplicity 1\nvibrationallevel 2\n1 N u0 p1 c0 {2,T}\n2 N u0 p1 c0 {1,T}"
+    },
+    {
+      "formula": "N2",
+      "electronic": "",
+      "vibrational": 3,
+      "labels": [
+        "N2v3"
+      ],
+      "sources": [
+        "input/kinetics/libraries/N2HeavyParticleRelaxation/dictionary.txt",
+        "input/thermo/libraries/N2Vibrational.py"
+      ],
+      "adjacency": "multiplicity 1\nvibrationallevel 3\n1 N u0 p1 c0 {2,T}\n2 N u0 p1 c0 {1,T}"
+    },
+    {
+      "formula": "N2",
+      "electronic": "",
+      "vibrational": 4,
+      "labels": [
+        "N2v4"
+      ],
+      "sources": [
+        "input/kinetics/libraries/N2HeavyParticleRelaxation/dictionary.txt",
+        "input/thermo/libraries/N2Vibrational.py"
+      ],
+      "adjacency": "multiplicity 1\nvibrationallevel 4\n1 N u0 p1 c0 {2,T}\n2 N u0 p1 c0 {1,T}"
+    },
+    {
+      "formula": "N2",
+      "electronic": "",
+      "vibrational": 5,
+      "labels": [
+        "N2v5"
+      ],
+      "sources": [
+        "input/kinetics/libraries/N2HeavyParticleRelaxation/dictionary.txt",
+        "input/thermo/libraries/N2Vibrational.py"
+      ],
+      "adjacency": "multiplicity 1\nvibrationallevel 5\n1 N u0 p1 c0 {2,T}\n2 N u0 p1 c0 {1,T}"
+    },
+    {
+      "formula": "N2",
+      "electronic": "",
+      "vibrational": 6,
+      "labels": [
+        "N2v6"
+      ],
+      "sources": [
+        "input/kinetics/libraries/N2HeavyParticleRelaxation/dictionary.txt",
+        "input/thermo/libraries/N2Vibrational.py"
+      ],
+      "adjacency": "multiplicity 1\nvibrationallevel 6\n1 N u0 p1 c0 {2,T}\n2 N u0 p1 c0 {1,T}"
+    },
+    {
+      "formula": "N2",
+      "electronic": "",
+      "vibrational": 7,
+      "labels": [
+        "N2v7"
+      ],
+      "sources": [
+        "input/kinetics/libraries/N2HeavyParticleRelaxation/dictionary.txt",
+        "input/thermo/libraries/N2Vibrational.py"
+      ],
+      "adjacency": "multiplicity 1\nvibrationallevel 7\n1 N u0 p1 c0 {2,T}\n2 N u0 p1 c0 {1,T}"
+    },
+    {
+      "formula": "N2",
+      "electronic": "",
+      "vibrational": 8,
+      "labels": [
+        "N2v8"
+      ],
+      "sources": [
+        "input/kinetics/libraries/N2HeavyParticleRelaxation/dictionary.txt",
+        "input/thermo/libraries/N2Vibrational.py"
+      ],
+      "adjacency": "multiplicity 1\nvibrationallevel 8\n1 N u0 p1 c0 {2,T}\n2 N u0 p1 c0 {1,T}"
+    },
+    {
+      "formula": "N2",
+      "electronic": "",
+      "vibrational": 9,
+      "labels": [
+        "N2v9"
+      ],
+      "sources": [
+        "input/kinetics/libraries/N2HeavyParticleRelaxation/dictionary.txt",
+        "input/thermo/libraries/N2Vibrational.py"
+      ],
+      "adjacency": "multiplicity 1\nvibrationallevel 9\n1 N u0 p1 c0 {2,T}\n2 N u0 p1 c0 {1,T}"
+    },
+    {
+      "formula": "N2",
+      "electronic": "",
+      "vibrational": 10,
+      "labels": [
+        "N2v10"
+      ],
+      "sources": [
+        "input/kinetics/libraries/N2HeavyParticleRelaxation/dictionary.txt",
+        "input/thermo/libraries/N2Vibrational.py"
+      ],
+      "adjacency": "multiplicity 1\nvibrationallevel 10\n1 N u0 p1 c0 {2,T}\n2 N u0 p1 c0 {1,T}"
+    },
+    {
+      "formula": "N2",
+      "electronic": "",
+      "vibrational": 11,
+      "labels": [
+        "N2v11"
+      ],
+      "sources": [
+        "input/kinetics/libraries/N2HeavyParticleRelaxation/dictionary.txt",
+        "input/thermo/libraries/N2Vibrational.py"
+      ],
+      "adjacency": "multiplicity 1\nvibrationallevel 11\n1 N u0 p1 c0 {2,T}\n2 N u0 p1 c0 {1,T}"
+    },
+    {
+      "formula": "N2",
+      "electronic": "",
+      "vibrational": 12,
+      "labels": [
+        "N2v12"
+      ],
+      "sources": [
+        "input/kinetics/libraries/N2HeavyParticleRelaxation/dictionary.txt",
+        "input/thermo/libraries/N2Vibrational.py"
+      ],
+      "adjacency": "multiplicity 1\nvibrationallevel 12\n1 N u0 p1 c0 {2,T}\n2 N u0 p1 c0 {1,T}"
+    },
+    {
+      "formula": "N2",
+      "electronic": "",
+      "vibrational": 13,
+      "labels": [
+        "N2v13"
+      ],
+      "sources": [
+        "input/kinetics/libraries/N2HeavyParticleRelaxation/dictionary.txt",
+        "input/thermo/libraries/N2Vibrational.py"
+      ],
+      "adjacency": "multiplicity 1\nvibrationallevel 13\n1 N u0 p1 c0 {2,T}\n2 N u0 p1 c0 {1,T}"
+    },
+    {
+      "formula": "N2",
+      "electronic": "",
+      "vibrational": 14,
+      "labels": [
+        "N2v14"
+      ],
+      "sources": [
+        "input/kinetics/libraries/N2HeavyParticleRelaxation/dictionary.txt",
+        "input/thermo/libraries/N2Vibrational.py"
+      ],
+      "adjacency": "multiplicity 1\nvibrationallevel 14\n1 N u0 p1 c0 {2,T}\n2 N u0 p1 c0 {1,T}"
+    },
+    {
+      "formula": "N2",
+      "electronic": "",
+      "vibrational": 15,
+      "labels": [
+        "N2v15"
+      ],
+      "sources": [
+        "input/kinetics/libraries/N2HeavyParticleRelaxation/dictionary.txt",
+        "input/thermo/libraries/N2Vibrational.py"
+      ],
+      "adjacency": "multiplicity 1\nvibrationallevel 15\n1 N u0 p1 c0 {2,T}\n2 N u0 p1 c0 {1,T}"
+    },
+    {
+      "formula": "N2",
+      "electronic": "",
+      "vibrational": 16,
+      "labels": [
+        "N2v16"
+      ],
+      "sources": [
+        "input/kinetics/libraries/N2HeavyParticleRelaxation/dictionary.txt",
+        "input/thermo/libraries/N2Vibrational.py"
+      ],
+      "adjacency": "multiplicity 1\nvibrationallevel 16\n1 N u0 p1 c0 {2,T}\n2 N u0 p1 c0 {1,T}"
+    },
+    {
+      "formula": "N2",
+      "electronic": "",
+      "vibrational": 17,
+      "labels": [
+        "N2v17"
+      ],
+      "sources": [
+        "input/kinetics/libraries/N2HeavyParticleRelaxation/dictionary.txt",
+        "input/thermo/libraries/N2Vibrational.py"
+      ],
+      "adjacency": "multiplicity 1\nvibrationallevel 17\n1 N u0 p1 c0 {2,T}\n2 N u0 p1 c0 {1,T}"
+    },
+    {
+      "formula": "N2",
+      "electronic": "",
+      "vibrational": 18,
+      "labels": [
+        "N2v18"
+      ],
+      "sources": [
+        "input/kinetics/libraries/N2HeavyParticleRelaxation/dictionary.txt",
+        "input/thermo/libraries/N2Vibrational.py"
+      ],
+      "adjacency": "multiplicity 1\nvibrationallevel 18\n1 N u0 p1 c0 {2,T}\n2 N u0 p1 c0 {1,T}"
+    },
+    {
+      "formula": "N2",
+      "electronic": "",
+      "vibrational": 19,
+      "labels": [
+        "N2v19"
+      ],
+      "sources": [
+        "input/kinetics/libraries/N2HeavyParticleRelaxation/dictionary.txt",
+        "input/thermo/libraries/N2Vibrational.py"
+      ],
+      "adjacency": "multiplicity 1\nvibrationallevel 19\n1 N u0 p1 c0 {2,T}\n2 N u0 p1 c0 {1,T}"
+    },
+    {
+      "formula": "N2",
+      "electronic": "",
+      "vibrational": 20,
+      "labels": [
+        "N2v20"
+      ],
+      "sources": [
+        "input/kinetics/libraries/N2HeavyParticleRelaxation/dictionary.txt",
+        "input/thermo/libraries/N2Vibrational.py"
+      ],
+      "adjacency": "multiplicity 1\nvibrationallevel 20\n1 N u0 p1 c0 {2,T}\n2 N u0 p1 c0 {1,T}"
+    },
+    {
+      "formula": "N2",
+      "electronic": "",
+      "vibrational": 21,
+      "labels": [
+        "N2v21"
+      ],
+      "sources": [
+        "input/kinetics/libraries/N2HeavyParticleRelaxation/dictionary.txt",
+        "input/thermo/libraries/N2Vibrational.py"
+      ],
+      "adjacency": "multiplicity 1\nvibrationallevel 21\n1 N u0 p1 c0 {2,T}\n2 N u0 p1 c0 {1,T}"
+    },
+    {
+      "formula": "N2",
+      "electronic": "",
+      "vibrational": 22,
+      "labels": [
+        "N2v22"
+      ],
+      "sources": [
+        "input/kinetics/libraries/N2HeavyParticleRelaxation/dictionary.txt",
+        "input/thermo/libraries/N2Vibrational.py"
+      ],
+      "adjacency": "multiplicity 1\nvibrationallevel 22\n1 N u0 p1 c0 {2,T}\n2 N u0 p1 c0 {1,T}"
+    },
+    {
+      "formula": "N2",
+      "electronic": "",
+      "vibrational": 23,
+      "labels": [
+        "N2v23"
+      ],
+      "sources": [
+        "input/kinetics/libraries/N2HeavyParticleRelaxation/dictionary.txt",
+        "input/thermo/libraries/N2Vibrational.py"
+      ],
+      "adjacency": "multiplicity 1\nvibrationallevel 23\n1 N u0 p1 c0 {2,T}\n2 N u0 p1 c0 {1,T}"
+    },
+    {
+      "formula": "N2",
+      "electronic": "",
+      "vibrational": 24,
+      "labels": [
+        "N2v24"
+      ],
+      "sources": [
+        "input/kinetics/libraries/N2HeavyParticleRelaxation/dictionary.txt",
+        "input/thermo/libraries/N2Vibrational.py"
+      ],
+      "adjacency": "multiplicity 1\nvibrationallevel 24\n1 N u0 p1 c0 {2,T}\n2 N u0 p1 c0 {1,T}"
+    },
+    {
+      "formula": "N2",
+      "electronic": "",
+      "vibrational": 25,
+      "labels": [
+        "N2v25"
+      ],
+      "sources": [
+        "input/kinetics/libraries/N2HeavyParticleRelaxation/dictionary.txt",
+        "input/thermo/libraries/N2Vibrational.py"
+      ],
+      "adjacency": "multiplicity 1\nvibrationallevel 25\n1 N u0 p1 c0 {2,T}\n2 N u0 p1 c0 {1,T}"
+    },
+    {
+      "formula": "N2",
+      "electronic": "",
+      "vibrational": 26,
+      "labels": [
+        "N2v26"
+      ],
+      "sources": [
+        "input/kinetics/libraries/N2HeavyParticleRelaxation/dictionary.txt",
+        "input/thermo/libraries/N2Vibrational.py"
+      ],
+      "adjacency": "multiplicity 1\nvibrationallevel 26\n1 N u0 p1 c0 {2,T}\n2 N u0 p1 c0 {1,T}"
+    },
+    {
+      "formula": "N2",
+      "electronic": "",
+      "vibrational": 27,
+      "labels": [
+        "N2v27"
+      ],
+      "sources": [
+        "input/kinetics/libraries/N2HeavyParticleRelaxation/dictionary.txt",
+        "input/thermo/libraries/N2Vibrational.py"
+      ],
+      "adjacency": "multiplicity 1\nvibrationallevel 27\n1 N u0 p1 c0 {2,T}\n2 N u0 p1 c0 {1,T}"
+    },
+    {
+      "formula": "N2",
+      "electronic": "",
+      "vibrational": 28,
+      "labels": [
+        "N2v28"
+      ],
+      "sources": [
+        "input/kinetics/libraries/N2HeavyParticleRelaxation/dictionary.txt",
+        "input/thermo/libraries/N2Vibrational.py"
+      ],
+      "adjacency": "multiplicity 1\nvibrationallevel 28\n1 N u0 p1 c0 {2,T}\n2 N u0 p1 c0 {1,T}"
+    },
+    {
+      "formula": "N2",
+      "electronic": "",
+      "vibrational": 29,
+      "labels": [
+        "N2v29"
+      ],
+      "sources": [
+        "input/kinetics/libraries/N2HeavyParticleRelaxation/dictionary.txt",
+        "input/thermo/libraries/N2Vibrational.py"
+      ],
+      "adjacency": "multiplicity 1\nvibrationallevel 29\n1 N u0 p1 c0 {2,T}\n2 N u0 p1 c0 {1,T}"
+    },
+    {
+      "formula": "N2",
+      "electronic": "",
+      "vibrational": 30,
+      "labels": [
+        "N2v30"
+      ],
+      "sources": [
+        "input/kinetics/libraries/N2HeavyParticleRelaxation/dictionary.txt",
+        "input/thermo/libraries/N2Vibrational.py"
+      ],
+      "adjacency": "multiplicity 1\nvibrationallevel 30\n1 N u0 p1 c0 {2,T}\n2 N u0 p1 c0 {1,T}"
+    },
+    {
+      "formula": "N2",
+      "electronic": "1Delta_u",
+      "vibrational": -1,
+      "labels": [
+        "N2(w)",
+        "N2w"
+      ],
+      "sources": [
+        "input/kinetics/libraries/PlasmaAir/dictionary.txt",
+        "input/kinetics/libraries/PlasmaNitrogen/dictionary.txt",
+        "input/thermo/libraries/PlasmaExcitedNeutralThermo.py"
+      ],
+      "adjacency": "multiplicity 1\nelectronicstate 1Delta_u\n1 N u0 p1 c0 {2,T}\n2 N u0 p1 c0 {1,T}"
+    },
+    {
+      "formula": "N2",
+      "electronic": "1Pi_g",
+      "vibrational": -1,
+      "labels": [
+        "N2(a)",
+        "N2a"
+      ],
+      "sources": [
+        "input/kinetics/libraries/PlasmaAir/dictionary.txt",
+        "input/kinetics/libraries/PlasmaNitrogen/dictionary.txt",
+        "input/thermo/libraries/PlasmaExcitedNeutralThermo.py"
+      ],
+      "adjacency": "multiplicity 1\nelectronicstate 1Pi_g\n1 N u0 p1 c0 {2,T}\n2 N u0 p1 c0 {1,T}"
+    },
+    {
+      "formula": "N2",
+      "electronic": "1Sigma_u-",
+      "vibrational": -1,
+      "labels": [
+        "N2(a')",
+        "N2ap"
+      ],
+      "sources": [
+        "input/kinetics/libraries/PlasmaAir/dictionary.txt",
+        "input/kinetics/libraries/PlasmaNitrogen/dictionary.txt",
+        "input/thermo/libraries/PlasmaExcitedNeutralThermo.py"
+      ],
+      "adjacency": "multiplicity 1\nelectronicstate 1Sigma_u-\n1 N u0 p1 c0 {2,T}\n2 N u0 p1 c0 {1,T}"
+    },
+    {
+      "formula": "N2",
+      "electronic": "2Sigma_u+",
+      "vibrational": -1,
+      "labels": [
+        "N2pB",
+        "[N2pB]"
+      ],
+      "sources": [
+        "input/kinetics/libraries/PlasmaAir/dictionary.txt",
+        "input/kinetics/libraries/PlasmaNitrogen/dictionary.txt",
+        "input/thermo/libraries/PlasmaThermo.py"
+      ],
+      "adjacency": "multiplicity 2\nelectronicstate 2Sigma_u+\n1 N u0 p1 c0 {2,T}\n2 N u1 p0 c+1 {1,T}"
+    },
+    {
+      "formula": "N2",
+      "electronic": "3Pi_g",
+      "vibrational": -1,
+      "labels": [
+        "N2(B)",
+        "N2B"
+      ],
+      "sources": [
+        "input/kinetics/libraries/PlasmaAir/dictionary.txt",
+        "input/kinetics/libraries/PlasmaNitrogen/dictionary.txt",
+        "input/thermo/libraries/PlasmaExcitedNeutralThermo.py"
+      ],
+      "adjacency": "multiplicity 3\nelectronicstate 3Pi_g\n1 N u1 p1 c0 {2,D}\n2 N u1 p1 c0 {1,D}"
+    },
+    {
+      "formula": "N2",
+      "electronic": "3Pi_u",
+      "vibrational": -1,
+      "labels": [
+        "N2(C)",
+        "N2C"
+      ],
+      "sources": [
+        "input/kinetics/libraries/PlasmaAir/dictionary.txt",
+        "input/kinetics/libraries/PlasmaNitrogen/dictionary.txt",
+        "input/thermo/libraries/PlasmaExcitedNeutralThermo.py"
+      ],
+      "adjacency": "multiplicity 3\nelectronicstate 3Pi_u\n1 N u1 p1 c0 {2,D}\n2 N u1 p1 c0 {1,D}"
+    },
+    {
+      "formula": "N2",
+      "electronic": "3Sigma_u+",
+      "vibrational": -1,
+      "labels": [
+        "N2(A)",
+        "N2A"
+      ],
+      "sources": [
+        "input/kinetics/libraries/PlasmaAir/dictionary.txt",
+        "input/kinetics/libraries/PlasmaNitrogen/dictionary.txt",
+        "input/thermo/libraries/PlasmaExcitedNeutralThermo.py"
+      ],
+      "adjacency": "multiplicity 3\nelectronicstate 3Sigma_u+\n1 N u1 p1 c0 {2,D}\n2 N u1 p1 c0 {1,D}"
+    },
+    {
+      "formula": "O2",
+      "electronic": "",
+      "vibrational": 0,
+      "labels": [
+        "O2v0"
+      ],
+      "sources": [
+        "input/thermo/libraries/O2Vibrational.py"
+      ],
+      "adjacency": "multiplicity 3\nvibrationallevel 0\n1 O u1 p2 c0 {2,S}\n2 O u1 p2 c0 {1,S}"
+    },
+    {
+      "formula": "O2",
+      "electronic": "",
+      "vibrational": 1,
+      "labels": [
+        "O2v1"
+      ],
+      "sources": [
+        "input/kinetics/libraries/O2VibrationalRelaxation/dictionary.txt",
+        "input/thermo/libraries/O2Vibrational.py"
+      ],
+      "adjacency": "multiplicity 3\nvibrationallevel 1\n1 O u1 p2 c0 {2,S}\n2 O u1 p2 c0 {1,S}"
+    },
+    {
+      "formula": "O2",
+      "electronic": "",
+      "vibrational": 2,
+      "labels": [
+        "O2v2"
+      ],
+      "sources": [
+        "input/kinetics/libraries/O2VibrationalRelaxation/dictionary.txt",
+        "input/thermo/libraries/O2Vibrational.py"
+      ],
+      "adjacency": "multiplicity 3\nvibrationallevel 2\n1 O u1 p2 c0 {2,S}\n2 O u1 p2 c0 {1,S}"
+    },
+    {
+      "formula": "O2",
+      "electronic": "",
+      "vibrational": 3,
+      "labels": [
+        "O2v3"
+      ],
+      "sources": [
+        "input/kinetics/libraries/O2VibrationalRelaxation/dictionary.txt",
+        "input/thermo/libraries/O2Vibrational.py"
+      ],
+      "adjacency": "multiplicity 3\nvibrationallevel 3\n1 O u1 p2 c0 {2,S}\n2 O u1 p2 c0 {1,S}"
+    },
+    {
+      "formula": "O2",
+      "electronic": "",
+      "vibrational": 4,
+      "labels": [
+        "O2v4"
+      ],
+      "sources": [
+        "input/kinetics/libraries/O2VibrationalRelaxation/dictionary.txt",
+        "input/thermo/libraries/O2Vibrational.py"
+      ],
+      "adjacency": "multiplicity 3\nvibrationallevel 4\n1 O u1 p2 c0 {2,S}\n2 O u1 p2 c0 {1,S}"
+    },
+    {
+      "formula": "O2",
+      "electronic": "",
+      "vibrational": 5,
+      "labels": [
+        "O2v5"
+      ],
+      "sources": [
+        "input/kinetics/libraries/O2VibrationalRelaxation/dictionary.txt",
+        "input/thermo/libraries/O2Vibrational.py"
+      ],
+      "adjacency": "multiplicity 3\nvibrationallevel 5\n1 O u1 p2 c0 {2,S}\n2 O u1 p2 c0 {1,S}"
+    },
+    {
+      "formula": "O2",
+      "electronic": "",
+      "vibrational": 6,
+      "labels": [
+        "O2v6"
+      ],
+      "sources": [
+        "input/kinetics/libraries/O2VibrationalRelaxation/dictionary.txt",
+        "input/thermo/libraries/O2Vibrational.py"
+      ],
+      "adjacency": "multiplicity 3\nvibrationallevel 6\n1 O u1 p2 c0 {2,S}\n2 O u1 p2 c0 {1,S}"
+    },
+    {
+      "formula": "O2",
+      "electronic": "",
+      "vibrational": 7,
+      "labels": [
+        "O2v7"
+      ],
+      "sources": [
+        "input/kinetics/libraries/O2VibrationalRelaxation/dictionary.txt",
+        "input/thermo/libraries/O2Vibrational.py"
+      ],
+      "adjacency": "multiplicity 3\nvibrationallevel 7\n1 O u1 p2 c0 {2,S}\n2 O u1 p2 c0 {1,S}"
+    },
+    {
+      "formula": "O2",
+      "electronic": "",
+      "vibrational": 8,
+      "labels": [
+        "O2v8"
+      ],
+      "sources": [
+        "input/kinetics/libraries/O2VibrationalRelaxation/dictionary.txt",
+        "input/thermo/libraries/O2Vibrational.py"
+      ],
+      "adjacency": "multiplicity 3\nvibrationallevel 8\n1 O u1 p2 c0 {2,S}\n2 O u1 p2 c0 {1,S}"
+    },
+    {
+      "formula": "O2",
+      "electronic": "",
+      "vibrational": 9,
+      "labels": [
+        "O2v9"
+      ],
+      "sources": [
+        "input/kinetics/libraries/O2VibrationalRelaxation/dictionary.txt",
+        "input/thermo/libraries/O2Vibrational.py"
+      ],
+      "adjacency": "multiplicity 3\nvibrationallevel 9\n1 O u1 p2 c0 {2,S}\n2 O u1 p2 c0 {1,S}"
+    },
+    {
+      "formula": "O2",
+      "electronic": "",
+      "vibrational": 10,
+      "labels": [
+        "O2v10"
+      ],
+      "sources": [
+        "input/kinetics/libraries/O2VibrationalRelaxation/dictionary.txt",
+        "input/thermo/libraries/O2Vibrational.py"
+      ],
+      "adjacency": "multiplicity 3\nvibrationallevel 10\n1 O u1 p2 c0 {2,S}\n2 O u1 p2 c0 {1,S}"
+    }
+  ]
+}
