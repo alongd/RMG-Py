@@ -439,8 +439,8 @@ def _reduce_completed(obj):
 #: and the kinetics models are reachable and lose nothing, so they are not here.
 _LOSSY_REDUCERS = {
     Atom: (_reduce_completed,
-           'its reducer omits id, coords and props; ids drive resonance-structure '
-           "correspondence and props carries 'inRing', which feeds group matching"),
+           'its reducer omits id and coords; ids drive resonance-structure '
+           'correspondence and coords carry the atom geometry'),
     Species: (_reduce_whole_object,
               'its reducer omits aug_inchi, creation_iteration, explicitly_allowed and '
               'symmetry_number'),

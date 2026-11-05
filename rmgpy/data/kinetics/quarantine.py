@@ -91,6 +91,8 @@ generated reaction, kinetics estimated  ``apply_kinetics_to_reaction`` -- the pr
                                         cannot steer enlargement from the edge either
 core admission                          ``add_reaction_to_core`` -- backstop for everything
                                         that never passes through estimation
+batch core admission                    ``_add_reaction_to_core`` -- checks every reaction
+                                        after cascade promotion preflight
 edge admission                          ``add_reaction_to_edge`` -- same backstop
 pressure-dependent network              ``add_reaction_to_unimolecular_networks``. A pdep
                                         path reaction goes *here instead of* core or edge,
@@ -154,6 +156,7 @@ _GATE_CALL_SITES = {
     'rmgpy.rmg.model': (
         'apply_kinetics_to_reaction',            # estimation
         'add_reaction_to_core',                  # seeds, libraries, API callers
+        '_add_reaction_to_core',                 # preflighted cascade batch promotion
         'add_reaction_to_edge',                  # the edge half of the same
         'add_reaction_to_unimolecular_networks',  # pdep, which reaches neither of those
     ),

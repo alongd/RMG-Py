@@ -311,6 +311,8 @@ def save_entry(f, entry, declarations=None):
     f.write('    index = {0:d},\n'.format(entry.index))
     if hasattr(entry, 'source_identity'):
         f.write('    sourceIdentity = {0!r},\n'.format(entry.source_identity))
+    if hasattr(entry, 'source_provenance'):
+        f.write('    sourceProvenance = {0!r},\n'.format(entry.source_provenance))
     if label != '':
         f.write('    label = "{0}",\n'.format(label))
 

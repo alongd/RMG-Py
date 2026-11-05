@@ -2097,6 +2097,7 @@ class RMG(util.Subject):
                 )
 
                 entry.source_identity = getattr(reaction, 'source_identity', None)
+                entry.source_provenance = None
                 if getattr(reaction, 'source_identity', None) is not None or getattr(reaction, 'library', None):
                     identity = getattr(reaction, 'source_identity', None)
                     source_library, source_index = identity if identity is not None else (reaction.library, None)
@@ -2105,6 +2106,7 @@ class RMG(util.Subject):
                         if library_label == source_library:
                             library_source = external_path
                             break
+                    entry.source_provenance = (source_library, library_source)
                     entry.long_desc = "Originally from reaction library: " + source_library + "\n"
                     if source_index is not None:
                         entry.long_desc += "Original reaction library entry index: {0}\n".format(source_index)
@@ -2128,7 +2130,8 @@ class RMG(util.Subject):
                     data=reaction.kinetics,
                 )
                 entry.source_identity = getattr(reaction, 'source_identity', None)
-                try:
+                entry.source_provenance = None
+                if entry.source_identity is not None or getattr(reaction, 'library', None):
                     identity = getattr(reaction, 'source_identity', None)
                     source_library, source_index = identity if identity is not None else (reaction.library, None)
                     library_source = None
@@ -2136,13 +2139,14 @@ class RMG(util.Subject):
                         if library_label == source_library:
                             library_source = external_path
                             break
+                    entry.source_provenance = (source_library, library_source)
                     entry.long_desc = "Originally from reaction library: " + source_library + "\n"
                     if source_index is not None:
                         entry.long_desc += "Original reaction library entry index: {0}\n".format(source_index)
                     if library_source:
                         entry.long_desc += format_external_library_provenance(source_library, library_source) + "\n"
                     entry.long_desc += "\n" + reaction.kinetics.comment
-                except AttributeError:
+                else:
                     entry.long_desc = reaction.kinetics.comment
                 warn_if_seed_loses_placement(reaction, entry, "edge")
                 edge_kinetics_library.entries[i + 1] = entry

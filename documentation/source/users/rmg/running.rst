@@ -68,6 +68,10 @@ Run by restarting from a seed mechanism::
 Generated seed library entries store their original library and entry index in
 ``sourceIdentity``. An explicit ``None`` preserves unknown identity across further
 restarts; rate comments and descriptive prose cannot supply or override it.
+The companion ``sourceProvenance`` field stores the source owner and optional
+external-library path, or explicit ``None`` for an ownerless reaction. When
+``sourceIdentity`` is present, descriptions are never parsed for library ownership
+or source paths, including malformed provenance lookalikes in rate comments.
 Older seeds without this field remain readable: only their leading contiguous
 textual or external-library provenance record can restore an original identity.
 Missing indices remain unknown, and conflicting indices in that record are refused.

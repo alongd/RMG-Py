@@ -1252,7 +1252,7 @@
   {
     "site": "rmgpy/data/kinetics/common.py::check_for_same_reactants::is_isomorphic#1",
     "kind": "direction",
-    "line": 509,
+    "line": 511,
     "source": "elif reactants[0].is_isomorphic(reactants[1]):",
     "verdict": "not-reachable-for-resolved",
     "reason": "Compares same-side reactant species to adjust degeneracy, never opposite reaction channels.",
@@ -1263,7 +1263,7 @@
   {
     "site": "rmgpy/data/kinetics/common.py::check_for_same_reactants::is_isomorphic#2",
     "kind": "direction",
-    "line": 528,
+    "line": 530,
     "source": "same_01 = reactants[0].is_isomorphic(reactants[1])",
     "verdict": "not-reachable-for-resolved",
     "reason": "Compares same-side reactant species to adjust degeneracy, never opposite reaction channels.",
@@ -1274,7 +1274,7 @@
   {
     "site": "rmgpy/data/kinetics/common.py::check_for_same_reactants::is_isomorphic#3",
     "kind": "direction",
-    "line": 529,
+    "line": 531,
     "source": "same_02 = reactants[0].is_isomorphic(reactants[2])",
     "verdict": "not-reachable-for-resolved",
     "reason": "Compares same-side reactant species to adjust degeneracy, never opposite reaction channels.",
@@ -1285,7 +1285,7 @@
   {
     "site": "rmgpy/data/kinetics/common.py::check_for_same_reactants::is_isomorphic#4",
     "kind": "direction",
-    "line": 534,
+    "line": 536,
     "source": "elif reactants[1].is_isomorphic(reactants[2]):",
     "verdict": "not-reachable-for-resolved",
     "reason": "Compares same-side reactant species to adjust degeneracy, never opposite reaction channels.",
@@ -1296,7 +1296,7 @@
   {
     "site": "rmgpy/data/kinetics/common.py::find_degenerate_reactions::is_same_reaction#1",
     "kind": "direction",
-    "line": 604,
+    "line": 606,
     "source": "isomorphic = rxn0.is_same_reaction(rxn, check_identical=False, strict=False,",
     "verdict": "guarded",
     "reason": "Candidate identity delegates to is_same_reaction, including template/product and atom-ID branches.",
@@ -1307,7 +1307,7 @@
   {
     "site": "rmgpy/data/kinetics/common.py::find_degenerate_reactions::is_same_reaction#2",
     "kind": "direction",
-    "line": 607,
+    "line": 609,
     "source": "identical = rxn0.is_same_reaction(rxn, check_identical=True, strict=False,",
     "verdict": "guarded",
     "reason": "Candidate identity delegates to is_same_reaction, including template/product and atom-ID branches.",
@@ -1351,7 +1351,7 @@
   {
     "site": "rmgpy/data/kinetics/common.py::reduce_same_reactant_degeneracy::is_isomorphic#1",
     "kind": "direction",
-    "line": 680,
+    "line": 682,
     "source": "reaction.reactants[0].is_isomorphic(reaction.reactants[1])):",
     "verdict": "not-reachable-for-resolved",
     "reason": "Compares same-side reactant species to adjust degeneracy, never opposite reaction channels.",
@@ -1362,7 +1362,7 @@
   {
     "site": "rmgpy/data/kinetics/common.py::reduce_same_reactant_degeneracy::is_isomorphic#2",
     "kind": "direction",
-    "line": 701,
+    "line": 703,
     "source": "same_01 = reaction.reactants[0].is_isomorphic(reaction.reactants[1])",
     "verdict": "not-reachable-for-resolved",
     "reason": "Compares same-side reactant species to adjust degeneracy, never opposite reaction channels.",
@@ -1373,7 +1373,7 @@
   {
     "site": "rmgpy/data/kinetics/common.py::reduce_same_reactant_degeneracy::is_isomorphic#3",
     "kind": "direction",
-    "line": 702,
+    "line": 704,
     "source": "same_02 = reaction.reactants[0].is_isomorphic(reaction.reactants[2])",
     "verdict": "not-reachable-for-resolved",
     "reason": "Compares same-side reactant species to adjust degeneracy, never opposite reaction channels.",
@@ -1384,7 +1384,7 @@
   {
     "site": "rmgpy/data/kinetics/common.py::reduce_same_reactant_degeneracy::is_isomorphic#4",
     "kind": "direction",
-    "line": 715,
+    "line": 717,
     "source": "elif reaction.reactants[1].is_isomorphic(reaction.reactants[2]):",
     "verdict": "not-reachable-for-resolved",
     "reason": "Compares same-side reactant species to adjust degeneracy, never opposite reaction channels.",
@@ -2473,7 +2473,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::KineticsLibrary.check_for_duplicates::is_same_reaction#1",
     "kind": "direction",
-    "line": 608,
+    "line": 626,
     "source": "if reaction0 is not reaction and reaction0.is_same_reaction(reaction):",
     "verdict": "guarded",
     "reason": "Uses shared direction-aware channel identity.",
@@ -2484,7 +2484,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::KineticsLibrary.convert_duplicates_to_multi::check_resolved_species_reversibility#1",
     "kind": "reverse",
-    "line": 679,
+    "line": 697,
     "source": "entry0.item.check_resolved_species_reversibility(kinetics=entry0.data)",
     "verdict": "guarded",
     "reason": "Forward-only channel identity and equal reversibility are required before combining marked duplicates.",
@@ -2495,7 +2495,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::KineticsLibrary.convert_duplicates_to_multi::is_same_reaction#1",
     "kind": "direction",
-    "line": 640,
+    "line": 658,
     "source": "if reaction0.is_same_reaction(reaction, either_direction=False):",
     "verdict": "guarded",
     "reason": "Forward-only channel identity and equal reversibility are required before combining marked duplicates.",
@@ -2506,7 +2506,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::KineticsLibrary.convert_duplicates_to_multi::reaction-io",
     "kind": "reader-exporter",
-    "line": 621,
+    "line": 639,
     "source": "def convert_duplicates_to_multi(self):",
     "verdict": "guarded",
     "reason": "Forward-only channel identity and equal reversibility are required before combining marked duplicates.",
@@ -2517,7 +2517,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::KineticsLibrary.get_library_reactions::LibraryReaction#1",
     "kind": "builder",
-    "line": 523,
+    "line": 538,
     "source": "rxn = LibraryReaction(reactants=entry.item.reactants[:], products=entry.item.products[:],",
     "verdict": "guarded",
     "reason": "Checks original entry.data and carries its irreversible flag into each constructed LibraryReaction.",
@@ -2528,7 +2528,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::KineticsLibrary.get_library_reactions::LibraryReaction#2",
     "kind": "builder",
-    "line": 567,
+    "line": 582,
     "source": "rxn = LibraryReaction(reactants=entry.item.reactants[:], products=entry.item.products[:],",
     "verdict": "guarded",
     "reason": "Checks original entry.data and carries its irreversible flag into each constructed LibraryReaction.",
@@ -2539,7 +2539,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::KineticsLibrary.get_library_reactions::TemplateReaction#1",
     "kind": "builder",
-    "line": 550,
+    "line": 565,
     "source": "rxn = TemplateReaction(reactants=entry.item.reactants[:], products=entry.item.products[:],",
     "verdict": "guarded",
     "reason": "Checks original entry.data and carries its irreversible flag into each constructed LibraryReaction.",
@@ -2550,7 +2550,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::KineticsLibrary.get_library_reactions::reaction-io",
     "kind": "reader-exporter",
-    "line": 473,
+    "line": 482,
     "source": "def get_library_reactions(self):",
     "verdict": "guarded",
     "reason": "Checks original entry.data and carries its irreversible flag into each constructed LibraryReaction.",
@@ -2561,7 +2561,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::KineticsLibrary.load::check_for_duplicates#1",
     "kind": "direction",
-    "line": 841,
+    "line": 859,
     "source": "self.check_for_duplicates()",
     "verdict": "guarded",
     "reason": "Checks each original library declaration before returning the library.",
@@ -2572,7 +2572,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::KineticsLibrary.load::check_resolved_species_reversibility#1",
     "kind": "reverse",
-    "line": 829,
+    "line": 847,
     "source": "rxn.check_resolved_species_reversibility(kinetics=entry.data)",
     "verdict": "guarded",
     "reason": "Checks each original library declaration before returning the library.",
@@ -2583,7 +2583,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::KineticsLibrary.load::convert_duplicates_to_multi#1",
     "kind": "direction",
-    "line": 842,
+    "line": 860,
     "source": "self.convert_duplicates_to_multi()",
     "verdict": "guarded",
     "reason": "Checks each original library declaration before returning the library.",
@@ -2594,7 +2594,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::KineticsLibrary.load::reaction-io",
     "kind": "reader-exporter",
-    "line": 687,
+    "line": 705,
     "source": "def load(self, path, local_context=None, global_context=None):",
     "verdict": "guarded",
     "reason": "Checks each original library declaration before returning the library.",
@@ -2605,7 +2605,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::KineticsLibrary.load_entry::Reaction#1",
     "kind": "builder",
-    "line": 885,
+    "line": 913,
     "source": "rxn = Reaction(reactants=[], products=[], degeneracy=degeneracy, duplicate=duplicate, reversible=reversible,",
     "verdict": "guarded",
     "reason": "Copies explicit reversible metadata and checks original entry kinetics before library admission.",
@@ -2616,7 +2616,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::KineticsLibrary.load_entry::reaction-io",
     "kind": "reader-exporter",
-    "line": 844,
+    "line": 862,
     "source": "def load_entry(self,",
     "verdict": "guarded",
     "reason": "Copies explicit reversible metadata and checks original entry kinetics before library admission.",
@@ -2627,7 +2627,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::KineticsLibrary.load_old::check_for_duplicates#1",
     "kind": "direction",
-    "line": 997,
+    "line": 1027,
     "source": "self.check_for_duplicates()",
     "verdict": "guarded",
     "reason": "The old reader constructs rates supported by its thermal format; get_library_reactions validates them with current species state.",
@@ -2638,7 +2638,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::KineticsLibrary.load_old::convert_duplicates_to_multi#1",
     "kind": "direction",
-    "line": 998,
+    "line": 1028,
     "source": "self.convert_duplicates_to_multi()",
     "verdict": "guarded",
     "reason": "The old reader constructs rates supported by its thermal format; get_library_reactions validates them with current species state.",
@@ -2649,7 +2649,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::KineticsLibrary.load_old::mark_valid_duplicates#1",
     "kind": "direction",
-    "line": 981,
+    "line": 1011,
     "source": "self.mark_valid_duplicates(reactions, pdep_reactions)",
     "verdict": "guarded",
     "reason": "The old reader constructs rates supported by its thermal format; get_library_reactions validates them with current species state.",
@@ -2660,7 +2660,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::KineticsLibrary.load_old::reaction-io",
     "kind": "reader-exporter",
-    "line": 954,
+    "line": 984,
     "source": "def load_old(self, path):",
     "verdict": "guarded",
     "reason": "The old reader constructs rates supported by its thermal format; get_library_reactions validates them with current species state.",
@@ -2671,7 +2671,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::KineticsLibrary.mark_valid_duplicates::reaction-io",
     "kind": "reader-exporter",
-    "line": 579,
+    "line": 597,
     "source": "def mark_valid_duplicates(self, reactions1, reactions2):",
     "verdict": "guarded",
     "reason": "Only the same oriented equation is marked; opposite irreversible declarations remain distinct.",
@@ -2682,7 +2682,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::KineticsLibrary.save_old::check_resolved_species_reversibility#1",
     "kind": "reverse",
-    "line": 1048,
+    "line": 1078,
     "source": "entry.item.check_resolved_species_reversibility(kinetics=entry.data, reversible=True)",
     "verdict": "refused",
     "reason": "The legacy library identity boundary refuses resolved species before this downstream reversal check or any state-blind file write.",
@@ -2693,7 +2693,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::KineticsLibrary.save_old::is_isomorphic#1",
     "kind": "direction",
-    "line": 1068,
+    "line": 1098,
     "source": "if any(spc.is_isomorphic(molecule) for spc in species_dict.values()):",
     "verdict": "refused",
     "reason": "The legacy library validates dictionary identities and refuses resolved species before any state-blind file write.",
@@ -2704,7 +2704,7 @@
   {
     "site": "rmgpy/data/kinetics/library.py::KineticsLibrary.save_old::reaction-io",
     "kind": "reader-exporter",
-    "line": 1014,
+    "line": 1044,
     "source": "def save_old(self, path):",
     "verdict": "refused",
     "reason": "The legacy library refuses resolved species identity before writing reactions, so neither direction nor kinetics can be erased by the old format.",
@@ -5295,7 +5295,7 @@
   {
     "site": "rmgpy/rmg/main.py::RMG.save_everything::reaction-io",
     "kind": "reader-exporter",
-    "line": 2618,
+    "line": 2622,
     "source": "def save_everything(self):",
     "verdict": "guarded",
     "reason": "Database/model imports validate original library or Chemkin declarations; final output delegates to guarded converters.",

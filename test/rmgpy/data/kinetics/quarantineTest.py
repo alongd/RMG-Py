@@ -1141,7 +1141,8 @@ class TestEveryAdmissionPathIsGated:
                          and getattr(call.func, "id", None) == "check_quarantine"
                          for call in ast.walk(node))}
 
-        assert gated == {"apply_kinetics_to_reaction", "add_reaction_to_core",
+        # e44723bd4 adds _add_reaction_to_core for preflighted cascade batches.
+        assert gated == {"apply_kinetics_to_reaction", "add_reaction_to_core", "_add_reaction_to_core",
                          "add_reaction_to_edge", "add_reaction_to_unimolecular_networks"}, (
             "the set of gated methods moved; update the table in the quarantine module "
             "docstring in the same commit, or it stops being checkable")
@@ -1828,9 +1829,9 @@ class TestTheCallSitePinCoversEveryGate:
             _load_with_module(tmp_path, "unrelated",
                               _module_carrying(tmp_path, self.UNRELATED, "unrelated"))
 
-    def test_deleting_three_of_the_four_gates_is_refused(self, tmp_path):
+    def test_deleting_four_of_the_five_gates_is_refused(self, tmp_path):
         """
-        The one a module-level call count cannot see. Three admission paths lose their
+        The one a module-level call count cannot see. Four admission paths lose their
         gate, one keeps it, and the old check counted 1 and was satisfied.
         """
         import rmgpy.rmg.model as real_model
@@ -1845,18 +1846,20 @@ class TestTheCallSitePinCoversEveryGate:
                 if "check_quarantine(" in line and stage in line:
                     thinned = thinned.replace(line + "\n", "")
                     removed += 1
-        assert removed == 3, "the gate calls this test deletes have moved"
+        # e44723bd4 adds the second core gate in _add_reaction_to_core.
+        assert removed == 4, "the gate calls this test deletes have moved"
 
         with pytest.raises(DatabaseError) as raised:
             _load_with_module(tmp_path, "thinned",
                               _module_carrying(tmp_path, thinned, "thinned"))
         message = str(raised.value)
         assert "add_reaction_to_core" in message
+        assert "_add_reaction_to_core" in message
         assert "add_reaction_to_unimolecular_networks" in message
 
     def test_the_real_module_satisfies_it(self, tmp_path):
         """
-        The positive control, and the tripwire for this engine growing a fifth admission
+        The positive control, and the tripwire for this engine growing another admission
         path: the required list lives beside the checker, so a new ungated path fails
         here rather than in a run.
         """
@@ -4599,8 +4602,11 @@ class TestTheClassesWhoseOwnReducerLoses:
             "these names are excused from the probe but are no longer writable fields of "
             "Atom, so the excuse has gone stale: {0}".format(
                 sorted(references - writable_fields(Atom))))
-        assert fields_the_reducer_drops(Atom) >= {"id", "coords", "props"}, (
-            "the derivation no longer finds the three fields the review measured; either "
+        # 402d53c7d preserves Atom.props in its native reducer; id and coords still need repair.
+        dropped = fields_the_reducer_drops(Atom)
+        assert 'props' not in dropped
+        assert dropped >= {"id", "coords"}, (
+            "the derivation no longer finds the two fields the review measured; either "
             "upstream fixed Atom.__reduce__ -- in which case say so and delete the "
             "workaround -- or the derivation has stopped working")
 

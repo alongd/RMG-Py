@@ -1378,7 +1378,7 @@
       "file": "rmgpy/data/kinetics/common.py",
       "function": "save_entry",
       "line": 270,
-      "signature": "77381d124ea7cabc63029ca359320a1b908e9dffae65edc62ac64a2b830f54b3",
+      "signature": "c62e7f7a00776c8efcce8a9a4222288815be7272bab14854982aa6d6508b3912",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/kinetics/common.py:save_entry]",
       "reason": "Molecular equations route through library_reaction_equation with emitted declarations; resolved entries without context refuse before any bytes. Group/rule entries and pure-ground bytes retain compatibility.",
@@ -1523,7 +1523,7 @@
     "rmgpy/data/kinetics/library.py:KineticsLibrary.load": {
       "file": "rmgpy/data/kinetics/library.py",
       "function": "KineticsLibrary.load",
-      "line": 687,
+      "line": 705,
       "signature": "45f783ce1121662a6f25a8a255cdc0c7f589b1797f2c4bdf3a186dd287f68f91",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/kinetics/library.py:KineticsLibrary.load]",
@@ -1541,7 +1541,7 @@
     "rmgpy/data/kinetics/library.py:KineticsLibrary.save": {
       "file": "rmgpy/data/kinetics/library.py",
       "function": "KineticsLibrary.save",
-      "line": 908,
+      "line": 938,
       "signature": "00e0825800e3768771f3be5369ddcb1617b07c5e846f67673a1176b4d2b1493f",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/kinetics/library.py:KineticsLibrary.save]",
@@ -1559,7 +1559,7 @@
     "rmgpy/data/kinetics/library.py:KineticsLibrary.load_old": {
       "file": "rmgpy/data/kinetics/library.py",
       "function": "KineticsLibrary.load_old",
-      "line": 954,
+      "line": 984,
       "signature": "74d14e289688249e906a0a12a3a789443b285daea8bb40c9cabd87482d4c2439",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/kinetics/library.py:KineticsLibrary.load_old]",
@@ -1577,7 +1577,7 @@
     "rmgpy/data/kinetics/library.py:KineticsLibrary.save_old": {
       "file": "rmgpy/data/kinetics/library.py",
       "function": "KineticsLibrary.save_old",
-      "line": 1014,
+      "line": 1044,
       "signature": "6c2b60ef9657bd517f204346d893655ea4ee65a90e31d9aba8e012da1f18d93a",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/kinetics/library.py:KineticsLibrary.save_old]",
@@ -2365,7 +2365,7 @@
       "file": "rmgpy/rmg/main.py",
       "function": "RMG.make_seed_mech",
       "line": 2038,
-      "signature": "0bcac8aaaa2edfbfa7a570b6db886b08677d09e9fcca99b56af49ea276829801",
+      "signature": "bc9b4cdf28ffdc9f95853ecfe232cf0229455deb87731a921f174bcd4f7aa52b",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/rmg/main.py:RMG.make_seed_mech]",
       "manifold": {
@@ -2382,7 +2382,7 @@
     "rmgpy/rmg/main.py:RMG.generate_cantera_files_from_chemkin": {
       "file": "rmgpy/rmg/main.py",
       "function": "RMG.generate_cantera_files_from_chemkin",
-      "line": 2307,
+      "line": 2311,
       "signature": "bcbd9918de62fd816a64a504002e25e2826fe99767c3db6622724db2bbceffb2",
       "verdict": "N",
       "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/rmg/main.py:RMG.generate_cantera_files_from_chemkin]",
@@ -3955,8 +3955,8 @@
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/kinetics/library.py:KineticsLibrary.load_entry]",
       "file": "rmgpy/data/kinetics/library.py",
       "function": "KineticsLibrary.load_entry",
-      "line": 844,
-      "signature": "0cf1fa1d162cb062bbdb8a25eea15d69008102f65d63f4a59db42da93f444901",
+      "line": 862,
+      "signature": "70dd41c9c6df9737d5545a402ae3f781f28154badd2a3cde8e352c3a9d162525",
       "manifold": {
         "verdict": "carried",
         "reason": "KineticsLibrary.load_entry uses the modern kinetics/dictionary identity family: graph dictionaries carry v0, canonical references distinguish ensemble owners, and SMILES-only efficiency keys refuse declared colliders.",
@@ -4330,7 +4330,7 @@
     "rmgpy/data/kinetics/library.py:KineticsLibrary.__str__": {
       "file": "rmgpy/data/kinetics/library.py",
       "function": "KineticsLibrary.__str__",
-      "line": 467,
+      "line": 476,
       "signature": "217321735a2675715413adbeaf0a76359ced08fb3c305ccb07518cef90b15d1c",
       "reason": "Database diagnostic label.",
       "verdict": "E"
@@ -4338,7 +4338,7 @@
     "rmgpy/data/kinetics/library.py:KineticsLibrary.__repr__": {
       "file": "rmgpy/data/kinetics/library.py",
       "function": "KineticsLibrary.__repr__",
-      "line": 470,
+      "line": 479,
       "signature": "e4a12607d179c164dc60dfa09ab2be571ea921afd7d817154808ad4bc13994af",
       "reason": "Database diagnostic label.",
       "verdict": "E"
@@ -4346,8 +4346,8 @@
     "rmgpy/data/kinetics/library.py:KineticsLibrary.get_library_reactions": {
       "file": "rmgpy/data/kinetics/library.py",
       "function": "KineticsLibrary.get_library_reactions",
-      "line": 473,
-      "signature": "6f1cac13714154e25404c99732cc913c4bccb5e9720a84f9896af286d6d7786f",
+      "line": 482,
+      "signature": "1efa1588dfe2678db33ff36fe7df8f8413952e875f25cd2ea697b5f42814d3e2",
       "reason": "Returns reaction objects internally; no identifier emission.",
       "verdict": "E"
     },
@@ -4723,7 +4723,7 @@
     "rmgpy/rmg/main.py:RMG.initialize_reaction_threshold_and_react_flags": {
       "file": "rmgpy/rmg/main.py",
       "function": "RMG.initialize_reaction_threshold_and_react_flags",
-      "line": 2378,
+      "line": 2382,
       "signature": "625f8174dbe5f7892adc6024d426176a8bf01381a809e89572ea453ee098c80e",
       "reason": "Internal restart state bookkeeping; dictionary reload has a separate audited path.",
       "verdict": "E"
@@ -5144,7 +5144,7 @@
       "reason": "Nested formatter writes scalar Arrhenius parameters and uncertainties only; parent save_old refuses resolved molecular references before opening.",
       "file": "rmgpy/data/kinetics/library.py",
       "function": "KineticsLibrary.write_arrhenius",
-      "line": 1050,
+      "line": 1080,
       "signature": "1cf3591ae6abb9219ea62718650de3f613c953e7a13862fa42fa05ccef8bda91"
     },
     "rmgpy/molecule/draw.py:create_new_surface": {
@@ -5192,7 +5192,7 @@
       "reason": "marshal.dump persists profiler timing statistics only, not a molecular mechanism.",
       "file": "rmgpy/rmg/main.py",
       "function": "RMG.save_profiler_info",
-      "line": 2612,
+      "line": 2616,
       "signature": "178fd0183d2b302c0e7654490c2e210db62df834cdbb13a6c0a887292bfca2f2"
     },
     "rmgpy/rmg/main.py:_add_coverage_dependence_to_cantera_yaml": {
@@ -5200,7 +5200,7 @@
       "reason": "Inserts already-rendered thermo coverage blocks into an existing YAML by exact Chemkin names; does not rebuild or rename molecular records.",
       "file": "rmgpy/rmg/main.py",
       "function": "_add_coverage_dependence_to_cantera_yaml",
-      "line": 2988,
+      "line": 2992,
       "signature": "97ad55a8fa2cf8b2f74b491a1b025dc808081bb8f30d06295d15a71ac1af9658"
     },
     "rmgpy/rmg/main.py:Tee.write": {
@@ -5208,7 +5208,7 @@
       "reason": "Generic byte-preserving diagnostic stream fan-out; takes only strings, performs no molecular naming or reconstruction.",
       "file": "rmgpy/rmg/main.py",
       "function": "Tee.write",
-      "line": 3055,
+      "line": 3059,
       "signature": "81c59c0e5b7611675612830436b7fb2e9832edb38f703c7307f50fc18c18d15a"
     },
     "rmgpy/rmg/main.py:process_profile_stats": {
@@ -5216,7 +5216,7 @@
       "reason": "print(file=...) writes function timing/call-count diagnostics, not species identities.",
       "file": "rmgpy/rmg/main.py",
       "function": "process_profile_stats",
-      "line": 3082,
+      "line": 3086,
       "signature": "78cddbe838b7b68b127406544946151c1ce494ee24bb126e7263b7b481636834"
     },
     "rmgpy/rmg/main.py:make_profile_graph": {
@@ -5224,7 +5224,7 @@
       "reason": "Writes a function-call profiler graph and timing metrics, not molecular drawings.",
       "file": "rmgpy/rmg/main.py",
       "function": "make_profile_graph",
-      "line": 3102,
+      "line": 3106,
       "signature": "d1089cbb7e60fed4691c36fbb827a521adbc3e552c56c45971717e4d8aca58b7"
     },
     "rmgpy/rmg/pdep.py:PDepNetwork.update": {

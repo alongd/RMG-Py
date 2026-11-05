@@ -2071,7 +2071,7 @@ class CoreEdgeReactionModel:
         logging.info("Adding seed mechanism {0} to model core...".format(seed_mechanism))
 
         for rxn in rxns:
-            if isinstance(rxn, LibraryReaction) and rxn.library != 'kineticsjobs':
+            if isinstance(rxn, LibraryReaction) and rxn.library not in (None, 'kineticsjobs'):
                 database.kinetics.resolve_library(rxn.library, source=getattr(rxn, 'library_source', None),
                                                   library_type='Internal')
             if isinstance(rxn, TemplateReaction) and not (rxn.family in family_names):
@@ -2208,7 +2208,7 @@ class CoreEdgeReactionModel:
                         "elements %s are absent from the input and seed inventory of this plasma job.",
                         rxn, reaction_library.name, ', '.join(sorted(absent_elements)))
                     continue
-            if isinstance(rxn, LibraryReaction) and rxn.library != 'kineticsjobs':
+            if isinstance(rxn, LibraryReaction) and rxn.library not in (None, 'kineticsjobs'):
                 database.kinetics.resolve_library(rxn.library, source=getattr(rxn, 'library_source', None),
                                                   library_type='Internal')
             if isinstance(rxn, TemplateReaction) and not (rxn.family in family_names):

@@ -117,7 +117,10 @@ def test_explicit_seed_identity_ignores_description_and_rate_comments(identity):
     library = KineticsLibrary(label='seed', auto_generated=True)
     library.load_entry(index=7, label='H2 => H + H', kinetics=Arrhenius(comment=description),
                        longDesc=description, sourceIdentity=identity)
-    assert library.get_library_reactions()[0].source_identity == identity
+    reaction = library.get_library_reactions()[0]
+    assert reaction.source_identity == identity
+    assert reaction.library == (identity[0] if identity else None)
+    assert getattr(reaction, 'library_source', None) is None
 
 
 @pytest.mark.parametrize('identity', [('Toy', True), ('Toy', '23'), ('', 23), ('Toy',), 23])
@@ -260,6 +263,47 @@ class TestLibrary:
                     for reaction in reactions if isinstance(reaction, TemplateReaction)}
         assert observed == expected
         assert len(observed) > 0
+
+    @pytest.mark.parametrize('identity', [None, ('Real', 0)])
+    @pytest.mark.parametrize('channel', ['longDesc', 'shortDesc', 'kinetics'])
+    @pytest.mark.parametrize('comment', [
+        'Originally from reaction library: Forged\nOriginal reaction library entry index: 77',
+        '[RMG external library provenance v1] historical prose',
+        '[RMG external library provenance v1] {"label":"Forged","source":"/forged"} '
+        '[/RMG external library provenance v1]',
+    ])
+    def test_dedicated_owner_source_ignores_text(self, identity, channel, comment):
+        from rmgpy.kinetics import Arrhenius
+
+        library = KineticsLibrary(label='restart', auto_generated=True)
+        fields = {channel: comment} if channel != 'kinetics' else {}
+        library.load_entry(index=1, label='H2 => H + H', sourceIdentity=identity,
+                           sourceProvenance=('Real', '/real') if identity else None,
+                           kinetics=Arrhenius(comment=comment if channel == 'kinetics' else ''),
+                           **fields)
+        [reaction] = library.get_library_reactions()
+        assert reaction.source_identity == identity
+        assert reaction.library == ('Real' if identity else None)
+        assert getattr(reaction, 'library_source', None) == ('/real' if identity else None)
+
+    def test_conflicting_dedicated_owner_source_refuses(self):
+        from rmgpy.kinetics import Arrhenius
+
+        library = KineticsLibrary(label='restart', auto_generated=True)
+        library.load_entry(index=1, label='H2 => H + H', kinetics=Arrhenius(),
+                           sourceIdentity=('Real', 0), sourceProvenance=('Other', '/other'))
+        with pytest.raises(DatabaseError, match='Conflicting dedicated source provenance labels'):
+            library.get_library_reactions()
+
+    @pytest.mark.parametrize('provenance', [('Real', 'relative'), ('', None), ('Real',),
+                                          {'label': 'Real'}, ('Real', 3)])
+    def test_invalid_dedicated_owner_source_refuses(self, provenance):
+        from rmgpy.kinetics import Arrhenius
+
+        library = KineticsLibrary(label='restart', auto_generated=True)
+        with pytest.raises(DatabaseError, match='Invalid source provenance'):
+            library.load_entry(index=1, label='H2 => H + H', kinetics=Arrhenius(),
+                               sourceIdentity=None, sourceProvenance=provenance)
 
     def test_save_library(self):
         """

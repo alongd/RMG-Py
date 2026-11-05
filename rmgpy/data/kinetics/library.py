@@ -390,10 +390,11 @@ def seed_placement_survives(entry, owner):
 
     The declaration is keyed on the reaction's owner label, and a seed renames
     its container to a fixed label (``seed`` on write, ``restart`` on restart),
-    so the owner survives the round trip only through the per-entry provenance
-    that :meth:`KineticsLibrary.get_library_reactions` parses out of
-    ``entry.long_desc``. This predicate mirrors that reader's branches, in the
-    reader's own order, and MUST be kept in step with it:
+    so the owner survives the round trip through per-entry provenance. New seeds
+    use ``source_provenance`` (or the owner in ``source_identity``), never library
+    declarations in comments. Field-omitting legacy seeds and template authorship
+    still use ``entry.long_desc``. This predicate mirrors those reader branches
+    and MUST be kept in step with them:
 
     1. an ``Originally from reaction library: <label>`` line is parsed back
        into ``LibraryReaction.library``, which ``get_placement_owner`` consults
@@ -413,10 +414,18 @@ def seed_placement_survives(entry, owner):
     seed rather than failing the run that restarts from it.
     """
     long_desc = entry.long_desc or ''
-    for line in long_desc.split('\n'):
-        if 'Originally from reaction library: ' in line:
-            lib = line.replace('Originally from reaction library: ', '').strip()
-            return lib == owner
+    if hasattr(entry, 'source_identity'):
+        provenance = getattr(entry, 'source_provenance', None)
+        identity = entry.source_identity
+        if provenance is not None:
+            return provenance[0] == owner
+        if identity is not None:
+            return identity[0] == owner
+    else:
+        for line in _leading_library_provenance(long_desc).split('\n'):
+            if 'Originally from reaction library: ' in line:
+                lib = line.replace('Originally from reaction library: ', '').strip()
+                return lib == owner
     if 'rate rule' in long_desc:
         family = ''
         for line in long_desc.split('\n'):
@@ -482,11 +491,15 @@ class KineticsLibrary(Database):
             # being written to a library ("family: <label>"), and it is the only carrier
             # when the kinetics comment has been stripped. Constructing the reaction
             # without it discards that provenance at the one point it is still in hand.
-            header = _leading_library_provenance(entry.long_desc) if self.auto_generated else ''
-            provenance = parse_external_library_provenance(header) if self.auto_generated else None
             explicit_identity = getattr(entry, 'source_identity', _SOURCE_IDENTITY_UNSET)
+            # Only field-omitting legacy seeds interpret library provenance in prose.
+            # Even malformed lookalikes are inert when a dedicated identity is present.
+            legacy = self.auto_generated and explicit_identity is _SOURCE_IDENTITY_UNSET
+            header = _leading_library_provenance(entry.long_desc) if legacy else ''
+            provenance = parse_external_library_provenance(header) if legacy else None
+            source_provenance = getattr(entry, 'source_provenance', None) if not legacy else None
             if self.auto_generated and ((explicit_identity is not _SOURCE_IDENTITY_UNSET
-                                         and explicit_identity is not None) or provenance
+                                         and explicit_identity is not None) or source_provenance or provenance
                                         or 'Originally from reaction library: ' in header):
                 declarations = [line.strip().replace('Originally from reaction library: ', '', 1)
                                 for line in header.splitlines()
@@ -495,9 +508,11 @@ class KineticsLibrary(Database):
                     # The dedicated field is authoritative, including explicit None.
                     # Description and rate comments cannot supply either component.
                     identity = explicit_identity
-                    lib = (identity[0] if identity is not None else
-                           provenance['label'] if provenance else
-                           declarations[0] if declarations else self.label)
+                    lib = source_provenance[0] if source_provenance else identity[0]
+                    if identity is not None and lib != identity[0]:
+                        raise DatabaseError('Conflicting dedicated source provenance labels.')
+                    if source_provenance and source_provenance[1] is not None:
+                        provenance = {'label': lib, 'source': source_provenance[1]}
                 elif provenance:
                     lib = provenance['label']
                     if any(declared != lib for declared in declarations):
@@ -565,13 +580,16 @@ class KineticsLibrary(Database):
                 _carry_entry_fields(rxn, entry.item)
             else:  # pdep or standard library reaction
                 rxn = LibraryReaction(reactants=entry.item.reactants[:], products=entry.item.products[:],
-                                      library=self.label, specific_collider=entry.item.specific_collider,
+                                      library=None if self.auto_generated and not legacy else self.label,
+                                      specific_collider=entry.item.specific_collider,
                                       kinetics=entry.data, duplicate=entry.item.duplicate,
                                       reversible=entry.item.reversible, allow_pdep_route=entry.item.allow_pdep_route,
                                       elementary_high_p=entry.item.elementary_high_p,
                                       electrons=entry.item.electrons, entry=entry,
                                       source_identity=None if self.auto_generated else (self.label, entry.index))
                 _carry_entry_fields(rxn, entry.item)
+                if self.auto_generated and not legacy:
+                    rxn.family = self.label  # admission container, not a source owner
             rxns.append(rxn)
 
         return rxns
@@ -859,12 +877,15 @@ class KineticsLibrary(Database):
                    site=None,
                    facet=None,
                    sourceIdentity=_SOURCE_IDENTITY_UNSET,
+                   sourceProvenance=_SOURCE_IDENTITY_UNSET,
                    ):
         """
         Method for parsing entries in database files.
         Note that these argument names are retained for backward compatibility.
         ``sourceIdentity`` is the seed's attached (library, index) pair or explicit
         None. Omission alone enables recovery from a legacy provenance header.
+        ``sourceProvenance`` carries the writer's (owner, external source path)
+        separately from descriptions; the path or the whole pair may be None.
         """
 
         if sourceIdentity is not _SOURCE_IDENTITY_UNSET and sourceIdentity is not None:
@@ -872,6 +893,13 @@ class KineticsLibrary(Database):
                     or not isinstance(sourceIdentity[0], str) or not sourceIdentity[0]
                     or type(sourceIdentity[1]) is not int):
                 raise DatabaseError('Invalid source identity in seed library provenance.')
+        if sourceProvenance is not _SOURCE_IDENTITY_UNSET and sourceProvenance is not None:
+            if (not isinstance(sourceProvenance, tuple) or len(sourceProvenance) != 2
+                    or not isinstance(sourceProvenance[0], str) or not sourceProvenance[0]
+                    or (sourceProvenance[1] is not None
+                        and (not isinstance(sourceProvenance[1], str)
+                             or not os.path.isabs(sourceProvenance[1])))):
+                raise DatabaseError('Invalid source provenance in seed library provenance.')
 
         # reactants = [Species(label=reactant1.strip().splitlines()[0].strip(), molecule=[Molecule().from_adjacency_list(reactant1)])]
         # if reactant2 is not None: reactants.append(Species(label=reactant2.strip().splitlines()[0].strip(), molecule=[Molecule().from_adjacency_list(reactant2)]))
@@ -904,6 +932,8 @@ class KineticsLibrary(Database):
         ), "KineticsLibrary.load_entry")
         if sourceIdentity is not _SOURCE_IDENTITY_UNSET:
             self.entries[index].source_identity = sourceIdentity
+        if sourceProvenance is not _SOURCE_IDENTITY_UNSET:
+            self.entries[index].source_provenance = sourceProvenance
 
     def save(self, path, provenance_source=None):
         """

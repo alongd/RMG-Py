@@ -96,7 +96,10 @@ class TestUntypeableStructureRefusal:
         assert isinstance(exc.__cause__, AtomTypeError)
         assert "Unable to determine atom type" in str(exc)
 
-    def test_two_cells_discriminate(self):
+    def test_two_cells_discriminate(self, monkeypatch):
+        # Database 3ae1ade8a adds Ar_metastable_biradical; remove only that gate to probe the downstream refusal.
+        family = self.database.families['Birad_R_Recombination']
+        monkeypatch.delitem(family.forbidden.entries, 'Ar_metastable_biradical')
         # The whole point: two cells that gave the IDENTICAL anonymous AtomTypeError message now
         # name different families and different species.
         a = self._run("R_Recombination")
@@ -104,6 +107,12 @@ class TestUntypeableStructureRefusal:
         assert a.family != b.family
         assert str(a) != str(b)
         assert a.reactants != b.reactants
+
+    def test_metastable_biradical_is_excluded_before_recipe(self):
+        family = 'Birad_R_Recombination'
+        assert 'Ar_metastable_biradical' in self.database.families[family].forbidden.entries
+        reactants = [_mol(a) for a in CELLS[family]]
+        assert self.database.generate_reactions_from_families(reactants, only_families=[family]) == []
 
     def test_printed_reactant_adjlists_round_trip(self):
         exc = self._run("R_Recombination")

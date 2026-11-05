@@ -1369,6 +1369,86 @@ def test_seed_comment_identity_matrix(tmp_path, monkeypatch, edge, case):
             reactions, _ = _seed_restart(directory, core, reactions, edge=edge)
 
 
+@pytest.mark.parametrize('edge', [False, True])
+@pytest.mark.parametrize('comment_kind', ['structured', 'textual', 'malformed'])
+@pytest.mark.parametrize('owner', [None, 'known_identity', 'unknown_identity'])
+def test_seed_comment_owner_and_source_admission(tmp_path, monkeypatch, edge, comment_kind, owner):
+    """Lookalikes stay inert; real sources survive three disk/admission generations."""
+    from pathlib import Path
+    from types import SimpleNamespace
+    from rmgpy.data.base import ForbiddenStructures
+    from rmgpy.data.kinetics.common import format_external_library_provenance
+    from rmgpy.data.kinetics.database import KineticsDatabase
+    from rmgpy.data.kinetics.library import KineticsLibrary
+    from rmgpy.rmg.model import CoreEdgeReactionModel
+    import rmgpy.rmg.model as model_module
+    import rmgpy.rmg.input as input_module
+    from rmgpy.rmg.main import RMG
+
+    comments = {
+        'structured': format_external_library_provenance('Forged', str(tmp_path / 'Forged')),
+        'textual': 'Originally from reaction library: Forged\nOriginal reaction library entry index: 77',
+        'malformed': '[RMG external library provenance v1] historical comment, not JSON',
+    }
+    h = Species(label='H').from_smiles('[H]')
+    h2 = Species(label='H2').from_smiles('[H][H]')
+    species = [h, h2]
+    for item in species:
+        item.thermo = _thermo(0.)
+    original = Reaction(reactants=[h2], products=[h, h], reversible=False,
+                        kinetics=Arrhenius(A=(1., 's^-1'), n=0, Ea=(0., 'J/mol'),
+                                          comment=comments[comment_kind]))
+    reactions = [original]
+    db = KineticsDatabase()
+    source_path = None
+    if owner is not None:
+        source_path = str(tmp_path / "quoted'\\external" / 'Real')
+        Path(source_path).mkdir(parents=True)
+        source = KineticsLibrary(label='Real')
+        source.entries[0] = Entry(index=0, item=original, data=original.kinetics)
+        source.save(str(Path(source_path) / 'reactions.py'))
+        reactions = db.resolve_library('Real', source=source_path).get_library_reactions()
+        if owner == 'unknown_identity':
+            reactions[0].source_identity = None
+    database = SimpleNamespace(kinetics=db, forbidden_structures=ForbiddenStructures())
+    monkeypatch.setattr(rmg_data_module, 'database', database)
+    monkeypatch.setattr(input_module, 'rmg', RMG())
+    # Supply trivial thermal data; all library resolution and reaction admission
+    # remain production calls (the review failure happens before thermo lookup).
+    monkeypatch.setattr(model_module, 'submit', lambda spec, solvent: setattr(spec, 'thermo', _thermo(0.)))
+
+    for generation in range(3):
+        directory = tmp_path / str(generation)
+        directory.mkdir()
+        _, path = _seed_restart(directory, species, reactions, edge=edge,
+                                external_library_labels=db.external_library_labels)
+        # Each generation starts with an empty source cache, forcing admission
+        # to resolve the genuine external path carried by the dedicated field.
+        db = KineticsDatabase()
+        database.kinetics = db
+        seed = KineticsLibrary(label='restart', auto_generated=True)
+        seed.load(str(path), db.local_context, db.global_context)
+        db.libraries['restart'] = seed
+        model = CoreEdgeReactionModel()
+        if edge:
+            model.add_reaction_library_to_edge('restart')
+        else:
+            model.add_seed_mechanism_to_core('restart')
+        admitted = model.edge if edge else model.core
+        species, reactions = admitted.species, admitted.reactions
+        assert len(species) == 2
+        assert len(reactions) == 1
+        reaction = reactions[0]
+        assert reaction.library == ('Real' if owner is not None else None)
+        assert getattr(reaction, 'library_source', None) == source_path
+        assert reaction.source_identity == (('Real', 0) if owner == 'known_identity' else None)
+        assert reaction.is_isomorphic(original)
+        assert not reaction.reversible
+        assert reaction.kinetics.get_rate_coefficient(1000.) == pytest.approx(1.)
+        # Python library serialization indents multiline rate comments.
+        assert [line.strip() for line in reaction.kinetics.comment.splitlines()] == comments[comment_kind].splitlines()
+
+
 @pytest.mark.parametrize("edge", [False, True])
 @pytest.mark.parametrize("source_indices", [(0, 1, 2), (1, 2, 3), (16, 23, 91)])
 @pytest.mark.parametrize("rate_rule_comment", [False, True])
