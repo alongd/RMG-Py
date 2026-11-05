@@ -885,8 +885,8 @@ def _pinned_reaction_structure(entry):
     return structure
 
 
-def _report10_initialized_rates(reactor, reactions):
-    """Compare initialized identities, actual solver structures, and engine rates."""
+def _report10_reaction_identities(reactions):
+    """Compare model entry identities before solver binding can reject them."""
     contract = json.loads((DATA / 'report10_database_contract.json').read_text())
     pinned = contract['libraries']
     expected = {(name, index) for name, indices in contract['initialized_entries'].items()
@@ -902,6 +902,12 @@ def _report10_initialized_rates(reactor, reactions):
     problems += ['{0}:{1}: extra initialized reaction'.format(*key) for key in sorted(actual.keys() - expected)]
     problems += ['{0}:{1}: duplicate initialized reaction'.format(*key)
                  for key, members in sorted(actual.items()) if len(members) != 1]
+    return pinned, expected, actual, problems
+
+
+def _report10_initialized_rates(reactor, reactions):
+    """Compare initialized identities, actual solver structures, and engine rates."""
+    pinned, expected, actual, problems = _report10_reaction_identities(reactions)
     try:
         for key in sorted(expected & actual.keys()):
             name, index = key
@@ -968,6 +974,11 @@ def _report10_deck(tmp_path, monkeypatch):
             job.initialize()
             core = job.reaction_model.core.species
             rxns = job.reaction_model.core.reactions
+            # Report missing/extra/duplicate entries through the characterization
+            # contract before the energy binder applies its independent guards.
+            _, _, _, problems = _report10_reaction_identities(rxns)
+            if problems:
+                pytest.fail('; '.join(problems) + '; the characterisation must be regenerated')
             r = job.reaction_systems[0]
             solver_settings = job.simulator_settings_list[0]
             r.initialize_model(core, rxns, [], [], atol=solver_settings.atol, rtol=solver_settings.rtol)
