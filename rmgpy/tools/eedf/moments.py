@@ -97,6 +97,9 @@ def _distribution_moments(row, channels):
         cells[:lmin] = 0
         kernel = gamma * energy * cells * widths
         result['k_ine'][j] = kernel.dot(f0)
+        if channel.get('role') == 'rate_only':
+            # The complete N2 collision set already carries the energy loss.
+            continue
         if '<->' in channel['description']:
             if 'statistical_weight_ratio' not in channel:
                 raise EEDFError('reverse cross-section statistical weights not resolved')

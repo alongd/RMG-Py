@@ -176,6 +176,8 @@ def qualification_setup_identity(spec):
             identity[name].pop('path', None)
     for item in identity.get('input_files', {}).values():
         item.pop('path', None)
+    if 'rate_only' in identity:
+        identity['rate_only']['sources'] = sorted(identity['rate_only']['sources'])
     shared = identity.get('shared_objects')
     if isinstance(shared, dict):
         normalized = {}
@@ -339,13 +341,17 @@ def _validate_spec(spec):
                 'held_out', 'repositories', 'output_root', 'scratch_root',
                 'omp_threads', 'max_parallel', 'timeout_s', 'refinement'}
     optional = {'engine_state_map', 'qualification_quantity_rules', 'vibrational_ladders', 'argon_4s_population', 'interpolation_accuracy',
-                'atomic_nitrogen_population', *ARGON_VALIDITY_FIELDS}
+                'atomic_nitrogen_population', 'rate_only', *ARGON_VALIDITY_FIELDS}
     if (not isinstance(spec, dict) or not required <= set(spec) or
             set(spec) - required - optional):
         fields = ((required - set(spec or {})) |
                   (set(spec or {}) - required - optional))
         raise SpecError('spec fields: ' + str(fields))
     _argon_validity_declarations(spec)
+    from rmgpy.tools.eedf.rate_only import validate_spec_sources
+    from rmgpy.tools.eedf.channels import _load_channel_map
+    if 'rate_only' in spec:
+        validate_spec_sources(spec, _load_channel_map(spec['channel_map']))
     from rmgpy.tools.eedf.argon_population import validate_population_axis
     validate_population_axis(spec)
     if 'interpolation_accuracy' in spec:
@@ -511,6 +517,10 @@ def _row_inputs(spec):
         'state_properties', 'working_conditions', 'solver_options', 'screen', 'envelopes',
         'floors', 'tolerances', 'held_out', 'refinement')}
     result.update(_argon_validity_declarations(spec))
+    if 'rate_only' in spec:
+        result['rate_only'] = {
+            'source_sha256': sorted(spec['rate_only']['sources']),
+            'energy_schema': copy.deepcopy(spec['rate_only']['energy_schema'])}
     if 'interpolation_accuracy' in spec:
         result['interpolation_accuracy'] = copy.deepcopy(spec['interpolation_accuracy'])
     if 'argon_4s_population' in spec:

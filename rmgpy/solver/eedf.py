@@ -407,6 +407,8 @@ class EEDFTable:
             from rmgpy.tools.eedf.channels import _validate_map
             _validate_map(manifest['channel_map'])
         _check_model(manifest, current_model, manifest['tolerances']['fingerprint_rtol'])
+        from rmgpy.tools.eedf.rate_only import validate_artifact, check_zero_energy_rows
+        validate_artifact(manifest['channel_map'], manifest['row_inputs'])
         from rmgpy.tools.eedf.argon_population import validate_population_axis
         validate_population_axis(manifest['row_inputs'])
         from rmgpy.tools.eedf.atomic_population import validate_atomic_axes
@@ -481,6 +483,8 @@ class EEDFTable:
                 raise FingerprintMismatch('manifest policy')
             stored_axes = dict(_storage_items(h5['axes']))
             stored_branches = dict(_storage_items(h5['branches']))
+            for group in [h5['held_out'], *stored_branches.values()]:
+                check_zero_energy_rows(manifest['channel_map'], group)
             for name, axis in zip(table._axis_names, table._axes):
                 if not np.array_equal(stored_axes[name][...], axis):
                     raise FingerprintMismatch('HDF5 axis ' + name)

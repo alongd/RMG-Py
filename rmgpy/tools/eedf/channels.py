@@ -60,16 +60,24 @@ def _validate_map(channels):
     required = {'description', 'kind', 'classification', 'threshold_eV',
                 'target_fraction', 'product_fraction', 'sigma_max_m2',
                 'flux_group', 'reaction', 'cross_section'}
-    optional = {'mass_ratio', 'opb_eV', 'statistical_weight_ratio'}
+    numeric_optional = {'mass_ratio', 'opb_eV', 'statistical_weight_ratio'}
+    optional = numeric_optional | {'role', 'source_sha256'}
     if not channels:
         raise SpecError('empty channel map')
     for channel in channels:
+        from rmgpy.tools.eedf.rate_only import PROCESSES
+        if channel['description'] in PROCESSES and channel.get('role') != 'rate_only':
+            raise SpecError('rate-only dissociation cannot be a collision energy entry')
+        if channel.get('role', 'collision') not in ('collision', 'rate_only'):
+            raise SpecError('unsupported EEDF owner role')
+        if channel.get('role') != 'rate_only' and 'source_sha256' in channel:
+            raise SpecError('rate-only source on a collision energy entry')
         if (set(channel) - required - optional or required - set(channel)
                 or channel['classification'] not in ('A', 'B', 'C', 'D')):
             raise SpecError('channel map fields/classification')
         if channel['kind'] not in ('elastic', 'effective', 'excitation', 'vibrational', 'rotational', 'ionization', 'attachment'):
             raise SpecError('unsupported channel power kind')
-        for name in ('threshold_eV', 'sigma_max_m2') + tuple(optional & set(channel)):
+        for name in ('threshold_eV', 'sigma_max_m2') + tuple(numeric_optional & set(channel)):
             value = channel[name]
             if type(value) not in (int, float) or not np.isfinite(value) or value < 0:
                 raise SpecError('invalid channel ' + name)
@@ -245,6 +253,9 @@ def _effective_elastic_section(source, sections, states):
 def _validate_physical_map(channels, spec, coordinates):
     """Refuse verdict-changing metadata that differs from actual solver inputs."""
     _validate_map(channels)
+    from rmgpy.tools.eedf.rate_only import validate_spec_sources
+    validate_spec_sources(spec, channels)
+    channels = [c for c in channels if c.get('role') != 'rate_only']
     gas, _ = _physical_properties(spec)
     sections = {}
     for entry in spec['input_files'].values():

@@ -42,13 +42,18 @@ cdef class EEDFChannel(KineticsModel):
     ``yield_table_sha256`` together. These immutable fields select one product
     of a complete family; cascade branches can only use the inferior side.
     The marker deliberately carries no standalone rate law.
+    ``role='rate_only'`` supplies forward dissociation chemistry covered by
+    the complete N2 energy inventory; it cannot bind an energy-loss entry.
     """
 
     def __init__(self, process='', collision_set='', side='ine', Tmin=None, Tmax=None, Pmin=None, Pmax=None,
-                 comment='', branch_product=None, branch_yield=None, yield_table_sha256=None):
+                 comment='', branch_product=None, branch_yield=None, yield_table_sha256=None,
+                 role='collision'):
         # Validate before changing state, including explicit reinitialization
         # through native-record reconstruction. Ordinary markers need no source.
         from rmgpy.tools.eedf.ownership import validate_branch_metadata
+        from rmgpy.tools.eedf.rate_only import validate_rate_only_marker
+        validate_rate_only_marker(role, side, branch_product)
         validate_branch_metadata(branch_product, branch_yield, yield_table_sha256, side)
         KineticsModel.__init__(
             self, Tmin=Tmin, Tmax=Tmax, Pmin=Pmin, Pmax=Pmax, comment=comment
@@ -58,7 +63,13 @@ cdef class EEDFChannel(KineticsModel):
         self._branch_product = branch_product
         self._branch_yield = branch_yield
         self._yield_table_sha256 = yield_table_sha256
+        self._role = role
         self.side = side
+
+    property role:
+        """Collision energy owner or forward chemical-only rate owner."""
+        def __get__(self):
+            return self._role
 
     property branch_product:
         """Sourced product state, or None for an ordinary owner."""
@@ -86,6 +97,8 @@ cdef class EEDFChannel(KineticsModel):
             return self._side
 
         def __set__(self, value):
+            if self._role == 'rate_only' and value != 'ine':
+                raise ValueError('rate-only owner cannot use a superelastic side')
             if value not in ("ine", "sup"):
                 raise ValueError("EEDFChannel side must be 'ine' or 'sup'.")
             if self._branch_product is not None and value != 'ine':
@@ -110,6 +123,8 @@ cdef class EEDFChannel(KineticsModel):
         if self.branch_product is not None:
             string += ', branch_product={0!r}, branch_yield={1!r}, yield_table_sha256={2!r}'.format(
                 self.branch_product, self.branch_yield, self.yield_table_sha256)
+        if self.role != 'collision':
+            string += ', role={0!r}'.format(self.role)
         return string + ')'
 
     def __reduce__(self):
@@ -118,8 +133,10 @@ cdef class EEDFChannel(KineticsModel):
             self.process, self.collision_set, self.side,
             self.Tmin, self.Tmax, self.Pmin, self.Pmax, self.comment,
         )
-        if self.branch_product is not None:
+        if self.branch_product is not None or self.role != 'collision':
             args += (self.branch_product, self.branch_yield, self.yield_table_sha256)
+        if self.role != 'collision':
+            args += (self.role,)
         return EEDFChannel, args
 
     cpdef double get_rate_coefficient(self, double T, double P=0.0) except -1:
@@ -138,6 +155,7 @@ cdef class EEDFChannel(KineticsModel):
             self.process == (<EEDFChannel>other_kinetics).process
             and self.collision_set == (<EEDFChannel>other_kinetics).collision_set
             and self.side == (<EEDFChannel>other_kinetics).side
+            and self.role == (<EEDFChannel>other_kinetics).role
             and self.branch_product == (<EEDFChannel>other_kinetics).branch_product
             and self.branch_yield == (<EEDFChannel>other_kinetics).branch_yield
             and self.yield_table_sha256 == (<EEDFChannel>other_kinetics).yield_table_sha256

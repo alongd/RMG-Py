@@ -221,6 +221,9 @@ def _setup_text(spec, coordinates, fields_Td, folder):
     """Write a complete legacy setup from explicit, fingerprinted properties."""
     spec, coordinates, fields_Td = copy.deepcopy(
         (spec, coordinates, fields_Td))
+    from rmgpy.tools.eedf.rate_only import SOURCE_SHA256
+    if any(item['sha256'] == SOURCE_SHA256 for item in spec['input_files'].values()):
+        raise LoKIError('rate-only input cannot be a normal collision input')
     state = {name: item['reference'] for name, item in spec['envelopes'].items()}
     state.update(coordinates)
     wc = copy.deepcopy(spec['working_conditions'])
@@ -573,17 +576,19 @@ def _enrich_row(row, channel_map, spec):
     """Add collision powers, attachment moments, physical inputs and floor flags."""
     caller_row = row
     row, channel_map, spec = copy.deepcopy((row, channel_map, spec))
-    by_description = {entry['description']: entry for entry in channel_map}
-    if (len(by_description) != len(channel_map)
+    physical_channels = [c for c in channel_map if c.get('role') != 'rate_only']
+    by_description = {entry['description']: entry for entry in physical_channels}
+    if (len(by_description) != len(physical_channels)
             or set(row['channels']) != set(by_description)):
         raise LoKIError('channel map does not exactly cover the solver collision set')
     # LoKI's derived Elastic row is adjacent to its Effective source, but other
     # collision families may be emitted in a different order from the inputs.
-    if len(row['channels']) != len(channel_map):
+    if len(row['channels']) != len(physical_channels):
         raise LoKIError('duplicate solver collision identity')
-    indices = [row['channels'].index(channel['description']) for channel in channel_map]
     for name in ('k_ine', 'k_sup'):
-        row[name] = np.asarray(row[name])[indices]
+        row[name] = np.asarray([0. if c.get('role') == 'rate_only' else
+                               row[name][row['channels'].index(c['description'])]
+                               for c in channel_map])
     row['channels'] = [channel['description'] for channel in channel_map]
     _validate_physical_map(channel_map, spec, row['composition'])
     state = {name: env['reference'] for name, env in spec['envelopes'].items()}
@@ -619,7 +624,11 @@ def _enrich_row(row, channel_map, spec):
         from rmgpy.tools.eedf.moments import _distribution_moments
         physical = dict(row, product_fractions=np.asarray(products),
                         gas_temperature_K=state.get('Tg_K', spec['Tg_K']))
-        row['channel_power'] = _distribution_moments(physical, channel_map)['channel_power']
+        moments = _distribution_moments(physical, channel_map)
+        row['channel_power'] = moments['channel_power']
+        for i, channel in enumerate(channel_map):
+            if channel.get('role') == 'rate_only':
+                row['k_ine'][i] = moments['k_ine'][i]
     elastic = [i for i, channel in enumerate(channel_map) if channel['kind'] == 'elastic']
     if elastic and 'power_groups' in row:
         if len(elastic) > 1 and not all('cross_section' in channel and 'mass_ratio' in channel for channel in channel_map if channel['kind'] == 'elastic'):

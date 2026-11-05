@@ -191,6 +191,8 @@ def _maxwellian_row(source, manifest):
         raise SpecError('nonpositive source rate floor')
     momentum = np.zeros_like(edges)
     for j, channel in enumerate(channels):
+        if channel.get('role') == 'rate_only':
+            continue
         section = channel.get('cross_section', {})
         x = np.asarray(section.get('energy_eV', []), dtype=float)
         sigma = np.asarray(section.get('sigma_m2', []), dtype=float)

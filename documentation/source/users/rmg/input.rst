@@ -2849,3 +2849,31 @@ six-block solver realization. The converter preserves the existing collision
 map and verifies the three ordinary excitation/superelastic owner pairs.
 It writes ``atomic-spec.json`` and a provenance/node-count report; it does
 not run the solver or qualify the resulting table.
+
+Rate-only nitrogen dissociation owners
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``EEDFChannel(..., role='rate_only')`` identifies a forward chemical rate
+integrated over the solved EEDF without adding a Boltzmann collision or an
+electron energy sink. This role is limited to the two sourced N2 dissociation
+branches in ``PlasmaAtomicNitrogen``. It cannot use a superelastic side or
+cascade yield, and cannot appear in ``electron_energies``. Atomic N excitation
+and superelastic owners remain ordinary collisions with full energy accounting.
+
+The table spec keeps the pinned extra cross-section source separate from
+``input_files``. Its ``rate_only`` declaration lists source hashes and a complete
+chemical/energy schema: all chemical owners, the physical energy-operator hash,
+and complete N2 energy coverage including sing-sup. Event curves and thresholds
+differ from sing-sup; this is a declared complete-set coverage approximation.
+Missing coverage, duplicate owners, chemical/schema mismatch, or nonzero energy
+in a chemical-only column causes refusal. Source files remain local.
+
+After adding the atomic axes with ``rmgpy.tools.eedf.atomic``, prepare the
+chemical-owner spec without generating a production table::
+
+    python -m rmgpy.tools.eedf.rate_only --base-spec atomic-spec.json \
+        --database /path/to/RMG-database --source /path/to/N2_LXCat_extra.txt \
+        --output-directory /fresh/dissociation-spec
+
+The two chemical columns add no grid axes or Boltzmann solves. Production T10
+qualification is still required on the final combined artifact.

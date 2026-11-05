@@ -3003,6 +3003,8 @@ cdef class PlasmaReactor(ReactionSystem):
                     'EEDFChannel process {0!r} resolves to {1} table columns'.format(
                         kin.process, len(matches)))
             column = matches[0]
+            if getattr(kin, 'role', 'collision') != channels[column].get('role', 'collision'):
+                raise PlasmaStateError('EEDF owner role differs from table energy schema')
             if column in families:
                 family = families[column]
                 try:
@@ -3499,6 +3501,8 @@ cdef class PlasmaReactor(ReactionSystem):
                     'electron_energies declares {0}:{1}, but that reaction contains no '
                     'electron and cannot carry a heavy-particle electron energy'.format(*source))
             if j in self.eedf_reaction_map:
+                if getattr(rxn.kinetics, 'role', 'collision') == 'rate_only':
+                    raise PlasmaStateError('rate-only owner cannot bind an electron energy entry')
                 side = self.eedf_reaction_map[j][1]
                 if side == 'sup':
                     raise PlasmaStateError(
@@ -3827,7 +3831,7 @@ cdef class PlasmaReactor(ReactionSystem):
         q_inelastic_channels = np.zeros(len(channel_losses))
         q_superelastic_channels = np.zeros(len(channel_losses))
         for j, kind in enumerate(kinds):
-            if kind == 'elastic':
+            if kind == 'elastic' or channels[j].get('role') == 'rate_only':
                 continue
             if kind == 'attachment':
                 q_inelastic_channels[j] = channel_losses[j]

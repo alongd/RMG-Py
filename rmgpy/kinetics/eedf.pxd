@@ -33,6 +33,7 @@ cdef class EEDFChannel(KineticsModel):
     cdef public object process
     cdef public object collision_set
     cdef str _side
+    cdef str _role
     cdef object _branch_product
     cdef object _branch_yield
     cdef object _yield_table_sha256

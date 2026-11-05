@@ -653,6 +653,8 @@ class EEDFProvider:
                 raise ValueError('channel column is not reaction-owned A chemistry')
             if side not in ('ine', 'sup'):
                 raise ValueError('invalid channel side ' + repr(side))
+            if channel.get('role') == 'rate_only' and side != 'ine':
+                raise ValueError('rate-only chemistry has no superelastic owner')
             if column in families:
                 if len(location) != 3 or side != 'ine':
                     raise ValueError('cascade family requires a weighted inferior product owner')
