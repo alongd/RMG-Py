@@ -56,6 +56,162 @@ fixture_table = runpy.run_path(
     str(Path(__file__).parents[2] / 'solver' / 'eedfTableTest.py'))['fixture_table']
 
 
+def publication_fixture(tmp_path, monkeypatch, *, failure=None):
+    """Exercise real storage, branch detection and T10 with analytic transport.
+
+    Stub external setup and legacy comparisons, whose individual physical
+    criteria have separate tests. Inject their failures at the publication
+    boundary; keep the T10 comparator and production loader real.
+    """
+    from rmgpy.tools.eedf.schema import _content_hash
+
+    path, model = fixture_table(tmp_path / 'seed')
+    seed = EEDFTable.load(path, model, artifact_sha256=_file_hash(path / 'table.h5'))
+    manifest = seed.manifest
+    channels = manifest['channel_map']
+    if failure == 'classification':
+        channels[0]['classification'] = 'C'
+    channel_path = tmp_path / 'channels.json'
+    channel_path.write_text(json.dumps(channels))
+    spec = {
+        'axes': {'u': [0., 1., 2., 3.]},
+        'held_out': {'cell_midpoints': True, 'lhs_count': 0, 'seed': 7,
+                     'off_centre': [{'u': .25}]},
+        'interpolation_accuracy': {name: {'rtol': .01, 'atol': 0.}
+                                   for name in ('mobility_N', 'field_power')},
+        'channel_map': {'path': str(channel_path), 'sha256': _file_hash(channel_path)},
+        'tolerances': {'G1': {'rtol': 1.e-6, 'atol': 0.}},
+        'refinement': {'max_rounds': 0}, 'max_parallel': 1,
+        'scratch_root': str(tmp_path / 'scratch'),
+        'output_root': str(tmp_path / 'tables'),
+    }
+    calls = []
+
+    def inputs(candidate, mapping):
+        return dict(model, axes=copy.deepcopy(candidate['axes']))
+
+    def make_manifest(candidate, driver, mapping, screen, scans, row, command):
+        result = copy.deepcopy(manifest)
+        result.update(row_inputs=inputs(candidate, mapping), axes=candidate['axes'],
+                      fingerprint=_content_hash(inputs(candidate, mapping)),
+                      branch_detection=scans, limitations=[], generation_seconds=0.,
+                      branch_certification={branch: 'uncertified: unseeded scans'
+                                            for branch in scans[0]['branch_sources']})
+        return result
+
+    def solve(driver, mapping, candidate, coordinate, values, label):
+        calls.append((label, list(values)))
+        rows = []
+        for u in values:
+            row = seed.row(0., {})._as_dict()
+            row.update(u=u, EN_Td=float(np.exp(u)), composition={}, setup=label,
+                       converged=True, iteration_count=-1)
+            row['swarm']['mean_energy_eV'] = 1. + u
+            row['swarm']['mobility_N'] = (1. + .15 * u) * 1.e24
+            if failure == 't10' and label.startswith('t10_'):
+                row['swarm']['mobility_N'] *= 1.1
+            if failure == 'branch' and label.endswith('_down'):
+                row['swarm']['mobility_N'] *= 1.1
+            row['power_groups']['field'] = row['swarm']['mobility_N'] * (row['EN_Td'] * 1.e-21) ** 2
+            if failure == 'source' and '_held' not in label:
+                row['power_groups']['field'] *= 1.01
+            rows.append(row)
+        return rows
+
+    def compare(predicted, reference, candidate):
+        passed = not (failure == 'legacy' and not reference['setup'].startswith('t10_'))
+        return [{'rule': 'H1', 'quantity': 'fixture', 'index': [],
+                 'absolute_error': 0. if passed else 1., 'relative_error': 0. if passed else 1.,
+                 'allowed_error': 0., 'passed': passed}]
+
+    monkeypatch.setattr(generation, '_validate_spec', lambda candidate: None)
+    monkeypatch.setattr(generation, '_validate_map', lambda mapping: None)
+    monkeypatch.setattr(generation, '_screen', lambda *args: [])
+    monkeypatch.setattr(generation, 'LoKIDriver', lambda candidate: object())
+    monkeypatch.setattr(generation, '_model_inputs', inputs)
+    monkeypatch.setattr(generation, '_manifest', make_manifest)
+    monkeypatch.setattr(generation, '_solve', solve)
+    monkeypatch.setattr(generation, '_compare_row', compare)
+    monkeypatch.setattr(validation, '_compare_row', compare)
+    return spec, calls, inputs
+
+
+@pytest.mark.parametrize('failure', [None, 'legacy', 't10', 'source', 'classification'])
+def test_generate_publishes_only_when_all_qualification_gates_pass(
+        tmp_path, monkeypatch, failure):
+    spec, calls, inputs = publication_fixture(tmp_path, monkeypatch, failure=failure)
+    path = generate(spec, command_line=['pytest publication'])
+    manifest = json.loads((path / 'manifest.json').read_text())
+    assert manifest['accepted'] is (failure is None)
+    t10 = [v for v in manifest['held_out_verdicts'] if 'criteria' in v]
+    legacy = [v for v in manifest['held_out_verdicts'] if 'criteria' not in v]
+    assert len(t10) == len(legacy) == len(manifest['held_out']) == 4
+    assert [v['point'] for v in t10] == manifest['held_out']
+    assert all(v['criteria'] == spec['interpolation_accuracy'] for v in t10)
+    assert all(v['reference'] == 'fresh direct solver output' for v in t10)
+    assert len([label for label, _ in calls if label.startswith('t10_')]) == 4
+    assert manifest['T10 interpolation qualification']['passed'] is (failure != 't10')
+    assert '| T10 | 8 |' in (path / 'validation.md').read_text()
+    assert json.loads((path / 'generation_spec.json').read_text()) == spec
+    if failure is None:
+        loaded = EEDFTable.load(path, inputs(spec, []), artifact_sha256=manifest['artifact_sha256'])
+        assert loaded.manifest['accepted']
+        # The fresh results are bound to the HDF5 qualification digest.
+        manifest['held_out_verdicts'][-1]['criteria']['mobility_N']['rtol'] = .5
+        (path / 'manifest.json').write_text(json.dumps(manifest))
+        with pytest.raises(FingerprintMismatch, match='qualification'):
+            EEDFTable.load(path, inputs(spec, []), artifact_sha256=manifest['artifact_sha256'])
+    else:
+        with pytest.raises(FingerprintMismatch, match='qualification'):
+            EEDFTable.load(path, inputs(spec, []), artifact_sha256=manifest['artifact_sha256'])
+
+
+def test_generate_refines_t10_failures_without_promoting_retained_points(tmp_path, monkeypatch):
+    spec, calls, inputs = publication_fixture(tmp_path, monkeypatch, failure='t10')
+    spec['refinement']['max_rounds'] = 1
+    path = generate(spec)
+    manifest = json.loads((path / 'manifest.json').read_text())
+    history = manifest['refinement_history']
+    assert len(history) == 2
+    assert history[0]['failing_points'] == [{'u': .25}, {'u': .5}, {'u': 1.5}, {'u': 2.5}]
+    assert len(history[1]['axes']['u']) > len(history[0]['axes']['u'])
+    assert all(point['u'] not in spec['axes']['u'] for point in manifest['held_out'])
+    assert len(manifest['held_out']) > 4
+    assert not manifest['accepted']
+
+
+def test_generate_without_frozen_criteria_stays_unaccepted(tmp_path, monkeypatch):
+    spec, calls, inputs = publication_fixture(tmp_path, monkeypatch)
+    del spec['interpolation_accuracy']
+    path = generate(spec)
+    manifest = json.loads((path / 'manifest.json').read_text())
+    assert not manifest['accepted']
+    assert not any(label.startswith('t10_') for label, _ in calls)
+    assert manifest['T10 interpolation qualification']['verdict_count'] == 0
+
+
+@pytest.mark.parametrize('failure', ['branch', 'off_centre', 'fingerprint'])
+def test_generate_refuses_unqualified_branch_or_point_identity(tmp_path, monkeypatch, failure):
+    spec, calls, inputs = publication_fixture(tmp_path, monkeypatch, failure=failure)
+    message = 'multi-branch'
+    if failure == 'off_centre':
+        spec['held_out']['off_centre'] = [{'u': 0.}]
+        message = 'training grid'
+    elif failure == 'fingerprint':
+        original = generation._manifest
+
+        def changed_inputs(*args):
+            result = original(*args)
+            monkeypatch.setattr(generation, '_model_inputs', lambda *args: {'changed': True})
+            return result
+
+        monkeypatch.setattr(generation, '_manifest', changed_inputs)
+        message = 'fingerprint'
+    with pytest.raises(EEDFError, match=message):
+        generate(spec)
+    assert not Path(spec['output_root']).exists()
+
+
 def test_channel_map_replacement_between_hash_and_parse(tmp_path, monkeypatch):
     mapping = tmp_path / 'channels.json'
     original = [{'reaction': None}]
@@ -955,6 +1111,7 @@ def test_real_pure_ar_table_passes_legacy_checks_but_awaits_t10(
         pytest.skip('EEDF_REAL_SPEC supplies the pinned real LoKI integration fixture')
     from rmgpy.tools.eedf.schema import load_spec
     spec = load_spec(spec_path)
+    spec.pop('interpolation_accuracy', None)
     spec['axes']['u'] = np.linspace(np.log(16), np.log(18), 9).tolist()
     spec['held_out']['lhs_count'] = 4
     spec['held_out']['off_centre'] = [{'u': spec['axes']['u'][0]}]

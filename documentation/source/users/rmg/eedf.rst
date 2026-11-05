@@ -201,10 +201,17 @@ The generator compares ascending, descending and independent cold scans and
 preserves distinct observed paths as separate branch tensors. It never
 averages different EEDFs. Branch count or correspondence changes across the
 composition tensor refuse generation. Generation records the source-identity
-and legacy held-out checks, but always publishes a provisional artifact with
-``accepted=False`` and a blocked T10 accuracy verdict; its CLI therefore exits
-with status 2. Runtime identity records that field power is mobility-derived by
-construction, but is explicitly not an interpolation-accuracy claim.
+and legacy held-out checks. When the spec supplies ``interpolation_accuracy``
+with frozen ``rtol`` and ``atol`` for both ``mobility_N`` and ``field_power``,
+the generator also calls ``qualify_interpolation`` on each candidate grid.
+It retains the fresh verdicts alongside the original held-out checks and
+refines failing cells without promoting any retained point into training.
+Acceptance requires all of these checks, native source identity, and production
+channel classifications to pass. The content-addressed artifact binds the
+verdicts into its HDF5 qualification digest. Missing criteria or failed checks
+publish ``accepted=False``; the CLI exits with status 2 instead of 0.
+Runtime identity records that field power is mobility-derived by construction,
+but is explicitly not an interpolation-accuracy claim.
 
 The public offline ``qualify_interpolation`` wrapper supplies the separate T10
 accuracy evidence. It requires frozen ``mobility_N`` and ``field_power``

@@ -327,7 +327,10 @@ def generate(spec, command_line=None):
 
     Failing cells get third-point nodes; old held-out points remain held out.
     A failed verdict publishes an explicitly unaccepted artifact and every
-    failing quantity. No tolerance is relaxed. The caller's grid is updated
+    failing quantity. When ``interpolation_accuracy`` is supplied, fresh T10
+    solves also qualify every retained point and drive refinement. Acceptance
+    requires both sets of held-out checks and the production admission gates.
+    No tolerance is relaxed. The caller's grid is updated
     to the exact screened/refined grid, for current-model fingerprint checks.
     """
     if type(spec) is not dict:
@@ -426,9 +429,6 @@ def generate(spec, command_line=None):
                 verdicts.append(result)
                 if not passed:
                     failures.append(point)
-        history.append({'round': round_index, 'axes': copy.deepcopy(axes), 'held_out_count': len(held),
-                        'failing_points': failures})
-        manifest['held_out_verdicts'] = verdicts
         manifest['T10 interpolation qualification'] = {
             'check': 'T10 interpolation qualification',
             'criterion': 'separately frozen mobility and field-power accuracy criteria',
@@ -436,7 +436,30 @@ def generate(spec, command_line=None):
             'passed': False,
             'blocker': 'T10 accuracy criteria have not been supplied',
         }
-        manifest['accepted'] = False
+        if 'interpolation_accuracy' in spec:
+            qualified = qualify_interpolation(table, spec)
+            # Keep the original independent references as well as fresh T10
+            # results. Neither can conceal a failure in the other set.
+            verdicts.extend(qualified)
+            failures.extend(result['point'] for result in qualified
+                            if not result['passed'])
+            manifest['T10 interpolation qualification'] = {
+                'check': 'T10 interpolation qualification',
+                'criterion': 'separately frozen mobility and field-power accuracy criteria',
+                'verdict_count': len(qualified),
+                'passed': bool(qualified) and all(result['passed'] for result in qualified),
+            }
+        history.append({'round': round_index, 'axes': copy.deepcopy(axes), 'held_out_count': len(held),
+                        'failing_points': copy.deepcopy(failures)})
+        manifest['held_out_verdicts'] = verdicts
+        manifest['accepted'] = (
+            bool(verdicts) and all(
+                result['passed'] and bool(result['checks']) and
+                all(check['passed'] for check in result['checks'])
+                for result in verdicts) and
+            manifest['T10 interpolation qualification']['passed'] and
+            manifest['A6b-source']['passed'] and
+            all(channel['classification'] in ('A', 'B') for channel in channel_map))
         manifest['refinement_history'] = history
         if not failures or round_index == spec['refinement']['max_rounds']:
             manifest['generation_seconds'] = time.monotonic() - started
@@ -468,7 +491,7 @@ def _validation_report(manifest):
                  'PASS' if manifest['T10 interpolation qualification']['passed']
                  else 'FAIL'), '',
              '| rule | checks | failures | maximum relative error |', '|---|---:|---:|---:|']
-    for rule in ('H1', 'H2', 'H3', 'H4', 'F0', 'consistency', 'channel_power_sum'):
+    for rule in ('H1', 'H2', 'H3', 'H4', 'F0', 'consistency', 'channel_power_sum', 'T10'):
         checks = [check for result in manifest['held_out_verdicts'] for check in result['checks'] if check['rule'] == rule]
         relative = [check['relative_error'] for check in checks if check['relative_error'] is not None]
         lines.append(f"| {rule} | {len(checks)} | {sum(not check['passed'] for check in checks)} | {max(relative, default=0):.6g} |")
