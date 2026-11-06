@@ -1,7 +1,7 @@
 #!/bin/bash
 #PBS -N field-drive-table
 #PBS -q mafat_new_q
-#PBS -l select=1:ncpus=5:mem=16gb
+#PBS -l select=1:ncpus=15:mem=16gb
 #PBS -l walltime=24:00:00
 #PBS -j oe
 set -euo pipefail
@@ -10,6 +10,7 @@ export ROOT="$PWD"
 export RESULTS="$ROOT/results"
 mkdir -p "$RESULTS" "$ROOT/raw-logs"
 exec >"$RESULTS/stdout.log" 2>"$RESULTS/stderr.log"
+date +%s >"$RESULTS/job-started-epoch"
 active_step=bootstrap
 collect_tail() {
     for stream in stdout stderr; do
@@ -49,7 +50,7 @@ step() {
         exit "$code"
     fi
 }
-step archive-job-recipe cp job.pbs run_table.py job_loki.py loki_preflight.py apply_loki_patch.py growth-mixing.patch growth-mixing-provenance.json "$RESULTS/"
+step archive-job-recipe cp job.pbs run_table.py job_loki.py node_scaling.py loki_preflight.py apply_loki_patch.py growth-mixing.patch growth-mixing-provenance.json "$RESULTS/"
 mark environment
 ulimit -c 0
 printf 'INHERITED_LD_LIBRARY_PATH=%s\nINHERITED_LD_PRELOAD=%s\n' "${LD_LIBRARY_PATH-}" "${LD_PRELOAD-}"
@@ -58,6 +59,7 @@ unset CFLAGS CXXFLAGS CPPFLAGS LDFLAGS CMAKE_PREFIX_PATH CMAKE_TOOLCHAIN_FILE
 unset CC CXX FC F77 F90 LDSHARED LIBRARY_PATH CPATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH GCC_EXEC_PREFIX COMPILER_PATH
 export PATH=${HOME}/miniconda3/envs/rmg_env/bin:/usr/bin:/bin
 export CONDA_PREFIX=${HOME}/miniconda3/envs/rmg_env
+export PBS_NCPUS=15
 export PYTHONDONTWRITEBYTECODE=1 OMP_NUM_THREADS=5 OMP_DYNAMIC=FALSE OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 export TMPDIR="$ROOT/tmp" PYTHONPATH="$ROOT/rmg"
 mkdir tmp rmg loki-src
@@ -97,6 +99,13 @@ step cmake-configure ./cmake-build/bin/cmake -S loki-src -B loki-build \
     -DCMAKE_BUILD_RPATH="$ROOT/loki-build/runtime"
 step cmake-build ./cmake-build/bin/cmake --build loki-build --target loki --parallel 2
 step loki-linkage bash -c 'ldd "$ROOT/loki-build/app/loki" >"$RESULTS/loki-build.ldd"; cat "$RESULTS/loki-build.ldd"; ! grep -E "not found|gcc14[.]1" "$RESULTS/loki-build.ldd"'
+# First scientific execution: measure this node before production work.
+step node-scaling python -u node_scaling.py
+decision=$(python -c 'import json; print("continue" if json.load(open("results/node-scaling.json"))["continue"] else "stop")')
+if [ "$decision" = stop ]; then
+    mark node-scaling-refused
+    exit 0
+fi
 step loki-single-coordinate-preflight python -u loki_preflight.py
 step unpack-cython bash -c 'mkdir build-tools; tar -xJf cython-3.1.3.tar.xz -C build-tools'
 step build-rmg python -u build_rmg.py

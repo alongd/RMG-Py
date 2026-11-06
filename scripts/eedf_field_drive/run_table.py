@@ -38,7 +38,7 @@ import sys
 import time
 import tarfile
 import numpy as np
-from job_loki import prepare_spec, install_refusal_capture
+from job_loki import prepare_spec, install_row_timing, install_refusal_capture
 import scipy
 import scipy.constants
 import rmgpy
@@ -55,6 +55,7 @@ assert Path(rmgpy.__file__).resolve().is_relative_to(root / 'rmg')
 assert Path(plasma.__file__).resolve().is_relative_to(root / 'native')
 spec = prepare_spec(root)
 install_refusal_capture(root)
+install_row_timing(root)
 # Persist numerical identities even when the physical gate refuses this runtime.
 from rmgpy.tools.eedf.channels import _gas_values, _load_channel_map, electron_mass
 from rmgpy.tools.eedf.integrity import _physical_properties

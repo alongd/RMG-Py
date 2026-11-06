@@ -33,7 +33,7 @@ from pathlib import Path
 import uuid
 import numpy as np
 
-from job_loki import prepare_spec, install_refusal_capture, capture_logs
+from job_loki import prepare_spec, install_row_timing, install_refusal_capture, capture_logs
 from rmgpy.tools.eedf.loki import LoKIDriver
 from rmgpy.tools.eedf.schema import _validate_spec
 
@@ -41,6 +41,7 @@ root = Path(__file__).resolve().parent
 spec = prepare_spec(root)
 _validate_spec(spec)
 install_refusal_capture(root)
+install_row_timing(root)
 # Index18 is the reproduced refusal; this selects a diagnostic witness,
 # without editing the frozen grid or numerical settings.
 index = 18

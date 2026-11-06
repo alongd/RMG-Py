@@ -29,6 +29,9 @@
 
 """Job-only LoKI preparation and bounded failure evidence; solver files stay unchanged."""
 import functools
+import fcntl
+import resource
+import time
 import json
 import os
 from pathlib import Path
@@ -50,8 +53,9 @@ def prepare_spec(root):
     spec = json.loads((root / 'spec-template.json').read_text())
     # Runtime scheduling only: keep frozen physical inputs and qualification criteria.
     # The solver uses a clean environment derived from spec, not inherited OMP settings.
-    spec.update(omp_threads=int(os.environ['OMP_NUM_THREADS']), max_parallel=1)
+    spec.update(omp_threads=int(os.environ['OMP_NUM_THREADS']))
     assert spec['omp_threads'] == 5
+    assert spec['max_parallel'] == 3 and spec['timeout_s'] == 6200
     print('SOLVER_RESOURCES', spec['omp_threads'], spec['max_parallel'], flush=True)
     for item in spec['input_files'].values():
         item['path'] = str(root / item['path'])
@@ -152,3 +156,54 @@ def record_build_provenance(root, spec):
     text = json.dumps(record, indent=2) + '\n'
     (root / 'results/loki-build-provenance.json').write_text(text)
     (root / 'loki-build/growth-mixing-build.json').write_text(text)
+
+
+def install_row_timing(root):
+    """Record each isolated solver call, including refusals, in results/."""
+    original = LoKIDriver.run_prepared
+    target = Path(root) / 'results/row-timings.jsonl'
+    target.parent.mkdir(parents=True, exist_ok=True)
+
+    def emit(record):
+        with target.open('a') as stream:
+            fcntl.flock(stream, fcntl.LOCK_EX)
+            stream.write(json.dumps(record, allow_nan=False) + '\n')
+            stream.flush()
+            fcntl.flock(stream, fcntl.LOCK_UN)
+
+    @functools.wraps(original)
+    def timed(self, bundle):
+        record = {
+            'job_name': bundle.job_name, 'pid': os.getpid(),
+            'coordinate': bundle.coordinate_values,
+            'fields': len(bundle.fields_Td), 'fields_Td': list(bundle.fields_Td),
+            'timeout_s': bundle.spec['timeout_s'],
+            'started_utc': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+        }
+        before = resource.getrusage(resource.RUSAGE_CHILDREN)
+        start = time.monotonic()
+        emit(dict(record, event='start', status='running'))
+        try:
+            rows = original(self, bundle)
+        except BaseException as error:
+            record.update(status='refused', exception=type(error).__name__,
+                          message=str(error))
+            raise
+        else:
+            record.update(status='passed', returned_rows=len(rows))
+            return rows
+        finally:
+            usage = resource.getrusage(resource.RUSAGE_CHILDREN)
+            record.update(
+                event='end', ended_utc=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+                wall_seconds=time.monotonic() - start,
+                child_user_seconds=usage.ru_utime - before.ru_utime,
+                child_system_seconds=usage.ru_stime - before.ru_stime)
+            try:
+                emit(record)
+            except Exception:
+                if record['status'] == 'passed':
+                    raise
+                # An evidence-write failure must not conceal the solver refusal.
+                print('LOKI_TIMING_WRITE_FAILED ' + bundle.job_name, flush=True)
+    LoKIDriver.run_prepared = timed
