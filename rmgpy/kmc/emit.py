@@ -10,6 +10,10 @@ Two steps, both from the command line::
     python -m rmgpy.kmc.emit index ARTIFACT --out INDEX
     python -m rmgpy.kmc.emit prepare ARTIFACT ROSTER --database DB --shards N --out DIR
         [--family F]... [--index INDEX] [--legacy-artifact]
+    python -m rmgpy.kmc.emit prepare-plan ARTIFACT ROSTER --database DB --blocks J --run RUN
+        [--family F]... [--index INDEX] [--legacy-artifact]
+    python -m rmgpy.kmc.emit prepare-block RUN --block j
+    python -m rmgpy.kmc.emit prepare-finish RUN --shards N
     python -m rmgpy.kmc.emit assemble ROWS... --out catalog.json [--database DB]
     python -m rmgpy.kmc.emit catalog-set CATALOG... --out SET.json
 
@@ -39,7 +43,11 @@ streaming, in artifact order, and writes each shard's input: its published
 records, their certificates and the records they link.  A shard run with
 ``--prepared DIR`` reads only its input (the artifact's bytes are only
 hashed) and emits the same rows.  ``index`` writes the artifact's streaming
-index (``artifact_stream``) once, for ``prepare --index``.
+index (``artifact_stream``) once, for ``prepare --index``.  ``prepare-plan``,
+``prepare-block`` (one process per block, any order) and ``prepare-finish`` are
+the same prepare in J blocks (I-304b): finish writes a new generation
+directory ``RUN/prepared/<generation>`` (``RUN/current`` points at the last),
+the ``--prepared`` directory of the shards.
 
 **Roster.** A JSON file ``{"schema": "kmc-reference-roster/2", "polymer":
 <LinearHomopolymerSpec mapping>, "systems": {name: [participant, ...]}}``.  A
@@ -2044,6 +2052,10 @@ def main(argv=None):
     if argv and argv[0] == "prepare":
         from rmgpy.kmc import emit_prepare
         return emit_prepare.main(argv[1:])
+    if argv and argv[0] in ("prepare-plan", "prepare-block", "prepare-finish"):
+        from rmgpy.kmc import emit_prepare
+        return {"prepare-plan": emit_prepare.main_plan, "prepare-block": emit_prepare.main_block,
+                "prepare-finish": emit_prepare.main_finish}[argv[0]](argv[1:])
     if argv and argv[0] == "catalog-set":
         parser = argparse.ArgumentParser(prog="python -m rmgpy.kmc.emit catalog-set")
         parser.add_argument("catalogs", nargs="+", help="one kmc-template-catalog/1 file per family")
