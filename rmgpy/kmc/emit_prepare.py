@@ -22,11 +22,21 @@ every whole-artifact shard had), but streaming:
    bounded (PP: 1.9 GB after 1800 of 2410 records, flat after).
 3. ``certificates.refusal_reasons`` over the records' status, links and rate
    sources; each refused record's new id (``republish_refused``).
-4. Each record again, in order: republished, relinked and its certificate's
+4. The shard assignment (``assign_shards``): each record's reference-case key
+   (``emit.record_key``: family, template-side species, template, other-side
+   species) is read once more, and the records of one key go to one shard, the
+   keys placed largest first on the least loaded shard by an estimated cost
+   (records, and the roster subsets whose participants the key admits:
+   ``emit.CaseFilter``).  A shard then builds only its own keys' reference
+   cases, where ``sorted(ids)[k::n]`` scattered every key over every shard.  A
+   key costing more than one shard's share is split over several shards (each
+   rebuilds that key's cases), named in the manifest; a record whose key
+   cannot be read is its own unit.
+5. Each record again, in order: republished, relinked and its certificate's
    owner bound (``relink``, ``publish_certificate``), written to the input
-   of the shard owning it (``sorted(ids)[k::n]``) with its certificate, and
-   to the inputs of the shards owning a record that links to it (emission
-   reads a record's rate owner in its published form).
+   of the shard owning it with its certificate, and to the inputs of the
+   shards owning a record that links to it (emission reads a record's rate
+   owner in its published form).
 
 These are the steps of ``certificates.certify_records``, which runs them on a
 list in memory.  A shard (``emit --prepared DIR``) reads the manifest and its
@@ -34,21 +44,30 @@ own input only: its records, their certificates and the records they link,
 then emits; its rows are the whole-artifact shard's rows.
 
 The manifest binds the inputs to the artifact's bytes, the roster, the
-database content, the code and the shard count; a shard refuses any other.
+database content, the code and the shard count; a shard refuses any other.  It
+carries the assignment (the shard of every artifact id), each shard input's
+sha256 (checked on the bytes read, before anything is unpickled) and a digest
+of each shard's (source id, published id) pairs, which the writer computes
+from what it wrote and the reader from what it read.  A ``kmc-emit-prepared/1``
+manifest (``sorted(ids)[k::n]``, no digests) is refused by name.
 """
 
 from __future__ import annotations
 
 import gzip
+import hashlib
+import heapq
+import io
 import json
+import math
 import os
 import pickle
 import shutil
 import tempfile
 import time
 import zlib
-from collections import defaultdict
-from dataclasses import dataclass
+from collections import Counter, defaultdict
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from rmgpy.kmc import artifact_stream as astream
@@ -56,8 +75,15 @@ from rmgpy.kmc import certificates as cm
 from rmgpy.kmc import emit
 from rmgpy.kmc.emit import PreparedRefusal
 
-MANIFEST_SCHEMA = "kmc-emit-prepared/1"
+MANIFEST_SCHEMA = "kmc-emit-prepared/2"
+OLD_MANIFEST_SCHEMAS = ("kmc-emit-prepared/1",)
 MANIFEST = "manifest.json"
+# the estimated cost of a shard's work: one per record emitted, and per roster
+# subset whose member cases a key makes the shard build (the balance only; no
+# row depends on it)
+COST_WEIGHTS = {"record": 1.0, "subset": 0.05}
+# records between resets of the key pass's species cache (its size only)
+SPECIES_RESET = 512
 
 
 def shard_file(k: int, n: int) -> str:
@@ -90,6 +116,129 @@ def _rss() -> int:
 def _one(artifact, entry):
     from rmgpy.kmc.event_record import EventRecord
     return EventRecord.from_dict(astream.read_records(artifact, [entry])[0])
+
+
+@dataclass
+class Unit:
+    """Records placed together: those of one reference-case key (``name``,
+    its canonical text) or one record whose key could not be read."""
+    name: str
+    ids: list
+    subsets: int = 0
+    pieces: list = field(default_factory=list)
+
+
+def unit_cost(records: int, subsets: int, weights=None) -> float:
+    w = weights or COST_WEIGHTS
+    return records * w["record"] + subsets * w["subset"]
+
+
+def assign_shards(units, shards: int, weights=None):
+    """(shard of each record id, plan): every unit on one shard, largest
+    estimated cost first, each on the least loaded shard (ties: the lowest
+    shard; order: cost, then name).  A unit costing more than a shard's share
+    (the total over ``shards``) with more than one record is split into
+    ``min(records, shards, ceil(cost / share))`` contiguous runs of its sorted
+    ids, each run carrying the unit's whole case cost (each shard holding a run
+    builds the key's cases) and each on a distinct shard; the plan names every
+    split unit (with its shards) and every unit
+    whose case cost alone exceeds the share.  Deterministic in the units."""
+    if shards < 1:
+        raise ValueError("the shard count must be at least 1")
+    units = sorted(units, key=lambda u: u.name)
+    names = [u.name for u in units]
+    if len(set(names)) != len(names):
+        raise ValueError("two assignment units share a name")
+    total = sum(unit_cost(len(u.ids), u.subsets, weights) for u in units)
+    share = total / shards if total else 0.0
+    pieces, split, case_bound = [], [], []
+    for u in units:
+        ids = sorted(u.ids)
+        cost = unit_cost(len(ids), u.subsets, weights)
+        parts = 1
+        if share and cost > share and len(ids) > 1:
+            parts = min(len(ids), shards, math.ceil(cost / share))
+        if unit_cost(0, u.subsets, weights) > share and share:
+            case_bound.append(u.name)
+        size = math.ceil(len(ids) / parts) if ids else 0
+        runs = [ids[i:i + size] for i in range(0, len(ids), size)] if size else [ids]
+        if len(runs) > 1:
+            split.append({"unit": u.name, "records": len(ids), "parts": len(runs)})
+        for part, run in enumerate(runs):
+            pieces.append((-unit_cost(len(run), u.subsets, weights), u.name, part, run))
+    pieces.sort(key=lambda p: (p[0], p[1], p[2]))
+    loads = [(0.0, k) for k in range(shards)]
+    heapq.heapify(loads)
+    shard_of, load_of, placed = {}, [0.0] * shards, defaultdict(list)
+    for negcost, name, part, run in pieces:
+        # the least loaded shard not already holding a run of this unit (a
+        # split unit has at most ``shards`` runs, so one exists)
+        held = []
+        load, k = heapq.heappop(loads)
+        while k in placed[name]:
+            held.append((load, k))
+            load, k = heapq.heappop(loads)
+        for item in held:
+            heapq.heappush(loads, item)
+        for i in run:
+            shard_of[i] = k
+        load_of[k] = load - negcost
+        placed[name].append(k)
+        heapq.heappush(loads, (load - negcost, k))
+    for entry in split:
+        entry["shards"] = sorted(placed[entry["unit"]])
+    plan = {"units": len(units), "split": split, "case_bound": case_bound,
+            "loads": [round(x, 3) for x in load_of], "share": round(share, 3),
+            "weights": dict(weights or COST_WEIGHTS)}
+    return shard_of, plan
+
+
+def subset_shapes(fam, systems) -> Counter:
+    """(family, direction, component formulas) -> the number of roster subsets
+    (``emit.roster_subsets``) with those participants' formulas."""
+    formulas, out = {}, Counter()
+    for name, _family, direction, chosen, _subset in emit.roster_subsets(fam, systems):
+        out[(name, direction, emit.subset_formulas(chosen, formulas))] += 1
+    return out
+
+
+def assignment_units(artifact, universe, certifier, fam, systems) -> list:
+    """The units of ``universe`` (``Unit``): records grouped by
+    ``emit.record_key``, each key's subsets counted from the roster."""
+    from rmgpy.kmc import channels as chm
+    shapes = subset_shapes(fam, systems) if systems else Counter()
+    by_key, subsets, units = defaultdict(list), {}, []
+    species = chm.SpeciesKeys()
+    for count, e in enumerate(universe, 1):
+        if count % SPECIES_RESET == 0:
+            species = chm.SpeciesKeys()
+        d = _one(artifact, e).to_dict()
+        try:
+            key, mols, others = emit.record_parts(certifier, d, species)
+        except Exception as error:   # its own unit; the shard's row reports it
+            emit.reraise_resource(error)
+            units.append(Unit(f"unkeyed:{e.event_id}", [e.event_id]))
+            continue
+        name = json.dumps(key, separators=(",", ":"))
+        by_key[name].append(e.event_id)
+        if name not in subsets:
+            subsets[name] = shapes[(key[0], "forward", emit.component_formulas(mols))] + \
+                shapes[(key[0], "reverse", emit.component_formulas(others))]
+    units += [Unit(name, ids, subsets[name]) for name, ids in by_key.items()]
+    return units
+
+
+def own_digest(pairs) -> str:
+    """sha256 of a shard's sorted (source id, published id) pairs."""
+    return hashlib.sha256(json.dumps(sorted(pairs), separators=(",", ":")).encode()).hexdigest()
+
+
+def file_sha256(path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for block in iter(lambda: handle.read(1 << 20), b""):
+            h.update(block)
+    return h.hexdigest()
 
 
 def prepare(artifact, roster_path, database, shards: int, out, *, families=None,
@@ -150,9 +299,18 @@ def prepare(artifact, roster_path, database, shards: int, out, *, families=None,
         final_ids = {replacements.get(e.event_id, e.event_id) for e in universe}
         print("PREPARE gate", len(reasons), "republished", f"{certify_s}s certification",
               f"rss={_rss()}MB", flush=True)
-        # 4. publish each record into the inputs of the shards that read it
-        ids = sorted(entry_of)
-        shard_of = {i: pos % shards for pos, i in enumerate(ids)}
+        # 4. the assignment: one key's records on one shard
+        t = time.time()
+        systems, _refusals = emit.build_reference_systems(roster)
+        units = assignment_units(artifact, universe, certifier, fam, systems)
+        shard_of, plan = assign_shards(units, shards)
+        if set(shard_of) != set(entry_of):
+            raise RuntimeError("the assignment does not place every record once")
+        plan["seconds"] = round(time.time() - t, 1)
+        print("PREPARE assignment", plan["units"], "units", len(plan["split"]), "split",
+              len(plan["case_bound"]), "case-bound", f"{plan['seconds']}s rss={_rss()}MB",
+              flush=True)
+        # 5. publish each record into the inputs of the shards that read it
         readers = defaultdict(set)
         for e in universe:
             for target in e.links:
@@ -160,6 +318,7 @@ def prepare(artifact, roster_path, database, shards: int, out, *, families=None,
                     readers[target].add(shard_of[e.event_id])
         files = [work / shard_file(k, shards) for k in range(shards)]
         written = [0] * shards
+        owned = [[] for _ in range(shards)]
         writers = [gzip.open(f, "wb", compresslevel=1) for f in files]
         try:
             with gzip.open(spill_path, "rb") as spill:
@@ -174,6 +333,7 @@ def prepare(artifact, roster_path, database, shards: int, out, *, families=None,
                                                                  final_ids)
                     d = published.to_dict()
                     own = shard_of[e.event_id]
+                    owned[own].append([e.event_id, d["event_id"]])
                     for k in sorted({own} | readers[e.event_id]):
                         pickle.dump({"source": e.event_id, "own": k == own, "record": d,
                                      "certificate": rc if k == own else None},
@@ -185,14 +345,21 @@ def prepare(artifact, roster_path, database, shards: int, out, *, families=None,
             for writer in writers:
                 writer.close()
         spill_path.unlink()
+        ids = [e.event_id for e in universe]
+        if sorted(i for pairs in owned for i, _ in pairs) != sorted(ids):
+            raise RuntimeError("the shard inputs do not own every record once")
         manifest = {
             "schema": MANIFEST_SCHEMA,
             "artifact": {"id": Path(artifact).stem, "sha256": index.sha256, "bytes": index.size},
             "artifact_records": len(index.entries), "families": fams,
             "only": sorted(families) if families else None,
-            "artifact_ids": [e.event_id for e in universe], "shards": shards,
+            "artifact_ids": ids, "shards": shards,
             "files": [f.name for f in files], "items": written,
-            "own": [len(ids[k::shards]) for k in range(shards)],
+            "files_sha256": [file_sha256(f) for f in files],
+            "own": [len(pairs) for pairs in owned],
+            "own_sha256": [own_digest(pairs) for pairs in owned],
+            "assignment": {"basis": "record_key", "shard_of": [shard_of[i] for i in ids],
+                           **plan},
             "head": head, "bound_by": list(bound_by), "identity": identity(database, roster),
             "republished": len(replacements), "certify_s": certify_s,
             "seconds": round(time.time() - t0, 1), "peak_rss_mb": _rss()}
@@ -231,6 +398,11 @@ def open_manifest(prepared, artifact, roster, database, chunk, only=None) -> dic
         raise PreparedRefusal("refused:prepared", f"{prepared} has no {MANIFEST} (an "
                                                   "incomplete or failed prepare)")
     manifest = json.loads(path.read_text())
+    if manifest.get("schema") in OLD_MANIFEST_SCHEMAS:
+        raise PreparedRefusal("refused:prepared", f"{path} is a {manifest['schema']} manifest "
+                                                  "(the sorted(ids)[k::n] assignment, no shard "
+                                                  f"input digests); this code reads "
+                                                  f"{MANIFEST_SCHEMA}: prepare again")
     if manifest.get("schema") != MANIFEST_SCHEMA:
         raise PreparedRefusal("refused:prepared", f"{path} is not a {MANIFEST_SCHEMA} manifest")
     k, n = emit.parse_chunk(chunk)
@@ -253,18 +425,33 @@ def open_manifest(prepared, artifact, roster, database, chunk, only=None) -> dic
     return manifest
 
 
+def assigned_ids(manifest, k) -> list:
+    """The artifact ids the manifest assigns to shard ``k``, sorted."""
+    ids, shard_of = manifest["artifact_ids"], manifest["assignment"]["shard_of"]
+    if len(shard_of) != len(ids) or any(not 0 <= s < manifest["shards"] for s in shard_of):
+        raise PreparedRefusal("refused:prepared", "the manifest's assignment does not place "
+                                                  "every artifact id on one of its shards")
+    return sorted(i for i, s in zip(ids, shard_of) if s == k)
+
+
 def read_shard(prepared, manifest, chunk) -> PreparedShard:
     """Shard ``chunk``'s input: its published records (with the records they
     link), their certificate store, their republished ids and its records in
-    partition order."""
+    source-id order.  The input's bytes are read once and checked against the
+    manifest's sha256 before anything is unpickled."""
     k, n = emit.parse_chunk(chunk)
     records, store, replacements, own = [], {}, {}, {}
     count = None
+    name = manifest["files"][k]
     try:
-        handle = gzip.open(Path(prepared) / manifest["files"][k], "rb")
+        data = (Path(prepared) / name).read_bytes()
     except OSError as error:
-        raise PreparedRefusal("refused:prepared", f"shard input {manifest['files'][k]}: {error}")
-    with handle:
+        raise PreparedRefusal("refused:prepared", f"shard input {name}: {error}")
+    if hashlib.sha256(data).hexdigest() != manifest["files_sha256"][k]:
+        raise PreparedRefusal("refused:prepared", f"shard input {name}: its sha256 is not the "
+                                                  "manifest's (another prepare's, altered or "
+                                                  "truncated)")
+    with gzip.GzipFile(fileobj=io.BytesIO(data), mode="rb") as handle:
         while True:
             try:
                 item = pickle.load(handle)
@@ -276,17 +463,23 @@ def read_shard(prepared, manifest, chunk) -> PreparedShard:
             records.append(item["record"])
             if item["own"]:
                 record = item["record"]
+                if item["source"] in own:
+                    raise PreparedRefusal("refused:prepared", f"shard input {name} owns "
+                                                              f"{item['source']} twice")
                 own[item["source"]] = record
                 store[record["rate_certificate"]["sha256"]] = item["certificate"]
                 if record["event_id"] != item["source"]:
                     replacements[item["source"]] = record["event_id"]
+    del data
     if count is None or count != len(records) or count != manifest["items"][k]:
-        raise PreparedRefusal("refused:prepared", f"shard input {manifest['files'][k]} is "
-                                                  "truncated")
-    wanted = sorted(manifest["artifact_ids"])[k::n]
+        raise PreparedRefusal("refused:prepared", f"shard input {name} is truncated")
+    wanted = assigned_ids(manifest, k)
     if sorted(own) != wanted:
-        raise PreparedRefusal("refused:prepared", f"shard input {manifest['files'][k]} does not "
-                                                  f"hold sorted(ids)[{k}::{n}]")
+        raise PreparedRefusal("refused:prepared", f"shard input {name} does not hold the "
+                                                  f"records the manifest assigns to shard {k}")
+    if own_digest([s, r["event_id"]] for s, r in own.items()) != manifest["own_sha256"][k]:
+        raise PreparedRefusal("refused:prepared", f"shard input {name}: its records' source and "
+                                                  "published ids are not the manifest's")
     return PreparedShard(head=manifest["head"], sha256=manifest["artifact"]["sha256"],
                          artifact_records=manifest["artifact_records"],
                          families=manifest["families"], artifact_ids=manifest["artifact_ids"],

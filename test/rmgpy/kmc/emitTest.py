@@ -524,7 +524,7 @@ def _harness():
     return acc
 
 
-@pytest.mark.parametrize("name", ["record_key", "bind", "molecularity"])
+@pytest.mark.parametrize("name", ["record_key", "record_parts", "bind", "molecularity"])
 def test_moved_harness_functions_are_verbatim(name):
     def body(function):
         node = ast.parse(textwrap.dedent(inspect.getsource(function))).body[0]

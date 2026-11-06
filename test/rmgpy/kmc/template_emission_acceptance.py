@@ -133,13 +133,18 @@ def reference_cases(certifier, fam, specs, species):
     return out, dict(stats)
 
 
+def record_parts(certifier, record, species):
+    """(``record_key``, template-side molecules, other-side molecules)."""
+    _side, mols, others = certifier.template_side(record)
+    return (record["family"], tuple(sorted(species(m) for m in mols)), record["template"],
+            tuple(sorted(species(m) for m in others))), mols, others
+
+
 def record_key(certifier, record, species):
     """(family, template-side species, template, other-side species): the
     record's channel (members of other channels on the same species and
     template are other sites)."""
-    _side, mols, others = certifier.template_side(record)
-    return (record["family"], tuple(sorted(species(m) for m in mols)), record["template"],
-            tuple(sorted(species(m) for m in others)))
+    return record_parts(certifier, record, species)[0]
 
 
 def bind(certifier, record, rc, case, owner):
