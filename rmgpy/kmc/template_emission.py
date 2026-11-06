@@ -2394,6 +2394,13 @@ ID_TRUNCATIONS = (16,)
 # ``certificates.record_owner``); the rate selection it certifies is stored
 # in ``rate.provenance.selection``, which the identity keeps
 ID_DIGEST_FIELDS = ("sha256", "certificate")
+# template fields whose bytes depend on certification history: ``certificate``
+# (``context_candidates``: the sha256 of a member context's observation
+# certificate, certified inside the emit process, whose node atom order
+# follows RMG's in-place group sort at a group's first match there, so it
+# moves with the shard count and the record order); the chemistry it
+# certifies is stored in the template itself (cut, rows, weight)
+TEMPLATE_HISTORY_FIELDS = ("certificate",)
 MASK = "evt_*"
 
 
@@ -2434,18 +2441,28 @@ def _mask_free_text(value, ids):
                 container[key] = text
 
 
+def _drop_history(template):
+    if isinstance(template, dict):
+        for k in TEMPLATE_HISTORY_FIELDS:
+            template.pop(k, None)
+
+
 def _without_ids(payload, template=None) -> tuple:
     """Copies of ``payload`` (``ID_DIGEST_FIELDS`` dropped) and ``template``
-    with the id slots masked whole and, in the free-text slots, the ids found
-    there (whole or ``ID_TRUNCATIONS``) masked; every other string as stored."""
+    (each template's ``TEMPLATE_HISTORY_FIELDS`` dropped, in the payload's
+    ``templates`` and in ``template``) with the id slots masked whole and, in
+    the free-text slots, the ids found there (whole or ``ID_TRUNCATIONS``)
+    masked; every other string as stored."""
     body = json.loads(json.dumps({k: v for k, v in payload.items() if k not in ID_DIGEST_FIELDS}))
     ids = set()
     _mask_ids(body, PAYLOAD_ID_SLOTS, ids)
     for t in body.get("templates", []) if isinstance(body.get("templates"), list) else []:
+        _drop_history(t)
         _mask_ids(t, TEMPLATE_ID_SLOTS, ids)
     tpl = None
     if template is not None:
         tpl = json.loads(json.dumps(template))
+        _drop_history(tpl)
         _mask_ids(tpl, TEMPLATE_ID_SLOTS, ids)
     _mask_free_text(body, ids)
     for t in body.get("templates", []) if isinstance(body.get("templates"), list) else []:
@@ -2468,11 +2485,15 @@ def partition_free_identity(payload, template=None) -> str:
     families carries other ids.  Every choice that must not depend on how the
     families were partitioned (the representative of a collision, the source
     pair of a reciprocal unit, the cycle-check temperatures) orders by this.
-    It is the canonical JSON of the whole payload and template with
-    ``ID_DIGEST_FIELDS`` dropped and the record ids masked where the schema
-    puts them (``_without_ids``), so two copies tie only when their stored
-    content is identical, and then any choice between them gives the same
-    result."""
+    It is also independent of the history in which the emit process
+    certified the member contexts (the shard count, the record order): the
+    template fields whose bytes depend on it (``TEMPLATE_HISTORY_FIELDS``)
+    are dropped too.  It is the canonical JSON of the whole payload and
+    template with ``ID_DIGEST_FIELDS`` and ``TEMPLATE_HISTORY_FIELDS``
+    dropped and the record ids masked where the schema puts them
+    (``_without_ids``), so two copies tie only when their history-free
+    stored content is identical, and then any choice between them gives the
+    same result."""
     record = sha256_json(_without_ids(payload)[0])
     return record if template is None else _template_identity(record, payload, template)
 
