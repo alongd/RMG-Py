@@ -81,6 +81,7 @@ def _build_main(database, output):
             families=FAMILIES,
             family_universe=FAMILIES,
             database_sha="determinism-probe",
+            legacy_provider="polystyrene",
         )
     )
     digest = hashlib.sha256(Path(path).read_bytes()).hexdigest()

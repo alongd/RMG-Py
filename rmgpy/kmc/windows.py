@@ -158,8 +158,9 @@ repeat phase and the end groups decide which chains of DP L reach).  DP
 non-overlap control.  DP 1 includes the one-carbon species (toluene, benzyl
 radical, methane, methyl radical).  Bimolecular directions: the participant
 kinds (radical, closed shell, alkene) each direction needs come from the
-family's own templates (``pair_roster``); every DP pair (a, b) with
-1 <= a, b <= L + 1 is planned for every kind combination in its direction
+family's own templates (the PS reference roster, ``ps_pair_roster`` of the
+test support); every DP pair (a, b) with 1 <= a, b <= L + 1 is planned for
+every kind combination in its direction
 (``ladder_plan``) and coverage is checked per direction
 (``ladder_direction_gaps``).
 This DP grid runs on one representative per participant kind
@@ -478,19 +479,19 @@ def _is_declared(provider) -> bool:
     return isinstance(provider, (dc.DeclaredChainProvider, ds.SequenceChainProvider))
 
 
-def observation_providers(witness, providers=None) -> tuple:
+def observation_providers(witness, providers=None, *, reference) -> tuple:
     """The provider objects whose interior atoms and extension fragments a
     member observation reads: the distinct providers of the witness's
-    participants when one of them is declared; otherwise the named pair
-    (``boundaries.LEGACY_PROVIDERS``), exactly the base classifier and
-    fragment facts."""
+    participants when one of them is declared; otherwise ``reference``, the
+    named reference providers the caller passes (the base classifier and
+    fragment facts)."""
     found = []
     for participant in witness.participants:
         provider = provider_object(participant.metadata.provider, providers)
         if provider not in found:
             found.append(provider)
     if not any(_is_declared(p) for p in found):
-        return b.LEGACY_PROVIDERS
+        return tuple(reference)
     return tuple(found)
 
 
@@ -704,7 +705,7 @@ class FamilyConstants:
     free_label_search: bool
     bimolecular: bool = False
     directions: tuple = ()
-    pair_kinds: tuple = ()    # ((direction, (kind, kind)), ...): ``pair_roster``
+    pair_kinds: tuple = ()    # ((direction, (kind, kind)), ...): the PS reference roster
     classes: Optional[tuple] = None   # SiteClass, ...: ``class_roster`` (None: not computed)
     per_reactant: tuple = ()  # directions RMG rates from one tree per reactant (``per_reactant_tree``)
     joined: tuple = ()        # ((direction, unpaired delta), ...): one-product bimolecular templates
@@ -1133,10 +1134,9 @@ class SearchClassifier:
     tests the RMG group atoms of the label against every atom of an interior
     repeat unit of each provider (RMG atom types)."""
 
-    def __init__(self, family, providers: Optional[Sequence] = None):
+    def __init__(self, family, providers: Sequence):
         self.family = family
-        self.providers = tuple(provider_object(p) for p in (
-            b.LEGACY_PROVIDERS if providers is None else providers))
+        self.providers = tuple(provider_object(p) for p in providers)
         self.fresh = []
         for provider in self.providers:
             self.fresh.extend(_interior_unit_atoms(provider))
@@ -1178,16 +1178,15 @@ def _interior_unit_atoms(provider) -> list:
     return _INTERIOR[provider.name]
 
 
-def _fragment_facts(providers=None) -> dict:
-    """Per provider (objects; default the named pair): whether every extension
+def _fragment_facts(providers) -> dict:
+    """Per provider (objects or registered names): whether every extension
     fragment of its probes (``probe_ports``) is closed shell and the net
     element delta of one step (fresh atoms minus the deleted caps); a
     provider that grows by more than one kind of step (a copolymer's residues)
     states them itself (``fragment_facts``).  A probe that raises leaves that
     provider's facts undecided (``{FACTS_UNDECIDED: reason}``).  Cached by the
     tuple of provider names."""
-    providers = tuple(provider_object(p) for p in (
-        b.LEGACY_PROVIDERS if providers is None else providers))
+    providers = tuple(provider_object(p) for p in providers)
     key = tuple(p.name for p in providers)
     if key not in _FACTS:
         out = {}
@@ -1212,16 +1211,17 @@ def _fragment_facts(providers=None) -> dict:
     return _FACTS[key]
 
 
-def certificate_support(cert, wanted, *, classifier: Optional[SearchClassifier] = None,
-                        fragment_facts=None, include_failed: bool = True,
+def certificate_support(cert, wanted, *, fragment_facts,
+                        classifier: Optional[SearchClassifier] = None, include_failed: bool = True,
                         growable=None) -> Support:
     """The support of the member of ``cert`` selected by ``wanted`` (label
     sets), with the disposition of every non-atom-set read (see the module
     docstring).  ``growable``: the witness atoms of participants an
     extension can grow (an artificial port; ``growable_atoms``); an
     ``element_count`` guard read on a certificate molecule without such an
-    atom is extension invariant (no extension adds to that molecule).  None
-    (the default): every molecule takes every provider's step delta."""
+    atom is extension invariant (no extension adds to that molecule).
+    ``fragment_facts`` is required (``_fragment_facts`` of the providers
+    read): the caller names its providers."""
     from rmgpy.kmc import certificates as cm
 
     entries = member_entries(cert, wanted)
@@ -1231,7 +1231,7 @@ def certificate_support(cert, wanted, *, classifier: Optional[SearchClassifier] 
     if len({id(ch) for ch, _m in entries}) > 1:
         return Support(frozenset(), refusal=f"refused:member: the member is in "
                                             f"{len(entries)} channels")
-    facts = fragment_facts if fragment_facts is not None else _fragment_facts()
+    facts = fragment_facts
     undecided = sorted(name for name, p in facts.items() if FACTS_UNDECIDED in p)
     decided = [p for p in facts.values() if FACTS_UNDECIDED not in p]
     closed_shell = all(f["closed_shell"] for p in decided for f in p.values())
@@ -1630,7 +1630,8 @@ class MemberObserver:
     def __call__(self, witness) -> Observation:
         self.calls += 1
         if self.providers is None:
-            self.providers = observation_providers(witness, self.registry)
+            self.providers = observation_providers(witness, self.registry,
+                                                   reference=b.LEGACY_PROVIDERS)
             if self.classifier is None:
                 self.classifier = SearchClassifier(self.family, providers=self.providers)
             self.facts = _fragment_facts(self.providers)
@@ -2435,42 +2436,6 @@ LONG_SPECS = {"closed": lambda: (b.PsChainSpec(LONG_UNITS),),
 LONG_SPECS = {kind: _roster_entry(make) for kind, make in LONG_SPECS.items()}
 
 
-def pair_roster(certifier, family, probe_dps=(2, 3), provider=None) -> tuple:
-    """The participant-kind combinations a bimolecular direction needs, from
-    the family's own reactant templates: RMG applies them (``member_cases``,
-    both slot orders) to the representative chains of every kind pair at the
-    probe DPs; a pair is in the roster of that direction iff some member has
-    every species in the declared domain.  ((direction, (kind, kind)), ...),
-    kinds sorted.  A declared ``provider`` is refused."""
-    _roster_guard(provider)
-    from itertools import combinations_with_replacement
-    constants = family_constants(family)
-    P = b.PROVIDERS["polystyrene"]
-    out = []
-    for direction, molecularity in constants.directions:
-        if molecularity != 2:
-            continue
-        for kinds in combinations_with_replacement(PARTICIPANT_KINDS, 2):
-            found = False
-            for dp in probe_dps:
-                for first in kind_specs(kinds[0], dp)[:2]:
-                    for second in kind_specs(kinds[1], dp)[:2]:
-                        builds = [P.build("k0", first), P.build("k1", second)]
-                        if not all(dom.check(x.molecule).accepted for x in builds):
-                            continue
-                        cases = member_cases(certifier, family, builds, direction)
-                        if any(not species_domain_refusal(c.witness) for c in cases):
-                            found = True
-                            break
-                    if found:
-                        break
-                if found:
-                    break
-            if found:
-                out.append((direction, tuple(kinds)))
-    return tuple(out)
-
-
 def _ends_label(spec):
     if isinstance(spec, tuple):
         return f"{spec[0]}:{spec[1]}"
@@ -2758,7 +2723,9 @@ def pattern_min_dp(pattern, limit: int = PATTERN_DP_LIMIT) -> Optional[int]:
 
 def build_spec(spec, name="p"):
     """A provider build of a spec (``PsChainSpec``, ("alkane", n[, head end,
-    tail end[, interior radical]]) or ("small", name))."""
+    tail end[, interior radical]]) or ("small", name)).  The spec is built by
+    the owner that claims it (``SPEC_OWNERS``); a spec no owner claims is
+    refused, never built as a default polymer."""
     # every spec is a witness spec first (refused otherwise); a declared spec
     # builds through its registered provider
     spec = witness_spec(spec)
@@ -2771,7 +2738,10 @@ def build_spec(spec, name="p"):
             interior_radical=fields[2])
     if isinstance(spec, tuple) and spec[0] == "small":
         return SMALL_PROVIDER.build(spec, name)
-    return b.PROVIDERS["polystyrene"].build(name, spec)
+    for owner in SPEC_OWNERS:
+        if isinstance(owner, b.PolystyreneProvider) and owner.normalize_spec(spec) is not None:
+            return owner.build(name, spec)
+    raise WindowError(f"refused:legacy_spec: no provider owns {spec!r}")
 
 
 def site_kind(rows, atom, cyclic=None) -> str:
@@ -3712,7 +3682,7 @@ def ladder_plan(constants: FamilyConstants, bound: Optional[SpanBound] = None,
     in-phase fragments with the cut end radical or alkene; phase B: shifted
     fragments); pendant loss and C-H cleavage products (one per interior unit
     position, saturated ends).  For every bimolecular direction, every kind
-    combination of its roster (``constants.pair_kinds``, ``pair_roster``):
+    combination of its roster (``constants.pair_kinds``):
     short/short pairs at EVERY DP pair (a, b), 1 <= a, b <= L + 1 (any DP
     above L is a control), each kind's representative chains
     (``kind_specs``), and short/long pairs (each short kind against the
@@ -3728,7 +3698,7 @@ def ladder_plan(constants: FamilyConstants, bound: Optional[SpanBound] = None,
                           "(FamilyConstants.classes: class_roster)")
     if any(n == 2 for _d, n in constants.directions) and not constants.pair_kinds:
         raise WindowError(f"{constants.family}: a bimolecular family without a pair roster "
-                          "(FamilyConstants.pair_kinds: pair_roster)")
+                          "(FamilyConstants.pair_kinds)")
     items, excluded = {}, []
     by_species = {}
     keys = {}

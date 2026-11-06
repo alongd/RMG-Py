@@ -21,7 +21,7 @@ Parts (each its own run, both streams persisted by the caller):
   (``windows.probe_pattern`` per declared pattern through the pool): the
   class table per direction and slot, class and generated item counts.
 * ``ladder:<family>``: the family's ladder (``windows.ladder_plan`` with the
-  kind roster of ``windows.pair_roster`` and the class roster, probed first
+  kind roster of ``ps_pair_roster`` and the class roster, probed first
   through the pool): the class closings first (``windows.close_classes``,
   one task per direction, slot and spec, against ``windows.closing_partners``;
   ``--closures`` reuses saved ones, ``--close-chunk i/n`` runs one chunk of
@@ -521,7 +521,8 @@ def ladder_tasks(family_name, classes=(), merge=None):
     family = fam[family_name]
     constants = win.family_constants(family)
     t = time.time()
-    roster = win.pair_roster(_S["certifier"], family)
+    from ps_pair_roster import ps_pair_roster
+    roster = ps_pair_roster(_S["certifier"], family)
     constants = replace(constants, pair_kinds=roster, classes=tuple(classes), merge=merge)
     bound = win.span_bound(constants)
     plan = win.ladder_plan(constants, bound)

@@ -277,5 +277,6 @@ def test_compile_emit_and_the_compiler_prepare_without_verbose_comments(monkeypa
         emit.load_database(["F"], tmp_path)
     with pytest.raises(_Prepared):
         kmc_compile.compile_artifact(kmc_compile.CompileRequest(
-            str(tmp_path), str(tmp_path / "out"), ("F",), family_universe=("F",)))
+            str(tmp_path), str(tmp_path / "out"), ("F",), family_universe=("F",),
+            legacy_provider="polystyrene"))
     assert verbose == [False, False, False]

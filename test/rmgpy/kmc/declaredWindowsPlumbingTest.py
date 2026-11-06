@@ -372,22 +372,22 @@ def _ps_witness():
 def test_legacy_facts_and_classifier_ignore_constructed_providers():
     w = _ps_witness()
     win._FACTS.clear()
-    before = win._fragment_facts(win.observation_providers(w))
-    fresh_before = _types(win.SearchClassifier(None, providers=win.observation_providers(w))
+    before = win._fragment_facts(win.observation_providers(w, reference=b.LEGACY_PROVIDERS))
+    fresh_before = _types(win.SearchClassifier(None, providers=win.observation_providers(w, reference=b.LEGACY_PROVIDERS))
                           .fresh)
     dc.DeclaredChainProvider(spec_of(pmma_mapping()))
     win._FACTS.clear()
-    after = win._fragment_facts(win.observation_providers(w))
-    fresh_after = _types(win.SearchClassifier(None, providers=win.observation_providers(w))
+    after = win._fragment_facts(win.observation_providers(w, reference=b.LEGACY_PROVIDERS))
+    fresh_after = _types(win.SearchClassifier(None, providers=win.observation_providers(w, reference=b.LEGACY_PROVIDERS))
                          .fresh)
     assert before == after and fresh_before == fresh_after
-    assert win._fragment_facts() == after
+    assert win._fragment_facts(b.LEGACY_PROVIDERS) == after
     assert sorted(after) == sorted(p.name for p in b.LEGACY_PROVIDERS)
 
 
 def test_declared_facts_come_from_the_declared_fragment(pp):
     w = sup.identity_witness(pp.build("w", dc.ChainSpec(3)))
-    providers = win.observation_providers(w)
+    providers = win.observation_providers(w, reference=b.LEGACY_PROVIDERS)
     assert [p.name for p in providers] == [pp.name]
     facts = win._fragment_facts(providers)
     assert facts == {pp.name: {"backbone_head": {"closed_shell": True, "delta": {"C": 3, "H": 6}},
@@ -426,7 +426,7 @@ def test_undecided_fragment_facts_refuse_by_name():
     assert dispositions[("guard", "radical_count")] == "refused"
     assert dispositions[("guard", "element_count:O")] == "refused"
     decided = win.certificate_support(cert, wanted, classifier=None,
-                                      fragment_facts=win._fragment_facts())
+                                      fragment_facts=win._fragment_facts(b.LEGACY_PROVIDERS))
     assert not (decided.refusal or "").startswith("refused:fragment_facts_undecided")
 
 
@@ -485,7 +485,6 @@ def _rosters(spec):
     return {
         "kind_specs": lambda: win.kind_specs("closed", 2, provider=spec),
         "LONG_SPECS": lambda: win.LONG_SPECS["closed"](spec),
-        "pair_roster": lambda: win.pair_roster(None, None, provider=spec),
         "participant_patterns": lambda: win.participant_patterns(provider=spec),
         "pattern_specs": lambda: win.pattern_specs(pattern, 2, provider=spec),
         "_realizes": lambda: win._realizes(pattern, spec),
@@ -509,8 +508,6 @@ def test_rosters_refuse_an_all_declared_witness(pp):
     w = sup.identity_witness(pp.build("o", dc.ChainSpec(3)))
     with pytest.raises(win.WindowError, match="refused:roster"):
         win.kind_specs("closed", 2, provider=w)
-    with pytest.raises(win.WindowError, match="refused:roster"):
-        win.pair_roster(None, None, provider=pp)
 
 
 def test_rosters_still_build_ps_without_a_declared_argument():

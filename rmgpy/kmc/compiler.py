@@ -6386,6 +6386,23 @@ class EventSetCompiler:
             )
         return oriented, coverage_site, None
 
+    def _padding_repeat_unit(self) -> dict[str, Any] | None:
+        """The repeat unit the padding extends by: the one the proxies carry
+        (the declared polymer's own), ``None`` when no proxy carries one.
+        Proxies of different repeat units are refused: one summary cannot
+        name two."""
+        units = {}
+        for proxy in self.proxies:
+            if proxy.repeat_unit is not None:
+                record = proxy.repeat_unit.provenance()
+                units[sha256_json(record)] = record
+        if len(units) > 1:
+            raise ValueError(
+                "proxy padding names one repeat unit; the proxies carry "
+                f"{sorted(record['name'] for record in units.values())}"
+            )
+        return next(iter(units.values()), None)
+
     def _compile_provenance(self) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         """(the proxy fingerprints, the provenance every record carries)."""
         proxy_inputs = [
@@ -6429,7 +6446,7 @@ class EventSetCompiler:
                             self.proxy_padding_tolerance_log10
                         ),
                         "maximum_heavy_atoms": self.proxy_padding_max_heavy_atoms,
-                        "repeat_unit": ps_repeat_unit().provenance(),
+                        "repeat_unit": self._padding_repeat_unit(),
                         "enabled": True,
                         "selection_basis": (
                             "explicit caller configuration; no production k selected"

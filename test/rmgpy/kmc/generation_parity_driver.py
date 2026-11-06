@@ -43,6 +43,7 @@ def main() -> None:
             output_dir=str(Path(args.output).resolve()),
             families=tuple(PS_FAMILY_CANDIDATES),
             proxy_units=PS_PROXY_UNITS,
+            legacy_provider="polystyrene",
         ),
         generation_provider_factory=(
             roundtrip_generation_provider_factory(LIMITS) if args.mode == "roundtrip" else None

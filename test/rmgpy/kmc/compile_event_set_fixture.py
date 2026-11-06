@@ -197,6 +197,7 @@ def main() -> None:
                 database_sha=args.database_sha,
                 barrier_e0_fixed_b=args.barrier_e0_fixed_b,
                 proxy_units=PS_PROXY_UNITS,
+                legacy_provider="polystyrene",
             ),
             generation_provider_factory=cache_provider,
         )

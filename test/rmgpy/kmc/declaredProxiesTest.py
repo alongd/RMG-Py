@@ -166,7 +166,8 @@ def _compile(monkeypatch, tmp_path, deck=None, families=("R_Recombination",)):
     _Recorder.seen = {}
     request = compile_module.CompileRequest(
         database_path=str(tmp_path), output_dir=str(tmp_path / "out"), families=families,
-        family_universe=families, deck=None if deck is None else str(deck))
+        family_universe=families, deck=None if deck is None else str(deck),
+        legacy_provider="polystyrene" if deck is None else None)
     compile_module.compile_artifact(request)
     return _Recorder.seen
 

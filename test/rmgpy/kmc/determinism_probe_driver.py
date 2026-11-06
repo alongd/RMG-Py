@@ -176,6 +176,7 @@ def main() -> None:
             families=families,
             family_universe=families,
             database_sha="determinism-probe",
+            legacy_provider="polystyrene",
         ),
         generation_provider_factory=factory,
     )

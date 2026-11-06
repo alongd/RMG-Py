@@ -1234,7 +1234,7 @@ def compile_dp8_closed(out_dir, certify_rates=False):
         path, _ = compile_artifact(CompileRequest(
             database_path=str(harness.DATABASE), output_dir=str(out_dir),
             families=("R_Recombination",), family_universe=("R_Recombination",),
-            database_sha="i134-reference"))
+            database_sha="i134-reference", legacy_provider="polystyrene"))
     finally:
         compile_module.ps_proxy_set, compile_module.EventSetCompiler = original
     return json.loads(Path(path).read_bytes())

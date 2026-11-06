@@ -77,18 +77,26 @@ def test_the_legacy_provider_is_not_part_of_the_request_identity(tmp_path, monke
         gi.compilation_request_identity(compile_request(database))
 
 
-def test_the_cli_names_the_legacy_provider():
+def test_the_cli_names_the_legacy_provider(tmp_path):
     import argparse
+    families = tmp_path / "families.json"
+    families.write_text('["F"]')
     parser = argparse.ArgumentParser()
-    parser.add_argument("--database")
+    parser.add_argument("database")
     compile_module.add_request_arguments(parser)
-    args = parser.parse_args(["--database", "/db", "--families", '["F"]',
-                              "--legacy-provider", "polystyrene"])
-    built = compile_module.request_from_arguments(parser, args, "/out")
-    assert built.legacy_provider == "polystyrene" and built.deck is None
-    bare = compile_module.request_from_arguments(
-        parser, parser.parse_args(["--database", "/db", "--families", '["F"]']), "/out")
+    base = ["/db", "--families", str(families)]
+    named = compile_module.request_from_arguments(
+        parser, parser.parse_args(base + ["--legacy-provider", "polystyrene"]), "/out")
+    assert named.legacy_provider == "polystyrene" and named.deck is None
+    bare = compile_module.request_from_arguments(parser, parser.parse_args(base), "/out")
     assert bare.legacy_provider is None
+
+
+def test_a_work_directory_begun_before_the_field_matches_the_same_request():
+    from rmgpy.kmc.compile_shards import _request_identity
+    named = _request_identity(request(legacy_provider="polystyrene"))
+    assert "legacy_provider" not in named
+    assert named == _request_identity(request())
 
 
 # -- the witness builder -----------------------------------------------------------
@@ -113,7 +121,7 @@ def test_build_spec_has_no_polystyrene_fallback():
                     if isinstance(n, ast.FunctionDef) and n.name == "build_spec")
     names = {c.value for c in ast.walk(function)
              if isinstance(c, ast.Constant) and isinstance(c.value, str)}
-    assert "polystyrene" not in names and "linear_alkane" not in names
+    assert "polystyrene" not in names     # the alkane branch is its own named owner
 
 
 def test_the_spec_owners_derive_from_the_one_reference_list():
@@ -125,6 +133,8 @@ def test_provider_defaults_are_explicit_arguments():
     for function in (win.SearchClassifier.__init__, win._fragment_facts):
         parameter = inspect.signature(function).parameters["providers"]
         assert parameter.default is inspect.Parameter.empty, function.__qualname__
+    facts = inspect.signature(win.certificate_support).parameters["fragment_facts"]
+    assert facts.default is inspect.Parameter.empty
     reference = inspect.signature(win.observation_providers).parameters["reference"]
     assert reference.default is inspect.Parameter.empty and reference.kind is reference.KEYWORD_ONLY
 

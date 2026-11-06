@@ -28,7 +28,7 @@ tables, timings, the projection of a sampled run and the gate failures
 (non-empty: exit 1).
 
 ``ladder:<family>`` (item 4): the family's ``windows.ladder_plan`` (the pair
-roster of ``windows.pair_roster``; the generated class roster is the other
+roster of ``ps_pair_roster``; the generated class roster is the other
 branch's: ``--roster classes.<family>.pkl`` when given, else none), every
 member of every item at DP <= L as a whole-species template (production
 rate on the species itself, both counts, no locality test), and every DP
@@ -783,7 +783,8 @@ def ladder(out, args):
     if args.roster:
         import pickle
         classes = tuple(pickle.loads(Path(args.roster).read_bytes()))
-    roster = win.pair_roster(certifier, family)
+    from ps_pair_roster import ps_pair_roster
+    roster = ps_pair_roster(certifier, family)
     constants = replace(constants, pair_kinds=roster, classes=classes, merge=None)
     bound = win.span_bound(constants)
     plan = win.ladder_plan(constants, bound)

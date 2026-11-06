@@ -20,6 +20,7 @@ from rmgpy.kmc import boundaries as b
 from rmgpy.kmc import domain as dom
 from rmgpy.kmc import rmg_moves as rm
 from rmgpy.kmc import windows as win
+from ps_pair_roster import ps_pair_roster
 
 SLOW = os.environ.get("RMG_KMC_SLOW") == "1"
 HEAD, TAIL = (0, "head"), (0, "tail")
@@ -1307,10 +1308,12 @@ def test_failed_predicate_outside_the_ball_pulls_its_atoms_into_the_window(rmg, 
     cert = certifier.certify(fam["H_Abstraction"], win.template_molecules(case.witness,
                                                                          "forward"),
                              member_labels=case.wanted)
-    full = win.certificate_support(cert, case.wanted, classifier=win.SearchClassifier(
-        fam["H_Abstraction"]))
+    facts = win._fragment_facts(b.LEGACY_PROVIDERS)
+    classifier = win.SearchClassifier(fam["H_Abstraction"], b.LEGACY_PROVIDERS)
+    full = win.certificate_support(cert, case.wanted, classifier=classifier,
+                                   fragment_facts=facts)
     matched = win.certificate_support(cert, case.wanted, include_failed=False,
-                                      classifier=win.SearchClassifier(fam["H_Abstraction"]))
+                                      classifier=classifier, fragment_facts=facts)
     assert full.refusal is None
     extra = set(full.atoms) - set(matched.atoms)
     assert extra, "no failed predicate reaches beyond the matched balls"
@@ -1459,14 +1462,14 @@ def test_alkane_window_is_bounded_in_alkane_units(rmg):
 
 def test_pair_roster_is_derived_from_the_templates_per_direction(rmg):
     fam, certifier = rmg
-    roster = set(win.pair_roster(certifier, fam["Disproportionation"]))
+    roster = set(ps_pair_roster(certifier, fam["Disproportionation"]))
     assert ("reverse", ("alkene", "closed")) in roster
     assert ("forward", ("radical", "radical")) in roster
-    habs = set(win.pair_roster(certifier, fam["H_Abstraction"]))
+    habs = set(ps_pair_roster(certifier, fam["H_Abstraction"]))
     assert {("forward", ("closed", "radical")), ("forward", ("alkene", "radical")),
             ("forward", ("radical", "radical"))} <= habs
     assert all(d == "forward" for d, _k in habs)
-    add = set(win.pair_roster(certifier, fam["R_Addition_MultipleBond"]))
+    add = set(ps_pair_roster(certifier, fam["R_Addition_MultipleBond"]))
     assert ("forward", ("alkene", "radical")) in add and ("forward", ("closed", "radical")) \
         not in add
     # unimolecular directions carry no pair kinds

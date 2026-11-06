@@ -137,6 +137,7 @@ def test_real_compile_hook_receives_calls_and_its_error_aborts(tmp_path):
         output_dir=str(tmp_path / "out"),
         families=tuple(SUBSET),
         family_universe=tuple(SUBSET),
+        legacy_provider="polystyrene",
     )
     count = []
     defaults = []
@@ -167,7 +168,7 @@ def _start_cli(output, families):
         [
             sys.executable, "-m", "rmgpy.kmc.compile", str(DATABASE), str(output),
             "--families", str(families), "--family-universe", str(families),
-            "--database-sha", "parity-sha",
+            "--database-sha", "parity-sha", "--legacy-provider", "polystyrene",
         ],
         cwd=REPOSITORY, env=_environment(), stdout=subprocess.PIPE,
         stderr=subprocess.PIPE, text=True,
@@ -253,6 +254,7 @@ def test_parent_sigkill_reaps_the_compile_child(tmp_path):
         [
             sys.executable, "-m", "rmgpy.kmc.compile", str(DATABASE),
             str(tmp_path / "out"), "--families", str(families),
+            "--legacy-provider", "polystyrene",
         ],
         cwd=REPOSITORY, env=_environment(),
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
@@ -288,7 +290,7 @@ def test_child_exception_gives_nonzero_exit_traceback_and_no_artifact(tmp_path):
         [
             sys.executable, "-m", "rmgpy.kmc.compile",
             str(tmp_path / "no-such-database"), str(output),
-            "--families", str(families),
+            "--families", str(families), "--legacy-provider", "polystyrene",
         ],
         cwd=REPOSITORY, env=_environment(), capture_output=True, text=True,
     )

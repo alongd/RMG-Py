@@ -1067,8 +1067,11 @@ def _entry_present_at_commit(
     return f'label = "{label}",' in historical
 
 
-def build_audit(database_path: str | Path, output_directory: str | Path) -> AuditBuild:
-    """Compile the exact PS corpus and write its canonical provenance audit."""
+def build_ps_audit(database_path: str | Path, output_directory: str | Path) -> AuditBuild:
+    """The PS reference audit: compile the exact polystyrene corpus
+    (``ps_proxy_set``, named here, not defaulted) and write its canonical
+    provenance audit.  It audits the archived PS oracle only; a declared
+    polymer has no counterpart."""
     database_path = Path(database_path).resolve()
     output_directory = Path(output_directory).resolve()
     legacy_oracle = _run_legacy_rate_oracle_isolated(database_path)
@@ -2193,7 +2196,7 @@ def main() -> None:
     parser.add_argument("--report")
     parser.add_argument("--verify", action="store_true")
     args = parser.parse_args()
-    build = build_audit(args.database, args.output)
+    build = build_ps_audit(args.database, args.output)
     verification = verify_build(build) if args.verify else None
     if args.report:
         output = Path(args.output).resolve()

@@ -489,6 +489,11 @@ class _Plan:
 def _request_identity(request: CompileRequest) -> dict:
     data = asdict(request)
     data.pop("output_dir")
+    # "no deck" already says the polystyrene reference was asked for; its
+    # name is not written, so a work directory begun before the field existed
+    # still matches the same request
+    if data.get("legacy_provider") in (None, "polystyrene"):
+        data.pop("legacy_provider", None)
     return json.loads(json.dumps(data))
 
 

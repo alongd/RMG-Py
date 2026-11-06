@@ -8,8 +8,10 @@ definition of what a cold compile does.
 Nothing here is specific to one polymer: the family candidate list, the family
 universe and the proxy size are inputs.  With a deck (``--deck``) the proxies
 are the declared polymer's own (``declared_proxies.declared_proxy_set``) and
-every requested family is a candidate on them; without one the built-in proxy
-set is compiled as before.  A schema-v2 (copolymer) deck's proxies
+every requested family is a candidate on them; without one the request must
+name a reference implementation (``--legacy-provider polystyrene``, whose
+built-in proxy set is compiled as before) and is refused otherwise.  A
+schema-v2 (copolymer) deck's proxies
 (``declared_proxies.sequence_proxy_set``) pair its structures over the
 family-tree classes of the loaded families, so they are built once the
 families load, and ``proxy_source`` records the pairs.  The artifact's provenance names the source
@@ -22,7 +24,8 @@ CLI::
 
     python -m rmgpy.kmc.compile DATABASE OUTPUT (--families FILE.json | --family F)
         [--family-universe FILE.json] [--database-sha SHA]
-        [--barrier-e0-fixed-b K] [--proxy-units N] [--deck DECK.py]
+        [--barrier-e0-fixed-b K] [--proxy-units N]
+        (--deck DECK.py | --legacy-provider polystyrene)
 
 ``--family F`` (exactly one family) compiles that family's artifact alone: the
 one-element form of ``--families``.  ``F`` must be one family directory of the
@@ -83,8 +86,19 @@ class CompileRequest:
     # None uses the compiler's own proxy-set default.
     proxy_units: Optional[int] = None
     temperature_grid: tuple[float, ...] = tuple(DEFAULT_T_GRID)
-    # a deck file declaring the polymer; None compiles the built-in proxy set
+    # a deck file declaring the polymer.  Without one the request must name a
+    # reference implementation (``legacy_provider``); a request naming neither
+    # is refused.
     deck: Optional[str] = None
+    # the named reference implementation compiled when there is no deck: a name
+    # in ``LEGACY_PROVIDER_PROXY_SETS``.  Not part of the request identity: the
+    # artifact is the same bytes whichever way the polymer was named.
+    legacy_provider: Optional[str] = None
+
+
+# the reference implementations a request can ask for by name, with the name of
+# the module function building their proxy set (looked up when used)
+LEGACY_PROVIDER_PROXY_SETS = {"polystyrene": "ps_proxy_set"}
 
 
 def enumerate_family_universe(database_path: str | Path) -> list[str]:
@@ -282,16 +296,30 @@ def make_compiler(
 def _proxy_inputs(request: CompileRequest):
     """(proxies, proxy source, compiler options, discovery options) of a
     request: the declared polymer's proxies and its requested families as the
-    candidates, or the built-in set and its own candidates."""
+    candidates, or the named reference implementation's set and its own
+    candidates.  A request naming neither is refused, before anything loads."""
+    legacy = request.legacy_provider
+    ways_out = ("pass a deck declaring the polymer, or name the reference "
+                "implementation with legacy_provider='polystyrene'")
+    if request.deck is not None and legacy is not None:
+        raise ValueError(f"refused:no_polymer: a deck and legacy_provider={legacy!r} both name "
+                         f"the polymer; give one (a deck, or legacy_provider='polystyrene')")
     if request.deck is None:
+        if legacy is None:
+            raise ValueError(f"refused:no_polymer: the request names no polymer; {ways_out}")
+        if not isinstance(legacy, str) or legacy not in LEGACY_PROVIDER_PROXY_SETS:
+            raise ValueError(f"refused:no_polymer: legacy_provider={legacy!r} names no reference "
+                             f"implementation (known: {sorted(LEGACY_PROVIDER_PROXY_SETS)}); "
+                             f"{ways_out}")
+        build = globals()[LEGACY_PROVIDER_PROXY_SETS[legacy]]
         proxies = (
-            ps_proxy_set(request.proxy_units)
+            build(request.proxy_units)
             if request.proxy_units is not None
-            else ps_proxy_set()
+            else build()
         )
         source = {
             "kind": "built-in",
-            "proxy_set": f"{ps_proxy_set.__module__}.{ps_proxy_set.__qualname__}",
+            "proxy_set": f"{build.__module__}.{build.__qualname__}",
             "proxy_units": request.proxy_units,
             "reason": "no deck was given",
         }
@@ -464,6 +492,8 @@ def add_request_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--proxy-units", type=int, help="proxy chain length")
     parser.add_argument("--deck", help="RMG deck declaring the polymer: compile its own "
                         "proxies with every requested family as a candidate")
+    parser.add_argument("--legacy-provider", help="without a --deck, the named reference "
+                        "implementation to compile (polystyrene)")
 
 
 def request_from_arguments(
@@ -489,6 +519,7 @@ def request_from_arguments(
         barrier_e0_fixed_b=args.barrier_e0_fixed_b,
         proxy_units=args.proxy_units,
         deck=str(Path(args.deck).resolve()) if args.deck else None,
+        legacy_provider=args.legacy_provider,
     )
 
 
