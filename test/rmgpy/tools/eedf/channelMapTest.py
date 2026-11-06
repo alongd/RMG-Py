@@ -35,6 +35,7 @@ from types import SimpleNamespace
 
 import pytest
 import yaml
+from rmgpy.kinetics import EEDFChannel
 
 from rmgpy.tools.eedf import channel_map as adapter
 from rmgpy.tools.eedf.schema import FingerprintMismatch, SpecError, _file_hash, load_spec
@@ -75,7 +76,8 @@ def conversion_inputs(tmp_path):
     reaction = SimpleNamespace(reactants=[SimpleNamespace(label=s) for s in ['Ar', 'e-']],
                                products=[SimpleNamespace(label=s) for s in ['Ars', 'e-']],
                                reversible=False)
-    library = SimpleNamespace(entries={87: SimpleNamespace(item=reaction)})
+    library = SimpleNamespace(entries={87: SimpleNamespace(item=reaction, data=EEDFChannel(
+        process=process, collision_set='test-Ar', side='ine'))})
     return spec, frozen, library
 
 
@@ -149,7 +151,8 @@ def _two_gas_fixture(conversion_inputs, tmp_path):
     reaction = SimpleNamespace(reactants=[SimpleNamespace(label=s) for s in ['N2', 'e-']],
                                products=[SimpleNamespace(label=s) for s in ['N2v1', 'e-']],
                                reversible=False)
-    n2_library = SimpleNamespace(entries={12: SimpleNamespace(item=reaction)})
+    n2_library = SimpleNamespace(entries={12: SimpleNamespace(item=reaction, data=EEDFChannel(
+        process=process, collision_set='test-N2', side='ine'))})
     return spec, ar_map, n2_map, {'PlasmaArgon': ar_library, 'PlasmaNitrogen': n2_library}
 
 
@@ -161,6 +164,8 @@ def test_multigas_conversion_uses_each_configured_owner_library(conversion_input
     assert len(channels) == 2
     assert [channel['reaction']['library'] for channel in channels] == [
         'PlasmaArgon', 'PlasmaNitrogen']
+    assert channels[0]['reaction']['repr'] == repr(libraries['PlasmaArgon'].entries[87].data)
+    assert channels[1]['reaction']['repr'] == repr(libraries['PlasmaNitrogen'].entries[12].data)
     assert report['class_counts'] == {'A': 2}
     import rmgpy.tools.eedf.vibrational as vibrational
     ladder = {'axis': 'Tv_K', 'parent': 'N2(X)', 'K': 1, 'levels': [
@@ -181,6 +186,33 @@ def test_multigas_conversion_uses_each_configured_owner_library(conversion_input
         published, {'x_N2': .25, 'Tv_K': 1000.})
     assert fractions == {'Ar': .75, 'N2': .25}
     assert populations['N2(X,v=0)'] + populations['N2(X,v=1)'] == pytest.approx(1.)
+
+
+@pytest.mark.parametrize('field', ['process', 'collision_set'])
+def test_owner_identity_audit_detects_each_metadata_mismatch(conversion_inputs, field):
+    spec, frozen, library = conversion_inputs
+    channels, _ = adapter.convert_channel_map(spec, frozen, library, 'test-Ar')
+    channels[0]['reaction']['repr'] = channels[0]['reaction']['repr'].replace(
+        library.entries[87].data.process if field == 'process' else 'test-Ar', 'wrong')
+    with pytest.raises(SpecError, match='owner identity'):
+        adapter.validate_owner_identities(channels, {'PlasmaArgon': library})
+
+
+@pytest.mark.parametrize('variable', ['EEDF_AR4S_IDENTITY_SPEC', 'EEDF_ATOMIC_IDENTITY_SPEC'])
+def test_full_spec_owners_equal_database_entries(variable, tmp_path):
+    path = os.environ.get(variable)
+    if not path:
+        pytest.skip('set ' + variable + ' for full production-spec identity check')
+    from rmgpy.tools.eedf.channels import _load_channel_map
+    from rmgpy.tools.eedf.ownership import iter_reaction_owners
+    spec = load_spec(path)
+    channels = _load_channel_map(spec['channel_map'])
+    labels = {owner['library'] for channel in channels
+              for owner in iter_reaction_owners(channel.get('reaction'))}
+    assert labels
+    libraries = {label: adapter._load_library(
+        Path(os.environ['EEDF_DATABASE_ROOT']), tmp_path, label)[0] for label in labels}
+    adapter.validate_owner_identities(channels, libraries)
 
 
 def _three_gas_state_maps():

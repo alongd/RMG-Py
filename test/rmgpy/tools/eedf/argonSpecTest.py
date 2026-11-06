@@ -44,5 +44,10 @@ def test_real_spec_refresh_preserves_grid_and_reports_all_argon_owners(tmp_path)
     new_channels = json.loads(Path(result['channel_map']['path']).read_text())
     old_nitrogen = {c['description']: c for c in old_channels if c['description'].startswith('e + N2(')}
     new_nitrogen = {c['description']: c for c in new_channels if c['description'].startswith('e + N2(')}
-    assert old_nitrogen == new_nitrogen
+    # Owner metadata is rebuilt from the current database; physical collisions
+    # and their cross sections must remain unchanged.
+    assert {name: {k: v for k, v in row.items() if k != 'reaction'}
+            for name, row in old_nitrogen.items()} == {
+        name: {k: v for k, v in row.items() if k != 'reaction'}
+        for name, row in new_nitrogen.items()}
     assert base_path.read_bytes() == original_bytes

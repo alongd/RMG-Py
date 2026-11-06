@@ -73,6 +73,7 @@ def fixture(tmp_path, monkeypatch, mutation=None, declared=None, duplicate=False
         reaction = LibraryReaction(reactants=[core[0], n2], products=[core[0], *products],
                                    kinetics=marker, reversible=False, library='PlasmaAtomicNitrogen',
                                    entry=Entry(index=index))
+        reaction.source_identity = ('PlasmaAtomicNitrogen', index)
         reactions.append(reaction)
         chemicals.append(dict(description=process, role='rate_only', source_sha256=SOURCE_SHA256,
                               classification='A', kind='excitation', threshold_eV=10.,

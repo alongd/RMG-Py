@@ -730,20 +730,48 @@ def resolve_electron_placement(reaction, species_list):
     # are shared by reference (the reactor indexes species by identity);
     # degeneracy passes through the constructor, which sets the backing field
     # directly and therefore never touches the shared kinetics object.
-    view = Reaction(
-        label=reaction.label,
-        reactants=view_reactants,
-        products=view_products,
-        kinetics=reaction.kinetics,
-        reversible=reaction.reversible,
-        duplicate=reaction.duplicate,
-        degeneracy=reaction.degeneracy,
-        electrons=0,
-        is_forward=getattr(reaction, 'is_forward', None),
-        # The cross-check's outcome travels with the view, so a reader can tell
-        # "the rate order agrees" from "the rate order could not be resolved"
-        # without re-deriving either.
-        comment='Electron-placement view (family {0!r}, {1}) of: {2!s}'.format(
-            family, order_outcome, reaction),
-    )
+    comment = 'Electron-placement view (family {0!r}, {1}) of: {2!s}'.format(
+        family, order_outcome, reaction)
+    from rmgpy.data.kinetics.library import LibraryReaction
+
+    if isinstance(reaction, LibraryReaction):
+        # The reactor uses source_identity for declared Te laws and electron
+        # energy bookkeeping; the placement view must retain its library owner.
+        view = LibraryReaction(
+            index=reaction.index,
+            reactants=view_reactants,
+            products=view_products,
+            specific_collider=reaction.specific_collider,
+            kinetics=reaction.kinetics,
+            network_kinetics=reaction.network_kinetics,
+            reversible=reaction.reversible,
+            duplicate=reaction.duplicate,
+            degeneracy=reaction.degeneracy,
+            library=reaction.library,
+            allow_pdep_route=reaction.allow_pdep_route,
+            elementary_high_p=reaction.elementary_high_p,
+            allow_max_rate_violation=reaction.allow_max_rate_violation,
+            entry=reaction.entry,
+            electrons=0,
+            source_identity=reaction.source_identity,
+        )
+        view.label = reaction.label
+        view.comment = comment
+        view.is_forward = getattr(reaction, 'is_forward', None)
+    else:
+        view = Reaction(
+            label=reaction.label,
+            reactants=view_reactants,
+            products=view_products,
+            kinetics=reaction.kinetics,
+            reversible=reaction.reversible,
+            duplicate=reaction.duplicate,
+            degeneracy=reaction.degeneracy,
+            electrons=0,
+            is_forward=getattr(reaction, 'is_forward', None),
+            # The cross-check's outcome travels with the view, so a reader can tell
+            # "the rate order agrees" from "the rate order could not be resolved"
+            # without re-deriving either.
+            comment=comment,
+        )
     return view

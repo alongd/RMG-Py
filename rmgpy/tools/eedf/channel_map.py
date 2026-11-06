@@ -168,7 +168,7 @@ def _owner_problem(row, libraries):
     return None
 
 
-def _convert_channel(physical, frozen, collision_set):
+def _convert_channel(physical, frozen, collision_set, library=None):
     """Keep each collision's physics, including distinct lumped-channel thresholds."""
     result = copy.deepcopy(physical)
     result['classification'] = frozen['class']
@@ -178,11 +178,38 @@ def _convert_channel(physical, frozen, collision_set):
         if (owner['status'] not in ('present', 'present_lumped')
                 or type(owner.get('index')) is not int):
             raise SpecError('class-A channel has no owner: ' + str(frozen['id']))
-        marker = EEDFChannel(process=frozen['loki_process'],
-                             collision_set=collision_set, side='ine')
+        if library is None:
+            # Intermediate physical rows are rebuilt with loaded owners below.
+            marker = EEDFChannel(process=frozen['loki_process'],
+                                 collision_set=collision_set, side='ine')
+        else:
+            marker = library.entries[owner['index']].data
+            if (not isinstance(marker, EEDFChannel) or marker.side != 'ine'
+                    or marker.process != physical['description']):
+                raise SpecError('owner identity differs from physical collision: '
+                                + repr((owner['library'], owner['index'])))
         result['reaction'] = {'library': owner['library'], 'index': owner['index'],
                               'repr': repr(marker)}
     return result
+
+
+def validate_owner_identities(channels, libraries):
+    """Require every persisted owner to equal its actual database marker.
+
+    Collision display strings and a mixture-wide set cannot substitute for
+    library metadata. Includes every member of a cascade family.
+    """
+    from rmgpy.tools.eedf.ownership import iter_reaction_owners
+    for channel in channels:
+        for owner in iter_reaction_owners(channel.get('reaction')):
+            library = libraries.get(owner['library'])
+            entry = None if library is None else library.entries.get(owner['index'])
+            marker = None if entry is None else entry.data
+            if (not isinstance(marker, EEDFChannel)
+                    or marker.process != channel['description']
+                    or owner['repr'] != repr(marker)):
+                raise SpecError('owner identity differs from library entry: '
+                                + repr((owner['library'], owner['index'])))
 
 
 def _physical_channel_from_frozen(physical, frozen, collision_set, *,
@@ -571,14 +598,25 @@ def convert_channel_maps(spec, gas_maps, libraries, collision_set, cascade_yield
     for physical in channels:
         row = by_process[physical['description']]
         library = libraries.get(row['rmg']['library']) if row['class'] == 'A' else None
+        # Map `set` can be a map revision (e.g. ar-v1), not a collision set.
+        # The evaluated library markers own this identity, including families.
+        owner_set = collision_set
+        if library is not None:
+            sets = {entry.data.collision_set for entry in library.entries.values()
+                    if isinstance(entry.data, EEDFChannel)
+                    and entry.data.process == physical['description']}
+            if len(sets) > 1:
+                raise SpecError('owners disagree on collision set: ' + physical['description'])
+            if sets:
+                owner_set, = sets
         if physical['threshold_eV'] != row.get('threshold_eV'):
             raise SpecError('frozen threshold differs from physical channel: ' + str(row['id']))
         if row['class'] == 'A':
             try:
-                family = _branch_family(row, library, collision_set, cascade_yields)
+                family = _branch_family(row, library, owner_set, cascade_yields)
                 problem = None if family is not None else _owner_problem(row, libraries)
                 exception = _reviewed_inverse(row, spec, cascade_yields) if problem is None else None
-                pair = _paired_inverse(row, physical, library, collision_set) if problem is None else None
+                pair = _paired_inverse(row, physical, library, owner_set) if problem is None else None
             except (SpecError, FingerprintMismatch) as error:
                 family, problem = None, str(error)
             if problem:
@@ -604,7 +642,7 @@ def convert_channel_maps(spec, gas_maps, libraries, collision_set, cascade_yield
                     shared[(owner['library'], owner['index'])].append(row['id'])
                 continue
             shared[(row['rmg']['library'], row['rmg']['index'])].append(row['id'])
-        channel = _convert_channel(physical, row, collision_set)
+        channel = _convert_channel(physical, row, owner_set, library)
         converted.append(channel)
         if physical['kind'] == 'effective':
             derived_description = _derived_elastic(physical['description'])
@@ -630,6 +668,7 @@ def convert_channel_maps(spec, gas_maps, libraries, collision_set, cascade_yield
         report['outcome'] = 'refused'
         raise MissingOwners(report)
     _validate_map(converted)
+    validate_owner_identities(converted, libraries)
     return converted, report
 
 

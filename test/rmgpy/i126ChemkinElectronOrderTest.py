@@ -138,6 +138,14 @@ class TestExportConsultsTheDeclaration:
         assert [id(s) for s in reactants] == [id(s) for s in view.reactants]
         assert [id(s) for s in products] == [id(s) for s in view.products]
 
+    def test_library_placement_view_preserves_source_identity(self):
+        spc = _species()
+        reaction = _recombination(spc)
+        reaction.source_identity = (RECOMBINATION, 1)
+        view = resolve_electron_placement(reaction, list(spc.values()))
+        assert view.source_identity == (RECOMBINATION, 1)
+        assert view.library == RECOMBINATION
+
     def test_chemkin_writes_the_ionisation(self):
         spc = _species()
         equation = write_reaction_string(_ionisation(spc), species_list=list(spc.values()))
