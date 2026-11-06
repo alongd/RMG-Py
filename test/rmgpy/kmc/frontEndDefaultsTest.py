@@ -143,6 +143,14 @@ def test_pair_roster_is_not_a_front_end_function():
     assert not hasattr(win, "pair_roster")
 
 
+def test_the_identitys_default_proxy_units_is_the_declared_default():
+    # generation_identity hashes the PS constant for an unset proxy_units; a
+    # declared compile defaults to DEFAULT_PROXY_UNITS: the same number
+    from rmgpy.kmc import compiler
+    from rmgpy.kmc.declared_proxies import DEFAULT_PROXY_UNITS
+    assert compiler.PS_PROXY_UNITS == DEFAULT_PROXY_UNITS
+
+
 # -- padding provenance --------------------------------------------------------------
 
 
