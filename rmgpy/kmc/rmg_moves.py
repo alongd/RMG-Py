@@ -199,6 +199,111 @@ def _check_ids(reactants):
 
 
 # ---------------------------------------------------------------------------
+# RMG resonance, without Clar where it cannot change a form
+# ---------------------------------------------------------------------------
+def _ring_bonds(molecule) -> Tuple[list, set]:
+    """Per atom (in ``molecule.atoms`` order), how many of its bonds lie on a
+    cycle; and the bridges (bonds on no cycle) as index pairs.  A pure read of
+    the bonds: the molecule, its atom order and RMG's cached SSSR are left
+    untouched."""
+    index = {atom: k for k, atom in enumerate(molecule.atoms)}
+    adj = [[index[other] for other in atom.bonds] for atom in molecule.atoms]
+    n = len(adj)
+    order, low, bridges, clock = [-1] * n, [0] * n, set(), 0
+    for root in range(n):
+        if order[root] >= 0:
+            continue
+        order[root] = low[root] = clock
+        clock += 1
+        stack = [(root, -1, iter(adj[root]))]
+        while stack:
+            v, parent, it = stack[-1]
+            w = next(it, None)
+            if w is None:
+                stack.pop()
+                if parent >= 0:
+                    low[parent] = min(low[parent], low[v])
+                    if low[v] > order[parent]:
+                        bridges.add((min(v, parent), max(v, parent)))
+            elif w == parent:
+                continue
+            elif order[w] >= 0:
+                low[v] = min(low[v], order[w])
+            else:
+                order[w] = low[w] = clock
+                clock += 1
+                stack.append((w, v, iter(adj[w])))
+    on_ring = [sum(1 for w in adj[v] if (min(v, w), max(v, w)) not in bridges) for v in range(n)]
+    return on_ring, bridges
+
+
+def _rings_share_an_atom(molecule) -> bool:
+    """Whether some atom lies on two rings (fused, spiro or bridged).  Once the
+    bridges are deleted, every atom of a simple ring keeps two bonds; an atom
+    on two rings keeps three or more."""
+    return any(k > 2 for k in _ring_bonds(molecule)[0])
+
+
+def _clar_cannot_matter(molecule) -> bool:
+    """True when RMG's Clar step returns exactly what its aromatic step does,
+    on every form RMG holds at that step.
+
+    Required: no atom on two rings, no bond joining two rings, and every atom
+    neutral without lone pairs.  The last makes every form at RMG's Clar step
+    (the input, its aromatic and Kekule forms, aryne and radical shifts)
+    neutral and lone-pair free: carbon and hydrogen chemistry, where a ring
+    carbon's exocyclic bond is single or a C=C.
+
+    Clar's MILP covers every atom of a perceived aromatic ring exactly once,
+    by its ring's sextet or by one double bond; exocyclic bond orders are fixed
+    and, with no bond joining two rings, the problem splits into one problem
+    per ring.  A ring none of whose atoms has an exocyclic double bond is a
+    sextet in the unique optimum.  A ring with one (RMG does perceive
+    quinodimethane rings as aromatic) cannot be a sextet; its remaining atoms
+    form paths, which have at most one perfect matching, and every atom of a
+    perceived ring carries a double bond or a 1.5 bond (pinned by
+    productKeysClarTest), so the matching exists and is the form's own
+    Kekule pattern.  RMG writes that optimum (sextets as 1.5, the rest as
+    they were) and its next MILP, at the same Clar number with one sextet
+    fewer, is infeasible, which ends the enumeration; with no sextet at all
+    it writes nothing.
+
+    ``generate_aromatic_resonance_structure`` writes 1.5 on every perceived
+    ring and, when atom typing fails, retries ring by ring.  A ring carbon with
+    two benzene bonds and a double bond has no RMG atom type (Cb takes no
+    double bond), so exactly the rings with an exocyclic double bond fail and
+    stay as they were; each fails once before every other ring has been tried,
+    within the retry budget; with every ring failing it writes nothing.  Both
+    steps therefore give the same molecule (or none) from every form, so RMG's
+    list is the same, in the same order.  Anything else keeps RMG's default
+    (fused, spiro, bridged or directly bonded rings, charges, lone pairs: every
+    heteroatom)."""
+    on_ring, bridges = _ring_bonds(molecule)
+    if any(k > 2 for k in on_ring):
+        return False
+    if any(on_ring[v] and on_ring[w] for v, w in bridges):
+        return False
+    return all(atom.charge == 0 and atom.lone_pairs == 0 for atom in molecule.atoms)
+
+
+def _resonance_forms(molecule) -> list:
+    """RMG's ``generate_resonance_structures(keep_isomorphic=True,
+    filter_structures=True)``, without the Clar MILP where it cannot change a
+    form (I-307).
+
+    RMG runs ``generate_clar_structures`` in place of
+    ``generate_aromatic_resonance_structure`` whenever a form has more than one
+    aromatic ring, fused or not: on multi-phenyl products it is a third of a
+    key's cost and it adds no form.  ``_clar_cannot_matter`` is read on the
+    input, before RMG's own ``update``; it depends only on the bond graph and
+    on charges and lone pairs, which the forms at RMG's Clar step share.
+    Its argument is checked against RMG's default call by a randomized
+    differential (productKeysClarTest; I-307 probe 1)."""
+    return generate_resonance_structures(molecule, clar_structures=not _clar_cannot_matter(molecule),
+                                         keep_isomorphic=True, filter_structures=True)
+
+
+# ---------------------------------------------------------------------------
 # reactant resonance forms
 # ---------------------------------------------------------------------------
 def reactant_forms(molecule, resonance: str = "all") -> Tuple[Molecule, ...]:
@@ -215,7 +320,7 @@ def reactant_forms(molecule, resonance: str = "all") -> Tuple[Molecule, ...]:
     if resonance == "given" or len(base.atoms) == 1:
         forms = [base]
     else:
-        forms = generate_resonance_structures(base, keep_isomorphic=True, filter_structures=True)
+        forms = _resonance_forms(base)
         forms = [f for f in forms if f.reactive] or list(forms)
     ids = _ids(molecule)
     keyed = []
@@ -635,8 +740,7 @@ class ProductKeys:
         if len(mol.atoms) == 1:
             return (mol,)
         ids = _ids(mol)
-        forms = tuple(generate_resonance_structures(mol, keep_isomorphic=True,
-                                                    filter_structures=True))
+        forms = tuple(_resonance_forms(mol))
         for f in forms:
             if _ids(f) != ids:
                 raise AtomIdError("generate_resonance_structures did not preserve the atom ids")
