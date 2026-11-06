@@ -178,6 +178,7 @@ def test_atomic_table_is_multilinear_even_after_midpoint_refinement(tmp_path):
     assert row.power_groups["field"] == pytest.approx(
         expected_mobility * (np.exp(u) * 1e-21) ** 2
     )
+    # Atomic-rate multilinearity is asserted at a field node; PCHIP in u is nonlinear in its data.
     rate_row = table.row(1.0, point)
     left, right = dict(point), dict(point)
     left[AXES[0]], right[AXES[0]] = 0.0, BOUNDS[0] / 2
@@ -355,6 +356,76 @@ def test_atomic_coordinate_energy_jacobian_matches_residual(tmp_path, near_top):
         np.testing.assert_allclose(
             jacobian[:, column], finite_difference, rtol=3e-4, atol=2e-6 * scale
         )
+
+
+@pytest.mark.parametrize("scale", [0.37, 0.73, 1.0, 1.7])
+def test_atomic_energy_jacobian_preserves_coupling_at_joint_upper_corner(tmp_path, scale):
+    reactor, _ = atomic_reactor(tmp_path)
+    y = atomic_trial(reactor, np.asarray(BOUNDS))
+    y *= scale
+    dydt = np.zeros_like(y)
+    baseline = np.asarray(reactor.residual(0.0, y, dydt)[0]).copy()
+    jacobian = np.asarray(reactor.jacobian(0.0, y, dydt, 0.0))
+    bath = max(
+        (j for j in range(reactor.num_core_species)
+         if reactor.neutral_heavy_mask[j] and j not in (4, 5, 6) and y[j] > 0.0),
+        key=lambda j: y[j],
+    )
+    bath_step = 6.0e-6 * max(abs(y[bath]), reactor.atol_array[bath])
+    bath_trial = y.copy()
+    bath_trial[bath] += bath_step
+    bath_derivative = (
+        np.asarray(reactor.residual(0.0, bath_trial, dydt)[0]) - baseline
+    ) / bath_step
+    base_coordinates = reactor._eedf_coordinates(y, clamp=True)
+    for column in (4, 5, 6):
+        step = 6.0e-6 * max(abs(y[column]), reactor.atol_array[column])
+        balanced_trial = y.copy()
+        balanced_trial[column] -= step
+        balanced_trial[bath] += step
+        trial_coordinates = reactor._eedf_coordinates(balanced_trial, clamp=True)
+        assert trial_coordinates[AXES[column - 4]] < base_coordinates[AXES[column - 4]]
+        for axis in AXES:
+            if axis != AXES[column - 4]:
+                assert trial_coordinates[axis] == pytest.approx(base_coordinates[axis], abs=1e-15)
+        directional = (
+            np.asarray(reactor.residual(0.0, balanced_trial, dydt)[0]) - baseline
+        ) / step
+        expected = bath_derivative - directional
+        assert jacobian[reactor.te_index, column] == pytest.approx(
+            expected[reactor.te_index], rel=0.06
+        )
+
+
+def test_atomic_energy_jacobian_preserves_zero_population_coupling(tmp_path):
+    reactor, _ = atomic_reactor(tmp_path)
+    values = np.zeros(3)
+    y = atomic_trial(reactor, values)
+    dydt = np.zeros_like(y)
+    jacobian = np.asarray(reactor.jacobian(0.0, y, dydt, 0.0))
+    neutral = sum(max(float(y[j]), 0.0) for j in range(reactor.num_core_species)
+                  if reactor.neutral_heavy_mask[j])
+    step = 1.0e-7 * neutral
+    trial = y.copy()
+    trial[5] += step
+    trial_coordinates = reactor._eedf_coordinates(trial, clamp=True)
+    assert trial_coordinates[AXES[1]] > 0.0
+    assert all(trial_coordinates[axis] <= BOUNDS[i]
+               for i, axis in enumerate(AXES))
+    assert np.isfinite(jacobian[reactor.te_index, 5])
+    assert abs(jacobian[reactor.te_index, 5]) > 1.0e10
+
+
+def test_atomic_energy_jacobian_resolves_zero_neutral_bath_column(tmp_path):
+    reactor, _ = atomic_reactor(tmp_path)
+    y = atomic_trial(reactor, np.asarray(BOUNDS) * [0.25, 0.3, 0.6])
+    bath = 3  # zero-abundance neutral Ars still contributes to the shared denominator
+    assert reactor.neutral_heavy_mask[bath]
+    assert y[bath] == 0.0
+    dydt = np.zeros_like(y)
+    jacobian = np.asarray(reactor.jacobian(0.0, y, dydt, 0.0))
+    assert np.isfinite(jacobian[reactor.te_index, bath])
+    assert abs(jacobian[reactor.te_index, bath]) > 1.0e8
 
 
 @pytest.mark.parametrize("index", range(3))

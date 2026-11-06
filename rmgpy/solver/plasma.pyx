@@ -4806,12 +4806,19 @@ cdef class PlasmaReactor(ReactionSystem):
         if self._finite_en_state(y) and not self.eedf_mode:
             return self._en_energy_jacobian(t,y,cj)
         population_columns = set()
+        atomic_population_columns = {}
+        boundary_bath_index = None
+        boundary_bath_derivative = None
         if self.eedf_mode:
             for entry in self.eedf_axis_species.values():
                 if isinstance(entry, dict):
                     population_columns.update(entry['indices'][:2])
             from rmgpy.tools.eedf.atomic_population import AXES as atomic_axes
             if any(name in self.eedf_axis_species for name in atomic_axes):
+                atomic_population_columns = {
+                    name: self.eedf_axis_species[name]
+                    for name in atomic_axes if name in self.eedf_axis_species
+                }
                 # Every neutral changes the denominator of each atomic fraction,
                 # including bath species that have no population axis of their own.
                 population_columns.update(j for j in range(self.num_core_species)
@@ -4821,6 +4828,7 @@ cdef class PlasmaReactor(ReactionSystem):
             # Validate the state being differentiated before admitting trials.
             # An out-of-domain base state must never gain a one-sided escape.
             self._eedf_coordinates(y, clamp=True)
+            base_coordinates = self._eedf_coordinates(y, clamp=True)
         legacy_trial = self._en_legacy_energy_trial
         self._en_legacy_energy_trial = True
         try:
@@ -4829,12 +4837,32 @@ cdef class PlasmaReactor(ReactionSystem):
             base = None
             for k in range(n):
                 h = 6.0e-6*max(abs(y[k]),self.atol_array[k])
+                if (atomic_population_columns and k < self.num_core_species
+                        and self.neutral_heavy_mask[k]):
+                    neutral_scale = sum(max(float(y[j]), 0.)
+                                        for j in range(self.num_core_species)
+                                        if self.neutral_heavy_mask[j])
+                    h = 6.0e-6*max(abs(y[k]), 1.0e-6*neutral_scale,
+                                   self.atol_array[k])
                 if k in population_columns:
                     # Tv and atomic fractions depend on population ratios. Near a domain face, a
                     # central population perturbation can leave the table.
                     # Check coordinates before evaluating either residual;
                     # shrink only if neither direction fits the domain.
-                    for attempt in range(32):
+                    joint_atomic_corner = False
+                    if k in atomic_population_columns.values():
+                        upper_axes = [
+                            axis for axis in atomic_population_columns
+                            if abs(base_coordinates[axis] - self.eedf_provider.axis(axis)[-1])
+                            <= 16. * np.finfo(float).eps
+                               * max(abs(base_coordinates[axis]), 1e-300)
+                        ]
+                        target_axis = next(
+                            axis for axis, axis_index in atomic_population_columns.items()
+                            if axis_index == k
+                        )
+                        joint_atomic_corner = target_axis in upper_axes and len(upper_axes) > 1
+                    for attempt in range(0 if joint_atomic_corner else 32):
                         yp, ym = y.copy(), y.copy()
                         yp[k] += h
                         ym[k] -= h
@@ -4843,7 +4871,14 @@ cdef class PlasmaReactor(ReactionSystem):
                             allowed = trial[k] > 0. and trial[k] != y[k]
                             if allowed:
                                 try:
-                                    self._eedf_coordinates(trial, clamp=True)
+                                    trial_coordinates = self._eedf_coordinates(trial, clamp=True)
+                                    for axis, axis_index in atomic_population_columns.items():
+                                        if axis_index == k:
+                                            movement = abs(trial_coordinates[axis] - base_coordinates[axis])
+                                            scale = max(abs(base_coordinates[axis]), 1e-300)
+                                            if movement <= 16. * np.finfo(float).eps * scale:
+                                                allowed = False
+                                            break
                                 except (PlasmaStateError, VibrationalPopulationError):
                                     allowed = False
                             admissible.append(allowed)
@@ -4851,18 +4886,73 @@ cdef class PlasmaReactor(ReactionSystem):
                             break
                         h *= .5
                     else:
-                        raise PlasmaStateError(
-                            'Population Jacobian has no admissible perturbation for state column {0}'.format(k))
+                        if joint_atomic_corner:
+                            admissible = [False, False]
+                        else:
+                            raise PlasmaStateError(
+                                'Population Jacobian has no admissible perturbation for state column {0}'.format(k))
                     if all(admissible):
                         rp = np.asarray(self.residual(t,yp,dydt)[0]).copy()
                         rm = np.asarray(self.residual(t,ym,dydt)[0]).copy()
                         pd[:, k] = (rp-rm)/(yp[k]-ym[k])
                     else:
-                        if base is None:
-                            base = np.asarray(self.residual(t,y,dydt)[0]).copy()
-                        trial = yp if admissible[0] else ym
-                        rp = np.asarray(self.residual(t,trial,dydt)[0]).copy()
-                        pd[:, k] = (rp-base)/(trial[k]-y[k])
+                        if k in atomic_population_columns.values() and joint_atomic_corner:
+                            # At a joint upper corner, changing one atomic amount
+                            # alone moves every other fraction through the shared
+                            # neutral denominator, so neither coordinate direction
+                            # is feasible. Hold that denominator fixed by balancing
+                            # the population step against a neutral bath, then add
+                            # back the independently measured bath column.
+                            if boundary_bath_index is None:
+                                baths = [j for j in range(self.num_core_species)
+                                         if self.neutral_heavy_mask[j]
+                                         and j not in atomic_population_columns.values()
+                                         and y[j] > 0.]
+                                if not baths:
+                                    raise PlasmaStateError(
+                                        'Atomic population Jacobian has no neutral bath for a joint-bound perturbation')
+                                boundary_bath_index = baths[0]
+                                for bath_index in baths[1:]:
+                                    if y[bath_index] > y[boundary_bath_index]:
+                                        boundary_bath_index = bath_index
+                            if base is None:
+                                base = np.asarray(self.residual(t,y,dydt)[0]).copy()
+                            bath = boundary_bath_index
+                            hb = 6.0e-6*max(abs(y[bath]),self.atol_array[bath])
+                            bath_trial = y.copy()
+                            bath_trial[bath] += hb
+                            self._eedf_coordinates(bath_trial, clamp=True)
+                            bath_residual = np.asarray(self.residual(t,bath_trial,dydt)[0]).copy()
+                            boundary_bath_derivative = (bath_residual-base)/hb
+                            balanced_trial = y.copy()
+                            balanced_trial[k] -= h
+                            population_step = y[k] - balanced_trial[k]
+                            neutral = sum(max(float(y[j]), 0.) for j in range(self.num_core_species)
+                                          if self.neutral_heavy_mask[j])
+                            margin = 8. * np.spacing(neutral)
+                            for attempt in range(8):
+                                balanced_trial[bath] = y[bath] + population_step + margin
+                                try:
+                                    self._eedf_coordinates(balanced_trial, clamp=True)
+                                    break
+                                except PlasmaStateError:
+                                    margin *= 2.
+                            else:
+                                raise PlasmaStateError(
+                                    'Atomic population Jacobian could not form an in-domain balanced perturbation')
+                            bath_step = balanced_trial[bath] - y[bath]
+                            balanced_residual = np.asarray(self.residual(t,balanced_trial,dydt)[0]).copy()
+                            directional = (balanced_residual-base)/population_step
+                            pd[:, k] = (bath_step/population_step)*boundary_bath_derivative-directional
+                        else:
+                            if base is None:
+                                base = np.asarray(self.residual(t,y,dydt)[0]).copy()
+                            trial = yp if admissible[0] else ym
+                            rp = np.asarray(self.residual(t,trial,dydt)[0]).copy()
+                            pd[:, k] = (rp-base)/(trial[k]-y[k])
+                    continue
+                if k == boundary_bath_index and boundary_bath_derivative is not None:
+                    pd[:, k] = boundary_bath_derivative
                     continue
                 yp = y.copy()
                 yp[k] += h
