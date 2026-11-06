@@ -1,0 +1,418 @@
+{
+  "upstream_commit": "add55181430adec223efcf56233c7139ed40b8d2",
+  "scope": "field-drive only; I-377 retains its original pinned LoKI",
+  "change": "temporal growth only: old + alpha*(new-old); no conditional variant",
+  "original_source_sha256": "5cc4336621381e612289ec818eba95bdddafb0276579fe48d8dbd5aa3312a785",
+  "patched_source_sha256": "988f8ccf82dbd0522e6ff0cd842f8f92afda6d62c1bc2470fe67704c281eebe6",
+  "patch_sha256": "b21e87edf97f2d785674ae15b9dc37b9f8f393eb31d7cc128b126507204df0c3",
+  "original_source_archive_sha256": "2e54409bee4b664a455c79304553d48f96fc7f195a36ddafb407afc3d7397f5c",
+  "patched_source_tree_sha256": "f77c1b926b63ca113736927d94b1341fbba2dcf755adb10f264847f1d66b27f2",
+  "validated_local_binary_sha256": "68e796d05f18ebb2d3ab71fb2587cf09db806729a84ee2ad37d38d852547ca80",
+  "validated_local_library_sha256": "f115c11c83871e05d655456e3eed277a5dcd16693271f4b5af265891629905f0",
+  "original_field_drive_binary_sha256": "e26c663793b2161da1ba37f46f6f52ab30f23cbbf3d7b1253e916279d2b7f693",
+  "I377_original_binary_sha256": "fefc64b28b36c91d5a04dfd46f97b6b4002589e72697b24b57ae64b49c2bd996",
+  "rationale": {
+    "stagnant_old": 1.95621854e-316,
+    "recomputed_new": 1.9562186e-316,
+    "one_ulp": 5e-324,
+    "relative_criterion": 2.525615805748221e-08,
+    "threshold": 1e-09,
+    "stable_eedf_from_iteration": 1,
+    "cap_iteration": 151,
+    "trace_sha256": "e471e7d2e6ab7914704965b8d7ba5f101616c2a9a8c4eba78b370bf9a41c652c"
+  },
+  "validation": {
+    "screen_reference_fields": 222,
+    "formerly_refusing_indices": [
+      17,
+      18
+    ],
+    "finite_converged": true,
+    "other_fields_compared": 220,
+    "byte_differing_indices": [
+      34,
+      72,
+      82,
+      133,
+      149,
+      176,
+      177,
+      192,
+      196,
+      198,
+      200,
+      204,
+      211,
+      212,
+      214,
+      217,
+      218,
+      219,
+      220,
+      221
+    ],
+    "criteria": {
+      "observables_rtol": 1e-06,
+      "observables_atol": 0.0,
+      "dimensional_power_balance_atol": 1e-20,
+      "relative_balance_percent": "reported, adjudicated using dimensional balance"
+    },
+    "screen_maxima": {
+      "energy_eV": {
+        "max_relative": 0.0,
+        "EN_Td": 0.0010000000000000002,
+        "max_absolute": 0.0,
+        "max_absolute_EN_Td": 0.0010000000000000002
+      },
+      "eedf": {
+        "max_relative": 6.619732746807707e-12,
+        "EN_Td": 49.13782364867491,
+        "max_absolute": 3.9929864970034146e-13,
+        "max_absolute_EN_Td": 49.13782364867491
+      },
+      "anisotropy": {
+        "max_relative": 1.2938181864016995e-08,
+        "EN_Td": 49.13782364867491,
+        "max_absolute": 1.0123528100883239e-11,
+        "max_absolute_EN_Td": 49.13782364867491
+      },
+      "k_ine": {
+        "max_relative": 1.3105442678128733e-12,
+        "EN_Td": 59.999999999999986,
+        "max_absolute": 1.4196971939081505e-25,
+        "max_absolute_EN_Td": 49.13782364867491
+      },
+      "k_sup": {
+        "max_relative": 1.20268314014961e-12,
+        "EN_Td": 49.13782364867491,
+        "max_absolute": 3.1298845275548864e-26,
+        "max_absolute_EN_Td": 49.13782364867491
+      },
+      "swarm.diffusion_N": {
+        "max_relative": 5.629353151206839e-13,
+        "EN_Td": 49.13782364867491,
+        "max_absolute": 4160749568000.0,
+        "max_absolute_EN_Td": 49.13782364867491
+      },
+      "swarm.mobility_N": {
+        "max_relative": 2.993493854341882e-12,
+        "EN_Td": 49.13782364867491,
+        "max_absolute": 2718982733824.0,
+        "max_absolute_EN_Td": 49.13782364867491
+      },
+      "swarm.drift_velocity_m_s": {
+        "max_relative": 2.9934096011789865e-12,
+        "EN_Td": 49.13782364867491,
+        "max_absolute": 1.3360113371163607e-07,
+        "max_absolute_EN_Td": 49.13782364867491
+      },
+      "swarm.townsend_N": {
+        "max_relative": 3.726209009991718e-12,
+        "EN_Td": 49.13782364867491,
+        "max_absolute": 5.000082770657682e-34,
+        "max_absolute_EN_Td": 54.29796882868174
+      },
+      "swarm.attachment_N": {
+        "max_relative": 0.0,
+        "EN_Td": 0.0010000000000000002,
+        "max_absolute": 0.0,
+        "max_absolute_EN_Td": 0.0010000000000000002
+      },
+      "swarm.energy_diffusion_N": {
+        "max_relative": 2.915727617039421e-13,
+        "EN_Td": 49.13782364867491,
+        "max_absolute": 10200547328000.0,
+        "max_absolute_EN_Td": 49.13782364867491
+      },
+      "swarm.energy_mobility_N": {
+        "max_relative": 3.722984161677729e-13,
+        "EN_Td": 49.13782364867491,
+        "max_absolute": 2838973382656.0,
+        "max_absolute_EN_Td": 49.13782364867491
+      },
+      "swarm.mean_energy_eV": {
+        "max_relative": 4.992070241337823e-13,
+        "EN_Td": 49.13782364867491,
+        "max_absolute": 3.099742684753437e-12,
+        "max_absolute_EN_Td": 49.13782364867491
+      },
+      "swarm.characteristic_energy_eV": {
+        "max_relative": 2.4320325505652672e-12,
+        "EN_Td": 49.13782364867491,
+        "max_absolute": 1.979039154775819e-11,
+        "max_absolute_EN_Td": 49.13782364867491
+      },
+      "swarm.Te_LoKI_eV": {
+        "max_relative": 4.977766315144875e-13,
+        "EN_Td": 49.13782364867491,
+        "max_absolute": 2.0605739337042905e-12,
+        "max_absolute_EN_Td": 49.13782364867491
+      },
+      "power_groups.field": {
+        "max_relative": 3.0002582682371702e-12,
+        "EN_Td": 49.13782364867491,
+        "max_absolute": 6.849679240034046e-27,
+        "max_absolute_EN_Td": 54.29796882868174
+      },
+      "power_groups.elastic_gain": {
+        "max_relative": 5.797183912863192e-13,
+        "EN_Td": 49.13782364867491,
+        "max_absolute": 1.509929076399593e-31,
+        "max_absolute_EN_Td": 49.13782364867491
+      },
+      "power_groups.elastic_loss": {
+        "max_relative": 8.032520017452745e-13,
+        "EN_Td": 49.13782364867491,
+        "max_absolute": 2.6001594993183194e-29,
+        "max_absolute_EN_Td": 49.13782364867491
+      },
+      "power_groups.car_gain": {
+        "max_relative": 0.0,
+        "EN_Td": 0.0010000000000000002,
+        "max_absolute": 0.0,
+        "max_absolute_EN_Td": 0.0010000000000000002
+      },
+      "power_groups.car_loss": {
+        "max_relative": 0.0,
+        "EN_Td": 0.0010000000000000002,
+        "max_absolute": 0.0,
+        "max_absolute_EN_Td": 0.0010000000000000002
+      },
+      "power_groups.excitation_loss": {
+        "max_relative": 1.2137885721853168e-12,
+        "EN_Td": 59.999999999999986,
+        "max_absolute": 3.560129265262426e-27,
+        "max_absolute_EN_Td": 59.999999999999986
+      },
+      "power_groups.excitation_gain": {
+        "max_relative": 0.0,
+        "EN_Td": 0.0010000000000000002,
+        "max_absolute": 0.0,
+        "max_absolute_EN_Td": 0.0010000000000000002
+      },
+      "power_groups.vibrational_loss": {
+        "max_relative": 0.0,
+        "EN_Td": 0.0010000000000000002,
+        "max_absolute": 0.0,
+        "max_absolute_EN_Td": 0.0010000000000000002
+      },
+      "power_groups.vibrational_gain": {
+        "max_relative": 0.0,
+        "EN_Td": 0.0010000000000000002,
+        "max_absolute": 0.0,
+        "max_absolute_EN_Td": 0.0010000000000000002
+      },
+      "power_groups.rotational_loss": {
+        "max_relative": 0.0,
+        "EN_Td": 0.0010000000000000002,
+        "max_absolute": 0.0,
+        "max_absolute_EN_Td": 0.0010000000000000002
+      },
+      "power_groups.rotational_gain": {
+        "max_relative": 0.0,
+        "EN_Td": 0.0010000000000000002,
+        "max_absolute": 0.0,
+        "max_absolute_EN_Td": 0.0010000000000000002
+      },
+      "power_groups.ionization": {
+        "max_relative": 1.3026556892064522e-12,
+        "EN_Td": 59.999999999999986,
+        "max_absolute": 2.089988360769918e-28,
+        "max_absolute_EN_Td": 59.999999999999986
+      },
+      "power_groups.attachment": {
+        "max_relative": 0.0,
+        "EN_Td": 0.0010000000000000002,
+        "max_absolute": 0.0,
+        "max_absolute_EN_Td": 0.0010000000000000002
+      },
+      "power_groups.growth": {
+        "max_relative": 5.5715010944962625e-11,
+        "EN_Td": 0.0054237404508770196,
+        "max_absolute": 6.760168179194749e-29,
+        "max_absolute_EN_Td": 57.077825201394134
+      },
+      "power_groups.balance": {
+        "max_relative": 2.814758716715782,
+        "EN_Td": 57.077825201394134,
+        "max_absolute": 9.250343211993e-27,
+        "max_absolute_EN_Td": 54.29796882868174
+      },
+      "power_groups.relative_balance_percent": {
+        "max_relative": 1.2626172047413262,
+        "EN_Td": 59.999999999999986,
+        "max_absolute": 3.4960407465813103e-10,
+        "max_absolute_EN_Td": 54.29796882868174
+      }
+    },
+    "control_fields_Td": [
+      4,
+      17,
+      25
+    ],
+    "control_coordinate": {
+      "electron_density": 5200000000000000.0,
+      "x_N2": 0.05,
+      "Tv_K": 300.0
+    },
+    "control_maxima": {
+      "energy_eV": {
+        "max_relative": 0.0,
+        "EN_Td": 4.0,
+        "max_absolute": 0.0
+      },
+      "eedf": {
+        "max_relative": 0.0,
+        "EN_Td": 4.0,
+        "max_absolute": 0.0
+      },
+      "anisotropy": {
+        "max_relative": 0.0,
+        "EN_Td": 4.0,
+        "max_absolute": 0.0
+      },
+      "k_ine": {
+        "max_relative": 0.0,
+        "EN_Td": 4.0,
+        "max_absolute": 0.0
+      },
+      "k_sup": {
+        "max_relative": 0.0,
+        "EN_Td": 4.0,
+        "max_absolute": 0.0
+      },
+      "swarm.diffusion_N": {
+        "max_relative": 0.0,
+        "EN_Td": 4.0,
+        "max_absolute": 0.0
+      },
+      "swarm.mobility_N": {
+        "max_relative": 0.0,
+        "EN_Td": 4.0,
+        "max_absolute": 0.0
+      },
+      "swarm.drift_velocity_m_s": {
+        "max_relative": 0.0,
+        "EN_Td": 4.0,
+        "max_absolute": 0.0
+      },
+      "swarm.townsend_N": {
+        "max_relative": 0.0,
+        "EN_Td": 4.0,
+        "max_absolute": 0.0
+      },
+      "swarm.attachment_N": {
+        "max_relative": 0.0,
+        "EN_Td": 4.0,
+        "max_absolute": 0.0
+      },
+      "swarm.energy_diffusion_N": {
+        "max_relative": 0.0,
+        "EN_Td": 4.0,
+        "max_absolute": 0.0
+      },
+      "swarm.energy_mobility_N": {
+        "max_relative": 0.0,
+        "EN_Td": 4.0,
+        "max_absolute": 0.0
+      },
+      "swarm.mean_energy_eV": {
+        "max_relative": 0.0,
+        "EN_Td": 4.0,
+        "max_absolute": 0.0
+      },
+      "swarm.characteristic_energy_eV": {
+        "max_relative": 0.0,
+        "EN_Td": 4.0,
+        "max_absolute": 0.0
+      },
+      "swarm.Te_LoKI_eV": {
+        "max_relative": 0.0,
+        "EN_Td": 4.0,
+        "max_absolute": 0.0
+      },
+      "power_groups.field": {
+        "max_relative": 0.0,
+        "EN_Td": 4.0,
+        "max_absolute": 0.0
+      },
+      "power_groups.elastic_gain": {
+        "max_relative": 0.0,
+        "EN_Td": 4.0,
+        "max_absolute": 0.0
+      },
+      "power_groups.elastic_loss": {
+        "max_relative": 0.0,
+        "EN_Td": 4.0,
+        "max_absolute": 0.0
+      },
+      "power_groups.car_gain": {
+        "max_relative": 0.0,
+        "EN_Td": 4.0,
+        "max_absolute": 0.0
+      },
+      "power_groups.car_loss": {
+        "max_relative": 0.0,
+        "EN_Td": 4.0,
+        "max_absolute": 0.0
+      },
+      "power_groups.excitation_loss": {
+        "max_relative": 0.0,
+        "EN_Td": 4.0,
+        "max_absolute": 0.0
+      },
+      "power_groups.excitation_gain": {
+        "max_relative": 0.0,
+        "EN_Td": 4.0,
+        "max_absolute": 0.0
+      },
+      "power_groups.vibrational_loss": {
+        "max_relative": 0.0,
+        "EN_Td": 4.0,
+        "max_absolute": 0.0
+      },
+      "power_groups.vibrational_gain": {
+        "max_relative": 0.0,
+        "EN_Td": 4.0,
+        "max_absolute": 0.0
+      },
+      "power_groups.rotational_loss": {
+        "max_relative": 0.0,
+        "EN_Td": 4.0,
+        "max_absolute": 0.0
+      },
+      "power_groups.rotational_gain": {
+        "max_relative": 0.0,
+        "EN_Td": 4.0,
+        "max_absolute": 0.0
+      },
+      "power_groups.ionization": {
+        "max_relative": 0.0,
+        "EN_Td": 4.0,
+        "max_absolute": 0.0
+      },
+      "power_groups.attachment": {
+        "max_relative": 0.0,
+        "EN_Td": 4.0,
+        "max_absolute": 0.0
+      },
+      "power_groups.growth": {
+        "max_relative": 0.0,
+        "EN_Td": 4.0,
+        "max_absolute": 0.0
+      },
+      "power_groups.balance": {
+        "max_relative": 0.0,
+        "EN_Td": 4.0,
+        "max_absolute": 0.0
+      },
+      "power_groups.relative_balance_percent": {
+        "max_relative": 0.0,
+        "EN_Td": 4.0,
+        "max_absolute": 0.0
+      }
+    },
+    "control_all_files_byte_identical": true,
+    "evidence_sha256": "1f05f2fbe695d9cee3f70f31f505c8daef358ae17d69de5c8600e5ed92ec8189"
+  }
+}

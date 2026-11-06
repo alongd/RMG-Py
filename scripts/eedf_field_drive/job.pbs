@@ -1,0 +1,105 @@
+#!/bin/bash
+#PBS -N field-drive-table
+#PBS -q mafat_new_q
+#PBS -l select=1:ncpus=5:mem=16gb
+#PBS -l walltime=24:00:00
+#PBS -j oe
+set -euo pipefail
+cd "$PBS_O_WORKDIR/field-drive-job"
+export ROOT="$PWD"
+export RESULTS="$ROOT/results"
+mkdir -p "$RESULTS" "$ROOT/raw-logs"
+exec >"$RESULTS/stdout.log" 2>"$RESULTS/stderr.log"
+active_step=bootstrap
+collect_tail() {
+    for stream in stdout stderr; do
+        file="$ROOT/raw-logs/$active_step.$stream.log"
+        if [ -f "$file" ]; then
+            printf '\n--- %s (last 64 KiB; full log stays in raw-logs/) ---\n' "$active_step" >>"$RESULTS/$stream.log"
+            tail -c 65536 "$file" >>"$RESULTS/$stream.log"
+        fi
+    done
+}
+finish() {
+    code=$?
+    trap - EXIT
+    collect_tail
+    printf '%s\n' "$code" >"$RESULTS/exit_code"
+    date -u +%FT%TZ >"$RESULTS/finished_at"
+    printf 'FINISHED step=%s exit=%s\n' "$active_step" "$code" >>"$RESULTS/steps.log"
+    exit "$code"
+}
+trap finish EXIT
+trap 'exit 143' TERM
+trap 'exit 130' INT
+mark() {
+    active_step="$1"
+    printf '%s\n' "$active_step" >"$RESULTS/current-step"
+    printf 'STEP %s %s\n' "$(date -u +%FT%TZ)" "$active_step" | tee -a "$RESULTS/steps.log"
+}
+step() {
+    mark "$1"
+    shift
+    if "$@" >"$ROOT/raw-logs/$active_step.stdout.log" 2>"$ROOT/raw-logs/$active_step.stderr.log"; then
+        collect_tail
+        printf 'PASS %s\n' "$active_step" | tee -a "$RESULTS/steps.log"
+    else
+        code=$?
+        printf 'FAIL %s exit=%s\n' "$active_step" "$code" | tee -a "$RESULTS/steps.log"
+        exit "$code"
+    fi
+}
+step archive-job-recipe cp job.pbs run_table.py job_loki.py loki_preflight.py apply_loki_patch.py growth-mixing.patch growth-mixing-provenance.json "$RESULTS/"
+mark environment
+ulimit -c 0
+printf 'INHERITED_LD_LIBRARY_PATH=%s\nINHERITED_LD_PRELOAD=%s\n' "${LD_LIBRARY_PATH-}" "${LD_PRELOAD-}"
+unset LD_LIBRARY_PATH LD_PRELOAD LD_AUDIT
+unset CFLAGS CXXFLAGS CPPFLAGS LDFLAGS CMAKE_PREFIX_PATH CMAKE_TOOLCHAIN_FILE
+unset CC CXX FC F77 F90 LDSHARED LIBRARY_PATH CPATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH GCC_EXEC_PREFIX COMPILER_PATH
+export PATH=${HOME}/miniconda3/envs/rmg_env/bin:/usr/bin:/bin
+export CONDA_PREFIX=${HOME}/miniconda3/envs/rmg_env
+export PYTHONDONTWRITEBYTECODE=1 OMP_NUM_THREADS=5 OMP_DYNAMIC=FALSE OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
+export TMPDIR="$ROOT/tmp" PYTHONPATH="$ROOT/rmg"
+mkdir tmp rmg loki-src
+step node-environment bash -c 'hostname; getconf GNU_LIBC_VERSION; ulimit -a; nproc; printf "OMP_NUM_THREADS=%s\n" "$OMP_NUM_THREADS"; lscpu; printf "PATH=%s\nLD_LIBRARY_PATH=%s\n" "$PATH" "${LD_LIBRARY_PATH-}"'
+step select-toolchain timeout 50 bash select_toolchain.sh
+source "$RESULTS/toolchain.env"
+step compiler-runtime timeout 50 bash check_runtime.sh
+step node-executable-versions timeout 50 python probe_executables.py "$CONDA_PREFIX/bin/python" "$CC" "$CXX" /bin/make /bin/tar /usr/bin/xz
+step unpack-rmg tar -xzf rmg-source.tar.gz -C rmg
+step unpack-loki tar -xzf loki-source.tar.gz -C loki-src
+step loki-source-patch python apply_loki_patch.py
+step unpack-cmake-source tar -xJf cmake-source.tar.xz
+step unpack-eigen tar -xzf eigen.tar.gz
+step shipped-executable-versions timeout 50 python probe_executables.py
+mark frozen-inputs
+# Offline table generation uses only the frozen inputs and channel map.
+# No shared database checkout is read or required by this job.
+printf 'database.directory = %s/inputs\n' "$ROOT" >rmgrc
+cp rmgrc rmg/rmgrc
+step python-version python --version
+step compiler-version "$CXX" --version
+mark enter-rmg
+cd "$ROOT/rmg"
+step check-pydas python utilities.py check-pydas
+mark enter-job
+cd "$ROOT"
+step build-cmake timeout 3600 bash build_cmake.sh
+step cmake-version timeout 10 ./cmake-build/bin/cmake --version
+step cmake-configure ./cmake-build/bin/cmake -S loki-src -B loki-build \
+    -DCMAKE_C_COMPILER="$CC" \
+    -DCMAKE_CXX_COMPILER="$CXX" \
+    -DCMAKE_C_FLAGS="$CFLAGS" -DCMAKE_CXX_FLAGS="$CXXFLAGS" \
+    -DCMAKE_EXE_LINKER_FLAGS="$LDFLAGS" -DCMAKE_CXX_STANDARD_LIBRARIES="$FILESYSTEM_LIBS" \
+    -DCMAKE_BUILD_TYPE=Release -Dwith-tests=OFF -Dwith-doc=OFF \
+    -DLOKIB_USE_BUILTIN_NLOHMANN_JSON=ON -DLOKIB_USE_BUILTIN_EIGEN=OFF \
+    -DEigen3_DIR="$ROOT/eigen/share/eigen3/cmake" \
+    -DCMAKE_BUILD_RPATH="$ROOT/loki-build/runtime"
+step cmake-build ./cmake-build/bin/cmake --build loki-build --target loki --parallel 2
+step loki-linkage bash -c 'ldd "$ROOT/loki-build/app/loki" >"$RESULTS/loki-build.ldd"; cat "$RESULTS/loki-build.ldd"; ! grep -E "not found|gcc14[.]1" "$RESULTS/loki-build.ldd"'
+step loki-single-coordinate-preflight python -u loki_preflight.py
+step unpack-cython bash -c 'mkdir build-tools; tar -xJf cython-3.1.3.tar.xz -C build-tools'
+step build-rmg python -u build_rmg.py
+step physical-preflight python -u run_table.py --preflight-only
+step generate-and-qualify python -u run_table.py
+mark complete

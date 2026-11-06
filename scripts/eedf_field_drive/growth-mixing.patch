@@ -1,0 +1,5 @@
+--- a/source/ElectronKinetics.cpp
++++ b/source/ElectronKinetics.cpp
+@@ -682 +682 @@
+-        CIEffNew = mixingParameter * CIEffNew + (1 - mixingParameter) * CIEffOld;
++        CIEffNew = CIEffOld + mixingParameter * (CIEffNew - CIEffOld);
