@@ -35,7 +35,9 @@ from pathlib import Path
 import re
 
 import numpy as np
-from scipy.constants import electron_mass
+from rmgpy.tools.eedf.constants import (
+    ELECTRON_MASS as electron_mass,
+)
 
 from rmgpy.tools.eedf.integrity import _physical_properties, _resolved_properties
 from rmgpy.tools.eedf.schema import FingerprintMismatch, SpecError
@@ -187,7 +189,10 @@ def _effective_elastic_section(source, sections, states):
     default hierarchical populations at 300 K, before interpolating to the
     solver grid. These populations are independent of the runtime Tv.
     """
-    from scipy.constants import Boltzmann, elementary_charge
+    from rmgpy.tools.eedf.constants import (
+        BOLTZMANN as Boltzmann,
+        ELEMENTARY_CHARGE as elementary_charge,
+    )
     sections = {section['description']: section for section in sections}
     energy = np.asarray(source['cross_section']['energy_eV'])
     elastic = np.array(source['cross_section']['sigma_m2'], dtype=float)

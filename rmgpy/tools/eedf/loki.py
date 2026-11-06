@@ -44,7 +44,10 @@ from pathlib import Path
 
 import numpy as np
 import yaml
-from scipy.constants import elementary_charge, electron_mass
+from rmgpy.tools.eedf.constants import (
+    ELEMENTARY_CHARGE as elementary_charge,
+    ELECTRON_MASS as electron_mass,
+)
 
 from rmgpy.tools.eedf._ownership import _detached_copy
 from rmgpy.tools.eedf.channels import _validate_physical_map

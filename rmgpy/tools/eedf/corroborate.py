@@ -55,7 +55,11 @@ import uuid
 
 import numpy as np
 from scipy import integrate
-from scipy.constants import Boltzmann, elementary_charge, electron_mass
+from rmgpy.tools.eedf.constants import (
+    BOLTZMANN as Boltzmann,
+    ELEMENTARY_CHARGE as elementary_charge,
+    ELECTRON_MASS as electron_mass,
+)
 
 from rmgpy.tools.eedf.channels import _classic_sections, _validate_physical_map
 from rmgpy.tools.eedf.integrity import (

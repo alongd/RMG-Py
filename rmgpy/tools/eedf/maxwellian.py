@@ -43,7 +43,10 @@ import h5py
 import numpy as np
 
 from rmgpy.diagnostic_mode import MAXWELLIAN_MODE
-from scipy.constants import elementary_charge, electron_mass
+from rmgpy.tools.eedf.constants import (
+    ELEMENTARY_CHARGE as elementary_charge,
+    ELECTRON_MASS as electron_mass,
+)
 
 from rmgpy.tools.eedf.artifact import _storage_items, _validate_storage, NUMERIC, MAPPINGS
 from rmgpy.tools.eedf.moments import _distribution_moments, _transport_moments

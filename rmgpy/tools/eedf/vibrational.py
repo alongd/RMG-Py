@@ -37,7 +37,10 @@ import json
 import math
 import re
 
-from scipy.constants import Boltzmann, elementary_charge
+from rmgpy.tools.eedf.constants import (
+    BOLTZMANN as Boltzmann,
+    ELEMENTARY_CHARGE as elementary_charge,
+)
 
 from rmgpy.tools.eedf.schema import EEDFError, SpecError, _content_hash
 from rmgpy.tools.eedf.n2_vibrational import LadderError, _pin, _policy, assess_truncation

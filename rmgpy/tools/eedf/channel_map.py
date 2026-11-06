@@ -42,7 +42,10 @@ import sys
 import tempfile
 
 import yaml
-from scipy.constants import Avogadro, electron_mass
+from rmgpy.tools.eedf.constants import (
+    AVOGADRO as Avogadro,
+    ELECTRON_MASS as electron_mass,
+)
 
 from rmgpy.kinetics import EEDFChannel
 from rmgpy.exceptions import DatabaseError

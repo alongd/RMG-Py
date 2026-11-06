@@ -30,7 +30,11 @@
 """Independent moments from f0 using the pinned solver's cell quadrature."""
 import numpy as np
 from scipy import integrate
-from scipy.constants import elementary_charge, electron_mass, Boltzmann
+from rmgpy.tools.eedf.constants import (
+    ELEMENTARY_CHARGE as elementary_charge,
+    ELECTRON_MASS as electron_mass,
+    BOLTZMANN as Boltzmann,
+)
 from rmgpy.tools.eedf.schema import EEDFError
 
 
