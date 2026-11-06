@@ -18,6 +18,7 @@ import re
 import subprocess
 import sys
 import textwrap
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -897,7 +898,47 @@ def test_module_runs_as_a_script():
 # rework 1: the midpoint gate (computed per record at emission)
 # --------------------------------------------------------------------------
 def _emitted_row(rows, index=0):
-    return [r for r in rows if r["status"] == "emitted"][index]
+    """The ``index``-th emitted row none of whose emitted keys another row
+    emits.  A colliding key is loaded from one copy only (the least
+    ``partition_free_identity``, an order of the copies' content, not of
+    the rows), and the gate reads only that copy's entry; a copy chosen by
+    row order is gated only while the two orders agree."""
+    keys = Counter(t["key"] for r in rows for t in (r.get("payload") or {}).get("templates", [])
+                   if t["status"] == "emitted")
+    alone = [r for r in rows if r["status"] == "emitted"
+             and all(keys[t["key"]] == 1 for t in r["payload"]["templates"]
+                     if t["status"] == "emitted")]
+    return alone[index]
+
+
+def _collision_copies(rows):
+    """(representative row, merged row, key) of the fixture's one colliding
+    key, as the assembly's own ``resolve_collisions`` chooses them."""
+    have = [r for r in rows if r.get("payload")]
+    merged, table = te.resolve_collisions([r["payload"] for r in have])
+    assert len(table) == 1
+    rep = mer = key = None
+    for row, p in zip(have, merged):
+        for t in p["templates"]:
+            if t["status"] == "merged":
+                mer, key = row, t["merged_into"]["key"]
+            elif t["status"] == "emitted" and t.get("collision"):
+                rep = row
+    assert rep is not None and mer is not None and rep is not mer
+    return rep, mer, key
+
+
+def test_the_gate_reads_the_loaded_copy_of_a_collision(tmp_path):
+    """A key two records emit is loaded from the representative, and the
+    gate checks that copy's entry: the representative's missing entry is
+    unverified; the merged copy's is not read (that copy is not loaded)."""
+    for drop_representative in (True, False):
+        rows = fixture_rows()
+        rep, mer, key = _collision_copies(rows)
+        (rep if drop_representative else mer)["midpoint"].pop(key)
+        mid = run([write_rows(tmp_path / "m.jsonl", header(None, rows), rows)])["gates"]["midpoint"]
+        assert mid["evaluated"] is (not drop_representative)
+        assert len(mid["unverified"]) == (1 if drop_representative else 0)
 
 
 def test_midpoint_gate_aggregates_the_rows(tmp_path):
@@ -955,7 +996,10 @@ def test_unavailable_midpoint_entry_is_unverified_and_incomplete(tmp_path):
 def test_a_derived_template_is_not_midpoint_gated(tmp_path, monkeypatch):
     def derive(payloads, counter):
         out = copy.deepcopy(payloads)
-        out[0]["templates"][0]["derived"] = {"primary": {"record": "x", "key": "y"}}
+        # a loaded template (a collision's merged copy is not gated at all)
+        t = next(t for p in out for t in p["templates"]
+                 if t["status"] == "emitted" and t.get("weight"))
+        t["derived"] = {"primary": {"record": "x", "key": "y"}}
         return out
     monkeypatch.setattr(te, "derive_weights", derive)
     rows = fixture_rows()

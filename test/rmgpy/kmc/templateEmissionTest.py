@@ -2282,7 +2282,11 @@ def test_the_identity_is_every_stored_field_but_the_record_ids():
     q = json.loads(json.dumps(p))
     q["rate"]["k"] = [2 * k for k in q["rate"]["k"]]
     assert te.partition_free_identity(q) != te.partition_free_identity(p)
-    for field_ in sorted(t):
+    # AMENDED (I-308): a template's ``certificate`` is a digest whose bytes
+    # follow the emit process's certification history (shard count, record
+    # order), so the identity drops it (``TEMPLATE_HISTORY_FIELDS``); every
+    # other template field still moves it
+    for field_ in sorted(set(t) - set(te.TEMPLATE_HISTORY_FIELDS)):
         q = json.loads(json.dumps(p))
         base_template(q)[field_] = {"changed": field_}
         assert te.partition_free_identity(q, base_template(q)) != \
