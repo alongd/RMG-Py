@@ -34,11 +34,13 @@ Generated tables are outside git. The LoKI binary/build are immutable inputs.
 """
 import argparse
 import copy
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from datetime import datetime, timezone
 import itertools
 import json
 import logging
+import multiprocessing
+import os
 from pathlib import Path
 import sys
 import time
@@ -120,6 +122,81 @@ def _solve(driver, channel_map, spec, coordinate, u_values, label):
     return rows
 
 
+def _worker_count(spec):
+    """Bound concurrent five/other-thread solvers by the available CPU allocation."""
+    available = (len(os.sched_getaffinity(0)) if hasattr(os, 'sched_getaffinity')
+                 else (os.cpu_count() or 1))
+    if 'PBS_NCPUS' in os.environ:
+        available = min(available, int(os.environ['PBS_NCPUS']))
+    threads = spec.get('omp_threads', 1)
+    if threads > available:
+        raise SpecError('solver omp_threads exceeds available CPUs')
+    return min(spec.get('max_parallel', 1), available // threads)
+
+
+def _initialize_solve_worker(driver, channel_map, spec):
+    global _solve_worker_state
+    _solve_worker_state = driver, channel_map, spec
+    # Completed parent setups have already been retained by the parent.
+    if hasattr(driver, 'setups'):
+        driver.setups = {}
+
+
+def _process_solve(task):
+    driver, channel_map, spec = _solve_worker_state
+    coordinate, values, label = task
+    rows = _solve(driver, channel_map, spec, coordinate, values, label)
+    setup = getattr(driver, 'setups', {}).pop(label, None)
+    return rows, setup
+
+
+class _SolveFuture:
+    def __init__(self, future, driver, label):
+        self.future, self.driver, self.label = future, driver, label
+
+    def result(self):
+        rows, setup = self.future.result()
+        if setup is not None:
+            self.driver.setups[self.label] = setup
+        return rows
+
+
+class _SolvePool:
+    """Ordered results and complete setup provenance from isolated solver processes.
+
+    The serial fallback preserves the existing one-worker path. Unix fork retains
+    job-local LoKI logging hooks; pools are created before submitting solver work.
+    Each process runs one LoKI subprocess at a time, making child CPU timing local
+    to a row rather than an aggregate over simultaneous threaded submissions.
+    """
+    def __init__(self, driver, channel_map, spec):
+        self.driver, self.channel_map, self.spec = driver, channel_map, spec
+        self.workers = _worker_count(spec)
+
+    def __enter__(self):
+        if self.workers == 1:
+            self.executor = ThreadPoolExecutor(max_workers=1)
+        else:
+            self.executor = ProcessPoolExecutor(
+                max_workers=self.workers,
+                mp_context=multiprocessing.get_context('fork'),
+                initializer=_initialize_solve_worker,
+                initargs=(self.driver, self.channel_map, self.spec))
+        return self
+
+    def submit(self, coordinate, values, label):
+        if self.workers == 1:
+            return self.executor.submit(
+                _solve, self.driver, self.channel_map, self.spec,
+                coordinate, values, label)
+        return _SolveFuture(
+            self.executor.submit(_process_solve, (coordinate, values, label)),
+            self.driver, label)
+
+    def __exit__(self, *exc):
+        return self.executor.__exit__(*exc)
+
+
 def qualify_interpolation(table, spec, *, criteria=None):
     """Run fresh pinned LoKI-B solves for an existing table's T10 points.
 
@@ -183,26 +260,22 @@ def qualify_interpolation(table, spec, *, criteria=None):
     _validate_map(channel_map)
     driver = LoKIDriver(spec)
     attempt = 't10_' + uuid.uuid4().hex
-    counter = itertools.count()
-
-    def direct_solver(point):
-        coordinate = {
-            name: point[name] for name in table.axis_names if name != 'u'}
-        rows = _solve(
-            driver, channel_map, spec, coordinate, [point['u']],
-            attempt + '_held_' + str(next(counter)))
-        if len(rows) != 1:
-            raise EEDFError('direct held-out solve returned multiple rows')
-        return rows[0]
-
     results = []
-    for point in declared_points:
-        direct = direct_solver(point)
-        result = _held_out_accuracy(
-            table, direct, point, criteria=criteria,
-            setup_fingerprint=fingerprint)
-        result['reference'] = 'fresh direct solver output'
-        results.append(result)
+    with _SolvePool(driver, channel_map, spec) as executor:
+        pending = [
+            executor.submit(
+                {name: point[name] for name in table.axis_names if name != 'u'},
+                [point['u']], attempt + '_held_' + str(index))
+            for index, point in enumerate(declared_points)]
+        for point, future in zip(declared_points, pending):
+            rows = future.result()
+            if len(rows) != 1:
+                raise EEDFError('direct held-out solve returned multiple rows')
+            result = _held_out_accuracy(
+                table, rows[0], point, criteria=criteria,
+                setup_fingerprint=fingerprint)
+            result['reference'] = 'fresh direct solver output'
+            results.append(result)
     evaluated_set = {
         tuple(float(result['point'][name]) for name in axis_names)
         for result in results}
@@ -362,15 +435,15 @@ def generate(spec, command_line=None):
         composition_grid = list(itertools.product(*[axes[name] for name in names[1:]]))
         scans, per_node = [], []
         # Each job is isolated. This bound applies to all solves, including cold and held-out.
-        with ThreadPoolExecutor(max_workers=spec['max_parallel']) as executor:
+        with _SolvePool(driver, channel_map, spec) as executor:
             pending = []
             for i, composition in enumerate(composition_grid):
                 coordinate = dict(zip(names[1:], composition))
                 base = f'{prefix}_r{round_index}_c{i}'
                 pending.append((coordinate,
-                    executor.submit(_solve, driver, channel_map, spec, coordinate, u_values, base + '_up'),
-                    executor.submit(_solve, driver, channel_map, spec, coordinate, u_values[::-1], base + '_down'),
-                    [executor.submit(_solve, driver, channel_map, spec, coordinate, [u], base + f'_cold{j}')
+                    executor.submit(coordinate, u_values, base + '_up'),
+                    executor.submit(coordinate, u_values[::-1], base + '_down'),
+                    [executor.submit(coordinate, [u], base + f'_cold{j}')
                      for j, u in enumerate(u_values)]))
             for coordinate, up, down, cold in pending:
                 branches, verdict = _split_branches({'up': up.result(), 'down': down.result(),
@@ -395,8 +468,8 @@ def generate(spec, command_line=None):
         if training.intersection(held):
             raise EEDFError('refinement would promote a held-out point')
         new_points = [point for point in points if tuple(point[name] for name in names) not in held]
-        with ThreadPoolExecutor(max_workers=spec['max_parallel']) as executor:
-            pending = [executor.submit(_solve, driver, channel_map, spec,
+        with _SolvePool(driver, channel_map, spec) as executor:
+            pending = [executor.submit(
                 {name: point[name] for name in names[1:]}, [point['u']],
                 f'{prefix}_r{round_index}_held{i}') for i, point in enumerate(new_points)]
             for point, future in zip(new_points, pending):

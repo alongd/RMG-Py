@@ -1167,3 +1167,77 @@ def test_missing_generation_policy_refuses(field):
     del spec[field]
     with pytest.raises(SpecError, match='spec fields'):
         _validate_spec(spec)
+
+@pytest.mark.parametrize('failure', [None, 't10', 'legacy', 'source'])
+def test_process_generation_and_fresh_t10_match_serial(tmp_path, monkeypatch, failure):
+    """Real process workers retain ordering, values and publication refusals."""
+    spec, calls, inputs = publication_fixture(tmp_path, monkeypatch, failure=failure)
+    spec['omp_threads'] = 1
+    original_solve = generation._solve
+
+    def traced(driver, mapping, candidate, coordinate, values, label):
+        import os
+        (tmp_path / (label + '.pid')).write_text(str(os.getpid()))
+        return original_solve(driver, mapping, candidate, coordinate, values, label)
+
+    monkeypatch.setattr(generation, '_solve', traced)
+    serial_spec = copy.deepcopy(spec)
+    serial = generate(serial_spec)
+    before = set(tmp_path.glob('*.pid'))
+    spec.update(max_parallel=3, output_root=str(tmp_path / 'parallel-tables'))
+    parallel = generate(spec)
+    a = json.loads((serial / 'manifest.json').read_text())
+    b = json.loads((parallel / 'manifest.json').read_text())
+    assert a['accepted'] == b['accepted'] == (failure is None)
+    assert a['held_out_verdicts'] == b['held_out_verdicts']
+    assert a['T10 interpolation qualification'] == b['T10 interpolation qualification']
+    import os
+    traces = set(tmp_path.glob('*.pid')) - before
+    t10 = [p for p in traces if p.name.startswith('t10_')]
+    assert len(t10) == len(b['held_out'])
+    assert all(int(p.read_text()) != os.getpid() for p in traces)
+    assert 1 < len({p.read_text() for p in traces}) <= 9  # three sequential pools
+    ta = EEDFTable.load(serial, inputs(serial_spec, []),
+                        artifact_sha256=_file_hash(serial / 'table.h5'), require_accepted=False)
+    tb = EEDFTable.load(parallel, inputs(spec, []),
+                        artifact_sha256=_file_hash(parallel / 'table.h5'), require_accepted=False)
+    for u in spec['axes']['u']:
+        ra, rb = ta.row(u, {})._as_dict(), tb.row(u, {})._as_dict()
+        for key in ('f0', 'k_ine', 'k_sup', 'channel_power'):
+            np.testing.assert_allclose(ra[key], rb[key], rtol=1e-6, atol=1e-20)
+        for group in ('swarm', 'power_groups'):
+            assert set(ra[group]) == set(rb[group])
+            for key in ra[group]:
+                np.testing.assert_allclose(ra[group][key], rb[group][key], rtol=1e-6, atol=1e-20)
+
+
+def test_process_pool_returns_setup_provenance_and_original_refusal(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    def solve(driver, mapping, spec, coordinate, values, label):
+        if label == 'refuse':
+            raise generation.EEDFError('strict child refusal')
+        driver.setups[label] = 'exact prepared setup ' + label
+        return [{'u': values[0]}]
+
+    monkeypatch.setattr(generation, '_solve', solve)
+    driver = SimpleNamespace(setups={'screen': 'retained screen setup'})
+    with generation._SolvePool(driver, [], {'max_parallel': 3, 'omp_threads': 1}) as pool:
+        futures = [pool.submit({}, [i], str(i)) for i in range(5)]
+        refusal = pool.submit({}, [0], 'refuse')
+        assert [future.result()[0]['u'] for future in futures] == list(range(5))
+        with pytest.raises(generation.EEDFError, match='strict child refusal'):
+            refusal.result()
+    assert driver.setups == {'screen': 'retained screen setup',
+                             **{str(i): 'exact prepared setup ' + str(i) for i in range(5)}}
+
+
+def test_process_pool_respects_allocation_and_omp_threads(monkeypatch):
+    monkeypatch.setattr(generation.os, 'sched_getaffinity', lambda pid: set(range(32)))
+    monkeypatch.setenv('PBS_NCPUS', '15')
+    assert generation._worker_count({'max_parallel': 3, 'omp_threads': 5}) == 3
+    monkeypatch.setenv('PBS_NCPUS', '10')
+    assert generation._worker_count({'max_parallel': 3, 'omp_threads': 5}) == 2
+    monkeypatch.setenv('PBS_NCPUS', '4')
+    with pytest.raises(generation.SpecError, match='available CPUs'):
+        generation._worker_count({'max_parallel': 3, 'omp_threads': 5})
