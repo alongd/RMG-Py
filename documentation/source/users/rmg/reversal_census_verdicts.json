@@ -6,6 +6,13 @@
       "test/rmgpy/data/kinetics/superelasticCensusTest.py::test_nonreaction_serialized_data_has_no_direction"
     ]
   },
+  "rmgpy/electron_placement.py::resolve_electron_placement::LibraryReaction#1": {
+    "verdict": "guarded",
+    "reason": "Resolved library reactions preserve their stable source identity so plasma declarations and channel admission remain tied to the originating library entry.",
+    "tests": [
+      "test/rmgpy/i126ChemkinElectronOrderTest.py::test_library_placement_view_preserves_source_identity"
+    ]
+  },
   "arkane/common.py::ArkaneSpecies.load_yaml::make_object#1": {
     "verdict": "not-reachable-for-resolved",
     "reason": "Serializes quantities, thermodynamic/statistical-mechanics species data or EEDF table rows, not executable Reaction kinetics/directions.",

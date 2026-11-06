@@ -3043,9 +3043,20 @@
     ]
   },
   {
+    "site": "rmgpy/electron_placement.py::resolve_electron_placement::LibraryReaction#1",
+    "kind": "builder",
+    "line": 740,
+    "source": "view = LibraryReaction(",
+    "verdict": "guarded",
+    "reason": "Resolved library reactions preserve their stable source identity so plasma declarations and channel admission remain tied to the originating library entry.",
+    "tests": [
+      "test/rmgpy/i126ChemkinElectronOrderTest.py::test_library_placement_view_preserves_source_identity"
+    ]
+  },
+  {
     "site": "rmgpy/electron_placement.py::resolve_electron_placement::Reaction#1",
     "kind": "builder",
-    "line": 733,
+    "line": 762,
     "source": "view = Reaction(",
     "verdict": "guarded",
     "reason": "The canonical/execution views preserve kinetics and reversible metadata; downstream reactor preflight checks the original declaration.",
@@ -5166,7 +5177,7 @@
   {
     "site": "rmgpy/rmg/input.py::read_input_file::reaction-io",
     "kind": "reader-exporter",
-    "line": 3182,
+    "line": 3185,
     "source": "def read_input_file(path, rmg0):",
     "verdict": "not-reachable-for-resolved",
     "reason": "Job input reads/writes settings, species, reactor conditions and library references, without building or serializing executable Reaction rates. Actual library resolution is separately guarded.",
@@ -5177,7 +5188,7 @@
   {
     "site": "rmgpy/rmg/input.py::read_thermo_input_file::reaction-io",
     "kind": "reader-exporter",
-    "line": 3291,
+    "line": 3294,
     "source": "def read_thermo_input_file(path, rmg0):",
     "verdict": "not-reachable-for-resolved",
     "reason": "Job input reads/writes settings, species, reactor conditions and library references, without building or serializing executable Reaction rates. Actual library resolution is separately guarded.",
@@ -5188,7 +5199,7 @@
   {
     "site": "rmgpy/rmg/input.py::save_input_file::reaction-io",
     "kind": "reader-exporter",
-    "line": 3473,
+    "line": 3476,
     "source": "def save_input_file(path, rmg):",
     "verdict": "refused",
     "reason": "The job-input writer refuses resolved species identities before creating its state-blind settings file; it never serializes executable Reaction rates.",
@@ -6612,7 +6623,7 @@
   {
     "site": "rmgpy/solver/plasma.pyx::PlasmaReactor._compute_reference_reaction_data::reaction-io",
     "kind": "reader-exporter",
-    "line": 7747,
+    "line": 7980,
     "source": "def _compute_reference_reaction_data(self, np.ndarray y):",
     "verdict": "guarded",
     "reason": "The diagnostic serializes already-initialized directed kf/kb arrays; reactor initialization has checked original declarations, and irreversible explicit channels never synthesize a reverse record.",
@@ -6623,7 +6634,7 @@
   {
     "site": "rmgpy/solver/plasma.pyx::PlasmaReactor._evaluate_electronegative_wall_regime::reaction-io",
     "kind": "reader-exporter",
-    "line": 7877,
+    "line": 8111,
     "source": "def _evaluate_electronegative_wall_regime(self, np.ndarray y, double t, result=None):",
     "verdict": "guarded",
     "reason": "The accepted-state diagnostic formats original directed reactions and already-initialized kf/kb arrays; initialization enforces resolved reversibility, and the formatter preserves the declared arrow.",
@@ -6634,7 +6645,7 @@
   {
     "site": "rmgpy/solver/plasma.pyx::PlasmaReactor._requires_en_steps::reaction-io",
     "kind": "reader-exporter",
-    "line": 8478,
+    "line": 8722,
     "source": "def _requires_en_steps(self):",
     "verdict": "guarded",
     "reason": "The wall-step predicate only inspects admitted reaction direction flags and participants; admission has enforced resolved reversibility, and opposite irreversible channels remain independent entries.",
@@ -6645,7 +6656,7 @@
   {
     "site": "rmgpy/solver/plasma.pyx::PlasmaReactor._validate_reactions::reaction-io",
     "kind": "reader-exporter",
-    "line": 6075,
+    "line": 6244,
     "source": "def _validate_reactions(self, core_species, edge_species, core_reactions, edge_reactions):",
     "verdict": "guarded",
     "reason": "Reactor preflight checks original reverse declarations before initializing any equilibrium reverse rate.",
@@ -6656,7 +6667,7 @@
   {
     "site": "rmgpy/solver/plasma.pyx::PlasmaReactor.generate_rate_coefficients::check_reverse_from_equilibrium_supported#1",
     "kind": "reverse",
-    "line": 6311,
+    "line": 6480,
     "source": "rxn.check_reverse_from_equilibrium_supported()",
     "verdict": "guarded",
     "reason": "Reactor preflight checks original reverse declarations before initializing any equilibrium reverse rate.",
@@ -6667,7 +6678,7 @@
   {
     "site": "rmgpy/solver/plasma.pyx::PlasmaReactor.generate_rate_coefficients::get_equilibrium_constant#1",
     "kind": "reverse",
-    "line": 6312,
+    "line": 6481,
     "source": "self.Keq[j] = rxn.get_equilibrium_constant(self.T.value_si)",
     "verdict": "guarded",
     "reason": "Reactor preflight checks original reverse declarations before initializing any equilibrium reverse rate.",
@@ -6678,7 +6689,7 @@
   {
     "site": "rmgpy/solver/plasma.pyx::PlasmaReactor.generate_rate_coefficients::reaction-io",
     "kind": "reader-exporter",
-    "line": 6246,
+    "line": 6415,
     "source": "def generate_rate_coefficients(self, core_reactions, edge_reactions):",
     "verdict": "guarded",
     "reason": "Reactor preflight checks original reverse declarations before initializing any equilibrium reverse rate.",
@@ -7295,7 +7306,7 @@
   {
     "site": "rmgpy/tools/eedf/channel_map.py::_paired_inverse::reaction-io",
     "kind": "reader-exporter",
-    "line": 374,
+    "line": 401,
     "source": "def _paired_inverse(row, physical, library, collision_set):",
     "verdict": "guarded",
     "reason": "Validates a pair of explicitly irreversible EEDF owners, requiring opposite molecular stoichiometry and matching ine/sup collision markers; no thermal reverse rate is generated.",
