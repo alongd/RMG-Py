@@ -68,7 +68,10 @@ inventory (pools + every non-bath species) and the bath each close to
 ``MASS_CLOSURE_RELATIVE`` of their initial values, and the polymer rows only
 where no present species is unclassifiable (``KmcClasses``).
 
-**Refusals and flags.**  Conversion refuses: a first profile row not at
+**Refusals and flags.**  A deck whose declaration is no linear chain (a
+branched or network ``BranchedPolymerSpec``) is refused before anything is
+written, in every mode, as ``refused:architecture`` naming its architecture
+(``architecture_refusal``).  Conversion refuses: a first profile row not at
 t = 0; conflicting rows at one time anywhere in the profile; a pool repeat
 mass off the deck's; an initial inventory (summed moments, booked mass, every
 species column and the bath) off the deck's by more than ``INITIAL_RELATIVE``;
@@ -128,7 +131,7 @@ from rmgpy.kmc.event_record import same_species
 from rmgpy.molecule import Molecule
 from rmgpy import species_identity as _species_identity
 from rmgpy.molecule.molecule import Bond
-from rmgpy.polymer_spec import DEFAULT_RESIDENCE, PolymerSpec
+from rmgpy.polymer_spec import DEFAULT_RESIDENCE, LinearHomopolymerSpec, PolymerSpec
 from rmgpy.quantity import Quantity
 
 SCHEMA = "kmc-mom-producer/1"
@@ -152,6 +155,7 @@ MOM_EXHAUSTION_FLOOR_K = 100.0   # rmgpy/solver/polymer.pyx:153 EXHAUSTION_FLOOR
 # MoM's per-moment accepted-state floor f = max(SMALL_EPS, EXHAUSTION_FLOOR_K atol) (polymer.pyx:4288)
 MOM_MOMENT_FLOOR = max(MOM_SMALL_EPS, MOM_EXHAUSTION_FLOOR_K * SIMULATOR_ATOL)
 STATUS_INACTIVE = "refused:inactive_chemistry"
+ARCHITECTURE_REFUSAL = "refused:architecture"   # a branched or network deck (architecture_refusal)
 BUILTIN_STRUCTURES = {"H": "[H]", "H2": "[H][H]"}
 # /4 with chain types (kernel_rates.state_model_beyond_v3) is read in positions mode only (kernel_input, I-278)
 KERNEL_RATES_SCHEMAS = ("kmc-kernel-rates/2", "kmc-kernel-rates/3", "kmc-kernel-rates/4")
@@ -3069,6 +3073,19 @@ def kernel_input(table: dict, spec, kernels: Sequence[str], *, temperature: floa
     return out
 
 
+def architecture_refusal(spec) -> str:
+    """Why a declaration that is no linear chain (a branched or network
+    ``BranchedPolymerSpec``) has no MoM input, naming its architecture:
+    polymer-mom's pools are the moments of one chain-length distribution,
+    which a branched or network molecule is not."""
+    kind = getattr(spec, "architecture", None) or "non-linear"
+    gel = (" (a network's gel is one molecule: past the gel point the moments of a chain-length distribution "
+           "are not defined)" if kind == "network" else "")
+    return (f"{ARCHITECTURE_REFUSAL}: the deck declares a {kind} polymer ({type(spec).__name__}); the MoM producer "
+            "writes linear chains only (a linear homopolymer, or a linear copolymer in kernel mode), whose pools "
+            f"are the moments of one chain-length distribution{gel}")
+
+
 def build_input(deck, context: dict, *, temperature: float, end: float, families: Sequence[str],
                 constraints: Optional[Dict[str, Any]] = None,
                 kernels: Optional[dict] = None) -> Tuple[str, dict]:
@@ -3077,6 +3094,8 @@ def build_input(deck, context: dict, *, temperature: float, end: float, families
     if isinstance(spec, PolymerSpec):
         return copolymer_input(deck, context, temperature=temperature, end=end, families=families,
                                constraints=constraints, kernels=kernels)
+    if not isinstance(spec, LinearHomopolymerSpec):
+        raise ProducerError(architecture_refusal(spec))
     if deck.xs < 2:
         raise ProducerError(f"deck cutoff {deck.xs}: the MoM polymer() needs cutoff >= 2")
     label = mom_label(deck.label)
