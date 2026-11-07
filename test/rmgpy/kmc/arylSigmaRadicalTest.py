@@ -69,6 +69,27 @@ def legacy_shape_forms(shape, budget=EXACT):
     return tuple(sorted(rendered, key=wm._form_order))
 
 
+def no_sextet(shape, forms):
+    """The I-316 no-sextet exclusion as a filter over a complete form set: in a
+    shape with two or more 6-cycles whose best form holds two or more sextets,
+    the forms with zero sextets are dropped.  ``_shape_forms`` applies the rule
+    during its search; this filter, applied after the frozen legacy search, is
+    the independent reference it must equal."""
+    free, bonds = shape[0], shape[1]
+    incident = [[] for _ in free]
+    for k, (i, j) in enumerate(bonds):
+        incident[i].append((k, j))
+        incident[j].append((k, i))
+    six = [c for c in wm._ring_check_and_cycles(len(free), bonds, incident) if len(c) == 6]
+
+    def sextets(form):
+        return sum(1 for c in six if all(form[0][k] == 1.5 for k in c))
+
+    if len(six) < 2 or max(sextets(f) for f in forms) < 2:
+        return forms
+    return tuple(f for f in forms if sextets(f) >= 1)
+
+
 def forms(shape):
     wm._SHAPE_CACHE.clear()
     return wm._shape_forms(shape, EXACT)
@@ -76,12 +97,13 @@ def forms(shape):
 
 def pinned_reference(shape, sigma):
     """The forms of ``shape`` with one electron held at each atom of
-    ``sigma``: the legacy forms of the shape without it, then added back."""
+    ``sigma``: the legacy forms of the shape without it, then added back,
+    under the no-sextet exclusion (I-316)."""
     free, bonds, orders, radicals = shape
     reduced = (tuple(f - (a in sigma) for a, f in enumerate(free)), bonds, orders,
                tuple(r - (a in sigma) for a, r in enumerate(radicals)))
     back = [(o, tuple(r + (a in sigma) for a, r in enumerate(rad))) for o, rad in legacy_shape_forms(reduced)]
-    return tuple(sorted(back, key=wm._form_order))
+    return no_sextet(shape, tuple(sorted(back, key=wm._form_order)))
 
 
 # --------------------------------------------------------------------------
@@ -227,8 +249,9 @@ PK_I298_15 = {"free_valence": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1],
 # the same pieces as molecules: two rings joined by a CH*, a CH2* on ring B and
 # the aryl sigma-radical on ring B meta to it (and to the bridge); the
 # 15-atom piece carries a second CH2* on ring A
-PIECES = {"14": (PK_I298_14, "[CH](c1ccccc1)c1cc([CH2])c[c]c1", 21),
-          "15": (PK_I298_15, "[CH](c1cccc([CH2])c1)c1cc([CH2])c[c]c1", 56)}
+# (21 and 56 forms before the I-316 no-sextet exclusion, 12 and 17 under it)
+PIECES = {"14": (PK_I298_14, "[CH](c1ccccc1)c1cc([CH2])c[c]c1", 12),
+          "15": (PK_I298_15, "[CH](c1cccc([CH2])c1)c1cc([CH2])c[c]c1", 17)}
 
 
 def _literal(record):
@@ -280,10 +303,12 @@ def test_every_form_keeps_the_sigma_electron():
                                     "[C]1=CCCCC1", "[CH]1C=CC=CC1", "C=C1C=CC=C1[CH2]",
                                     "[CH](c1ccccc1)c1cccc([CH2])c1", "[CH2]c1ccc2ccccc2c1", "c1ccccc1"])
 def test_non_sigma_radicals_are_unchanged(smiles):
+    """Unchanged by the sigma rule; the two-sextet shapes here (the 14-atom
+    piece, 2-naphthylmethyl) lose their zero-sextet forms to I-316."""
     from rmgpy.molecule import Molecule
     mol = Molecule().from_smiles(smiles)
     _group, shape, _incident, _six = _setup(mol)
-    assert forms(shape) == legacy_shape_forms(shape)
+    assert forms(shape) == no_sextet(shape, legacy_shape_forms(shape))
 
 
 def test_a_sigma_atom_without_a_radical_is_not_pinned():
@@ -307,6 +332,6 @@ def test_the_per_subsystem_and_per_window_limits_are_still_64():
     shape = _literal(PK_I298_15)
     with pytest.raises(wm.ResonanceLimitError):
         wm._SHAPE_CACHE.clear()
-        wm._shape_forms(shape, 55)
+        wm._shape_forms(shape, 16)
     wm._SHAPE_CACHE.clear()
-    assert len(wm._shape_forms(shape, wm.RESONANCE_FORM_LIMIT)) == 56
+    assert len(wm._shape_forms(shape, wm.RESONANCE_FORM_LIMIT)) == 17

@@ -569,14 +569,26 @@ def _kekulize(free, bonds, orders, radicals, incident):
     return tuple(pi)
 
 
+def _alternates(values):
+    """True when the pi values around a cycle are all 0 or 1 and neighbours
+    (cyclically) differ: the cycle's pi bonds alternate."""
+    return all(v in (0, 1) for v in values) and all(values[i] != values[i - 1]
+                                                    for i in range(len(values)))
+
+
 def _render(pi, radicals, six_cycles):
     orders = [1.0 + p for p in pi]
     for cycle in six_cycles:
-        values = [pi[k] for k in cycle]
-        if all(v in (0, 1) for v in values) and all(values[i] != values[i - 1] for i in range(6)):
+        if _alternates([pi[k] for k in cycle]):
             for k in cycle:
                 orders[k] = 1.5
     return tuple(orders), tuple(radicals)
+
+
+def _sextets(pi, six_cycles):
+    """Aromatic sextets of a pi placement: the 6-cycles ``_render`` draws at
+    1.5.  Rings are counted, not 1.5 bonds, so two fused sextets count two."""
+    return sum(1 for cycle in six_cycles if _alternates([pi[k] for k in cycle]))
 
 
 def _form_order(form):
@@ -604,9 +616,7 @@ def _moves(pi, rad, incident, even_cycles):
                 r[c] += 1
                 yield tuple(p), tuple(r)
     for cycle in even_cycles:
-        values = [pi[k] for k in cycle]
-        if all(v in (0, 1) for v in values) and all(values[i] != values[i - 1]
-                                                    for i in range(len(values))):
+        if _alternates([pi[k] for k in cycle]):
             p = list(pi)
             for k in cycle:
                 p[k] = 1 - p[k]
@@ -627,6 +637,55 @@ def _aryl_sigma_atoms(free, radicals, incident, cycles):
                      and all(k in ring for k, _b in incident[a]))
 
 
+def _search(start, incident, even, six, budget, exclude):
+    """Breadth-first search over ``_moves`` from ``start``: the rendered forms
+    (a dict, in discovery order) and the most sextets any of them holds.
+
+    ``exclude``: a state with zero sextets is neither rendered, counted against
+    ``budget`` nor expanded; one that is met still counts against
+    ``RAW_PLACEMENT_LIMIT``.  If ``start`` itself has zero sextets, the
+    zero-sextet states connected to it are walked (never rendered or counted
+    against ``budget``) to seed the search with every state next to them that
+    holds a sextet."""
+    seen = {start}
+
+    def admit(state):
+        if len(seen) >= RAW_PLACEMENT_LIMIT:
+            raise ResonanceLimitError(
+                f"more than {RAW_PLACEMENT_LIMIT} pi placements in one subsystem")
+        seen.add(state)
+
+    queue = [start]
+    if exclude and not _sextets(start[0], six):
+        queue, walk, head = [], [start], 0
+        while head < len(walk):
+            pi, rad = walk[head]
+            head += 1
+            for nxt in _moves(pi, rad, incident, even):
+                if nxt not in seen:
+                    admit(nxt)
+                    (queue if _sextets(nxt[0], six) else walk).append(nxt)
+    rendered = {}
+    best = 0
+    head = 0
+    while head < len(queue):
+        pi, rad = queue[head]
+        head += 1
+        if exclude:
+            best = max(best, _sextets(pi, six))
+        form = _render(pi, rad, six)
+        if form not in rendered:
+            rendered[form] = len(rendered)
+            if len(rendered) > budget:
+                raise ResonanceLimitError(f"more than {budget} resonance forms", budget + 1)
+        for nxt in _moves(pi, rad, incident, even):
+            if nxt not in seen:
+                admit(nxt)
+                if not exclude or _sextets(nxt[0], six):
+                    queue.append(nxt)
+    return rendered, best
+
+
 def _shape_forms(shape, budget):
     """Rendered forms of one subsystem shape, first form first.  Raises
     ResonanceLimitError as soon as more than ``budget`` forms are found.
@@ -636,7 +695,27 @@ def _shape_forms(shape, budget):
     radical (``_aryl_sigma_atoms``).  It is held out of the pi enumeration
     (free valence and radical one less at that atom) and added back to every
     form, so it never shifts into the ring; the atom may still carry a pi
-    radical besides it.  A shape with no such atom enumerates as before."""
+    radical besides it.  A shape with no such atom enumerates as before.
+
+    Rule (no-sextet exclusion): in a subsystem whose best form holds two or
+    more aromatic sextets (``_sextets``), a form with zero sextets is not a
+    form: the search neither counts nor expands it, so ``budget`` counts only
+    kept forms.  This is RMG's ``aromaticity_filtration`` (polycyclic
+    branch), judged per conjugated subsystem rather than per molecule: a
+    separate aromatic ring elsewhere does not keep a subsystem's zero-sextet
+    forms.  "Best form holds two or more sextets" is decided here, without
+    enumerating past the budget:
+
+    - a shape with fewer than two 6-cycles cannot hold two sextets, so the
+      rule cannot apply and the plain search runs;
+    - otherwise the pruned search runs (``_search`` with ``exclude``).  If
+      it reaches a form with two or more sextets, that form is the witness
+      and its forms are the result.  If not, the rule does not apply and the
+      plain search runs from the start.
+
+    A limit raised in the pruned search is a true raise either way: its
+    forms and placements are a subset of the plain search's.  The forms kept
+    are those reached through states holding a sextet."""
     cached = _SHAPE_CACHE.get(shape)
     if cached is not None:
         if len(cached) > budget:
@@ -656,25 +735,13 @@ def _shape_forms(shape, budget):
         free = tuple(f - (a in sigma) for a, f in enumerate(free))
         radicals = tuple(r - (a in sigma) for a, r in enumerate(radicals))
     start = (_kekulize(free, bonds, orders, radicals, incident), tuple(radicals))
-    seen = {start}
-    queue = [start]
-    rendered = {}
-    head = 0
-    while head < len(queue):
-        pi, rad = queue[head]
-        head += 1
-        form = _render(pi, rad, six)
-        if form not in rendered:
-            rendered[form] = len(rendered)
-            if len(rendered) > budget:
-                raise ResonanceLimitError(f"more than {budget} resonance forms", budget + 1)
-        for nxt in _moves(pi, rad, incident, even):
-            if nxt not in seen:
-                if len(seen) >= RAW_PLACEMENT_LIMIT:
-                    raise ResonanceLimitError(
-                        f"more than {RAW_PLACEMENT_LIMIT} pi placements in one subsystem")
-                seen.add(nxt)
-                queue.append(nxt)
+    rendered = None
+    if len(six) >= 2:
+        rendered, best = _search(start, incident, even, six, budget, True)
+        if best < 2:
+            rendered = None
+    if rendered is None:
+        rendered, _best = _search(start, incident, even, six, budget, False)
     if sigma:
         rendered = [(o, tuple(r + (a in sigma) for a, r in enumerate(rad))) for o, rad in rendered]
     forms = tuple(sorted(rendered, key=_form_order))

@@ -532,7 +532,8 @@ def test_the_reduced_network_runs_as_the_exact_enumeration(ncut, homolysis, abst
         # single subsystem over the bound, refused by both, after the same six events.  The stop was at
         # five events, on a 14-atom piece of 65 forms that only exceeded the bound while its aryl
         # sigma-radical shifted into the ring; held on its atom, that piece fits and the run goes one
-        # event further
-        assert got[0] == "ResonanceLimitError: more than 64 resonance forms" and len(got[1]) == 7
+        # event further.  Under the I-316 no-sextet exclusion the 16-atom piece counts only its forms
+        # holding an aromatic sextet (25 of 113): it fits, and the run reaches the horizon after 20 events
+        assert got[0] == "horizon" and len(got[1]) == 21
     else:
         assert got[0] == "horizon"
