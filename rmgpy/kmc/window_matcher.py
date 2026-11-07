@@ -613,9 +613,30 @@ def _moves(pi, rad, incident, even_cycles):
             yield tuple(p), rad
 
 
+def _aryl_sigma_atoms(free, radicals, incident, cycles):
+    """Atoms of a subsystem holding an aryl sigma-radical (``_aryl_sigma_atoms``).
+
+    An atom qualifies when its free valence is 2, it carries a radical, and it
+    has exactly two subsystem bonds, both on a conjugated cycle.  Its pi
+    orbital is then already counted in the ring's pi system, so its second
+    free valence is the in-plane sp2 orbital, orthogonal to pi: one radical
+    electron there is a sigma electron, not a pi radical."""
+    ring = {k for cycle in cycles for k in cycle}
+    return frozenset(a for a in range(len(free))
+                     if free[a] == 2 and radicals[a] >= 1 and len(incident[a]) == 2
+                     and all(k in ring for k, _b in incident[a]))
+
+
 def _shape_forms(shape, budget):
     """Rendered forms of one subsystem shape, first form first.  Raises
-    ResonanceLimitError as soon as more than ``budget`` forms are found."""
+    ResonanceLimitError as soon as more than ``budget`` forms are found.
+
+    Rule: a radical on an atom whose pi orbital is already counted in the
+    ring's pi system holds a sigma electron, and that electron is not a pi
+    radical (``_aryl_sigma_atoms``).  It is held out of the pi enumeration
+    (free valence and radical one less at that atom) and added back to every
+    form, so it never shifts into the ring; the atom may still carry a pi
+    radical besides it.  A shape with no such atom enumerates as before."""
     cached = _SHAPE_CACHE.get(shape)
     if cached is not None:
         if len(cached) > budget:
@@ -630,6 +651,10 @@ def _shape_forms(shape, budget):
     cycles = _ring_check_and_cycles(n, bonds, incident)
     six = tuple(c for c in cycles if len(c) == 6)
     even = tuple(c for c in cycles if len(c) % 2 == 0)
+    sigma = _aryl_sigma_atoms(free, radicals, incident, cycles)
+    if sigma:
+        free = tuple(f - (a in sigma) for a, f in enumerate(free))
+        radicals = tuple(r - (a in sigma) for a, r in enumerate(radicals))
     start = (_kekulize(free, bonds, orders, radicals, incident), tuple(radicals))
     seen = {start}
     queue = [start]
@@ -650,6 +675,8 @@ def _shape_forms(shape, budget):
                         f"more than {RAW_PLACEMENT_LIMIT} pi placements in one subsystem")
                 seen.add(nxt)
                 queue.append(nxt)
+    if sigma:
+        rendered = [(o, tuple(r + (a in sigma) for a, r in enumerate(rad))) for o, rad in rendered]
     forms = tuple(sorted(rendered, key=_form_order))
     if len(_SHAPE_CACHE) > 100000:
         _SHAPE_CACHE.clear()

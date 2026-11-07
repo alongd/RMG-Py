@@ -527,8 +527,12 @@ def test_the_reduced_network_runs_as_the_exact_enumeration(ncut, homolysis, abst
     assert got == oracle
     assert len(got[1]) > 1
     if (ncut, homolysis, abstraction, seed) == (2, 1, 1, 1):
-        # a candidate homolysis product holds one 14-atom subsystem of 65 forms (three radicals on two
-        # rings): a single subsystem over the bound, refused by both, after the same five events
-        assert got[0] == "ResonanceLimitError: more than 64 resonance forms" and len(got[1]) == 6
+        # a candidate product holds one 16-atom two-ring subsystem of 113 forms (four radicals, no aryl
+        # sigma-radical: one CH2* on ring A, two on ring B, one on the bridge carbon joining them): a
+        # single subsystem over the bound, refused by both, after the same six events.  The stop was at
+        # five events, on a 14-atom piece of 65 forms that only exceeded the bound while its aryl
+        # sigma-radical shifted into the ring; held on its atom, that piece fits and the run goes one
+        # event further
+        assert got[0] == "ResonanceLimitError: more than 64 resonance forms" and len(got[1]) == 7
     else:
         assert got[0] == "horizon"
