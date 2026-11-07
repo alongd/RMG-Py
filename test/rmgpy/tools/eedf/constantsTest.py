@@ -34,6 +34,8 @@ import importlib
 import json
 import os
 from pathlib import Path
+import subprocess
+import sys
 
 import numpy as np
 import pytest
@@ -53,10 +55,24 @@ def test_constants_are_codata_2018_and_exact_si():
     assert AVOGADRO == 6.02214076e23
 
 
-def test_frozen_model_inputs_ignore_scipy_mass_update(monkeypatch, tmp_path):
+def test_frozen_model_inputs_ignore_scipy_mass_update(tmp_path):
     path = os.environ.get('EEDF_REAL_SPEC')
     if path is None:
         pytest.skip('EEDF_REAL_SPEC supplies the complete pinned fixture')
+    # Reloading in the pytest process replaces exception classes retained by
+    # other collected tests. Keep all strict checks in a separate interpreter.
+    result = subprocess.run(
+        [sys.executable, '-c',
+         "import runpy, sys; from pathlib import Path; "
+         "runpy.run_path(sys.argv[1])['_check_frozen_model_inputs']"
+         "(sys.argv[2], Path(sys.argv[3]))",
+         str(Path(__file__).resolve()), path, str(tmp_path)],
+        capture_output=True, text=True, timeout=120,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def _check_frozen_model_inputs(path, tmp_path):
     spec = load_spec(path)
     original_map = Path(spec['channel_map']['path']).read_bytes()
     mapping = json.loads(original_map)
@@ -67,7 +83,7 @@ def test_frozen_model_inputs_ignore_scipy_mass_update(monkeypatch, tmp_path):
         'maxwellian', 'corroborate',
     )]
     try:
-        with monkeypatch.context() as patch:
+        with pytest.MonkeyPatch.context() as patch:
             patch.setattr(scipy.constants, 'electron_mass', 9.1093837139e-31)
             # Reload after the patch: already cached SciPy values must not mask it.
             for module in modules:
