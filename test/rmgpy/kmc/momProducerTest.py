@@ -3011,3 +3011,60 @@ def test_the_polymer_classified_rows_are_marked_classification_dependent(setup):
     free = doc["classification_free_rows"]
     assert {"inventory_mass_g", "certified_species_mol.<s>", "mass_outside_certified_g",
             "low_dp_mass_bounds_g.<pool>", "low_dp_mass_bounds_g"} <= set(free)
+
+
+# --------------------------------------------------------------------------
+# I-318: a network or branched declaration has no MoM input; refused by name
+# --------------------------------------------------------------------------
+def _nonlinear_inputs(tmp_path):
+    """A catalog document naming one family and a database root with a
+    families directory: every input the producer reads before the deck's
+    chemistry is written."""
+    catalog = tmp_path / "catalog.json"
+    catalog.write_text(json.dumps({"schema": "kmc-template-catalog/1", "payloads": [],
+                                   "provenance": {"families": ["R_Recombination"]}}))
+    db = tmp_path / "db"
+    (db / "input" / "kinetics" / "families").mkdir(parents=True, exist_ok=True)
+    table = tmp_path / "table.json"
+    table.write_text(json.dumps({"schema": "kmc-kernel-rates/2", "kernels": {}, "kmc_only": []}))
+    return catalog, str(db), table
+
+
+def _nonlinear_decks():
+    from network_support import NETWORK_DECK
+    from branched_support import BRANCHED_DECK
+    return [("network", NETWORK_DECK), ("branched", BRANCHED_DECK)]
+
+
+@pytest.mark.parametrize("kind", ["network", "branched"])
+def test_a_nonlinear_deck_is_refused_by_its_architecture_in_family_mode(tmp_path, kind):
+    deck = dict(_nonlinear_decks())[kind]
+    catalog, db, _table = _nonlinear_inputs(tmp_path)
+    out = tmp_path / "out"
+    with pytest.raises(mp.ProducerError, match=rf"^refused:architecture: the deck declares a {kind} polymer"):
+        mp.produce(deck, checkout=CHECKOUT, temperature=700.0, end=40.0, snapshots=9,
+                   families=["R_Recombination"], catalogs=[catalog], out=out, database=db)
+    assert not (out / "rmg" / "input.py").exists()              # refused before anything is written
+
+
+@pytest.mark.parametrize("kind", ["network", "branched"])
+def test_a_nonlinear_deck_is_refused_by_its_architecture_in_kernel_mode(tmp_path, kind):
+    deck = dict(_nonlinear_decks())[kind]
+    _catalog, db, table = _nonlinear_inputs(tmp_path)
+    out = tmp_path / "out"
+    with pytest.raises(mp.ProducerError, match=rf"^refused:architecture: the deck declares a {kind} polymer"):
+        mp.produce(deck, checkout=CHECKOUT, temperature=700.0, end=40.0, snapshots=9, families=[], catalogs=[],
+                   out=out, database=db, kernel_rates=str(table), kernels=["homolysis:substrate=chain"])
+    assert not (out / "rmg" / "input.py").exists()
+
+
+def test_the_network_refusal_names_the_gel_and_the_command_line_exits_2(tmp_path, capsys):
+    from network_support import NETWORK_DECK
+    catalog, db, _table = _nonlinear_inputs(tmp_path)
+    argv = [str(NETWORK_DECK), "--mom-checkout", CHECKOUT, "--temperature", "700", "--end", "40", "--snapshots", "9",
+            "--families", "R_Recombination", "--catalog", str(catalog), "--out", str(tmp_path / "cli"),
+            "--database", db, "--write-only"]
+    assert mp.main(argv) == 2
+    err = capsys.readouterr().err
+    assert err.startswith("refused: refused:architecture: the deck declares a network polymer (NetworkPolymerSpec)")
+    assert "gel" in err and "Traceback" not in err
