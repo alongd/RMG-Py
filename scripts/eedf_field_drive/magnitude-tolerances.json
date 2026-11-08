@@ -1,0 +1,15 @@
+{
+  "species_epsilon": 1e-06,
+  "electron_epsilon": 1e-06,
+  "energy_epsilon": 1e-09,
+  "neutral_floor_fraction": 1e-12,
+  "electron_fraction_max": 1e-06,
+  "time_max_s": 600.0,
+  "target_fraction_floor": 1e-12,
+  "underflow_absolute": 1e-300,
+  "time_sources": [
+    "Ar+N2: production-session-20261106/post-array/prepared-decks, all 18 terminationTime=(600,s)",
+    "Field-drive: probe_sweep.py:112, geomspace(1e-10,600,1400); paired control horizon",
+    "Missing: separate future field/current waveform history endpoints; recheck before their qualification"
+  ]
+}

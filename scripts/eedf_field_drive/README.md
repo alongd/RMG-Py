@@ -58,3 +58,56 @@ results/row-timings.jsonl records UTC start/end, coordinate/fields, wall seconds
 and child user/system CPU for every call, including refusals. A process executes
 one solver subprocess at a time, so CPU deltas are per row. Append locking protects
 complete JSON records from simultaneous worker writes.
+
+
+## Reactor-impact tolerances
+
+The optional generation-spec object `magnitude_tolerances` enables the
+owner-approved strict rule. `magnitude-tolerances.json` records its parameters
+and the selected 600 s horizon. Add that object to the measurement spec before
+normal preparation/generation; it is copied into `row_inputs` and covered by
+the normal table fingerprint and qualification setup identity. Old specs retain
+their original comparisons. Existing artifacts are never relabelled accepted.
+
+For nonelastic rates the absolute allowance is
+`species_epsilon * n_floor / (ne_max * x * N * time_max_s)`, with
+`n_floor = neutral_floor_fraction * N`,
+`ne_max = electron_fraction_max * N`, and
+`x = max(reference target, table target, target_fraction_floor)`.
+Reverse rates use product fractions.
+Here `N = P_Pa / (k_B * Tg_K)` uses query coordinates over envelope reference
+values over nominal spec values, consistently for every impact scale.
+Townsend/N uses `electron_epsilon / (abs(reference drift) * N * time_max_s)`.
+Individual nonelastic powers use
+`energy_epsilon * abs(reference field power)`.
+The existing effective relative tolerance (including existing H3/H4
+significance selection) is retained. Eligible checks use the larger of the original
+`atol + rtol * abs(reference)` and the reactor-impact allowance plus the
+relative term. Existing rate, flux and power floors therefore never tighten.
+Zero reference drift or field power sets the impact allowance for that class
+to zero. Underflow normalization still applies, so two values that normalize
+to zero pass without a charge. Negative or nonfinite reference scales are rejected.
+
+The original comparator always uses raw values, and every old pass costs zero
+budget. Only the new allowance branch normalizes magnitudes below
+`underflow_absolute` to zero, then compares against the larger of the old and
+impact allowances, both evaluated with the normalized reference. A pass in
+either branch admits the check.
+Eligible channel kinds are excitation, vibrational,
+rotational, ionization and attachment, including their reverse superelastic
+rates. Elastic and effective coefficients/powers, aggregate power sums, T10,
+H1, F0 and other transport checks keep their original arithmetic. Every check passing only
+through the new absolute allowance contributes only its excess over the full
+original allowance evaluated with the normalized reference to one of three
+query budgets: species inventory divided by
+`n_floor`, fractional electron change, or fractional field energy. All rate
+constraints are conservatively summed together; duplicated H3 and consistency
+constraints are counted independently. No cancellation is credited. A failed
+cumulative check rejects the query through the existing all-checks aggregation.
+
+The 18 prepared Ar+N2 reactor decks use `terminationTime=(600, 's')`.
+The paired power controls in `probe_sweep.py` also end at 600 s.
+**Horizon limitation:** future field/current waveform histories do not yet have
+separate endpoint specifications. The largest available horizon is used;
+recheck it before qualifying those histories, and regenerate identity if it
+changes. The tolerance change alone does not establish a passing grid.

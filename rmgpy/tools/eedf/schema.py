@@ -330,6 +330,21 @@ def load_spec(path):
     return spec
 
 
+def _validate_magnitude_tolerances(policy):
+    """Require explicit, finite reactor-impact budgets and their time sources."""
+    numeric = {'species_epsilon', 'electron_epsilon', 'energy_epsilon',
+               'neutral_floor_fraction', 'electron_fraction_max', 'time_max_s',
+               'target_fraction_floor', 'underflow_absolute'}
+    if (not isinstance(policy, dict) or set(policy) != numeric | {'time_sources'}
+            or any(type(policy[k]) not in (int, float) or
+                   not np.isfinite(policy[k]) or policy[k] <= 0 for k in numeric)):
+        raise SpecError('magnitude_tolerances requires finite positive parameters')
+    sources = policy['time_sources']
+    if (not isinstance(sources, list) or not sources
+            or any(not isinstance(s, str) or not s.strip() for s in sources)):
+        raise SpecError('magnitude_tolerances requires time_sources')
+
+
 def _validate_spec(spec):
     """Reject unspecified policy instead of freezing tolerances in code."""
     required = {'schema_version', 'arm', 'Tg_K', 'P_Pa', 'binary', 'shared_objects', 'cmake_cache',
@@ -338,7 +353,7 @@ def _validate_spec(spec):
                 'working_conditions', 'solver_options', 'tolerances', 'floors',
                 'held_out', 'repositories', 'output_root', 'scratch_root',
                 'omp_threads', 'max_parallel', 'timeout_s', 'refinement'}
-    optional = {'engine_state_map', 'qualification_quantity_rules', 'vibrational_ladders', 'argon_4s_population', 'interpolation_accuracy',
+    optional = {'engine_state_map', 'qualification_quantity_rules', 'vibrational_ladders', 'argon_4s_population', 'interpolation_accuracy', 'magnitude_tolerances',
                 *ARGON_VALIDITY_FIELDS}
     if (not isinstance(spec, dict) or not required <= set(spec) or
             set(spec) - required - optional):
@@ -348,6 +363,8 @@ def _validate_spec(spec):
     _argon_validity_declarations(spec)
     from rmgpy.tools.eedf.argon_population import validate_population_axis
     validate_population_axis(spec)
+    if 'magnitude_tolerances' in spec:
+        _validate_magnitude_tolerances(spec['magnitude_tolerances'])
     if 'interpolation_accuracy' in spec:
         from rmgpy.tools.eedf.validation import _freeze_accuracy_criteria
         _freeze_accuracy_criteria(spec['interpolation_accuracy'])
@@ -509,6 +526,9 @@ def _row_inputs(spec):
         'state_properties', 'working_conditions', 'solver_options', 'screen', 'envelopes',
         'floors', 'tolerances', 'held_out', 'refinement')}
     result.update(_argon_validity_declarations(spec))
+    if 'magnitude_tolerances' in spec:
+        _validate_magnitude_tolerances(spec['magnitude_tolerances'])
+        result['magnitude_tolerances'] = copy.deepcopy(spec['magnitude_tolerances'])
     if 'interpolation_accuracy' in spec:
         result['interpolation_accuracy'] = copy.deepcopy(spec['interpolation_accuracy'])
     if 'argon_4s_population' in spec:

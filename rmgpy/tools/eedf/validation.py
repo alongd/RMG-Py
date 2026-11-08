@@ -29,6 +29,7 @@
 
 """Scan agreement, independent held-out points and validation verdicts."""
 import itertools
+import math
 
 import numpy as np
 from scipy.stats import qmc
@@ -191,25 +192,121 @@ def _held_out_accuracy(table, direct, point, *, criteria, setup_fingerprint):
     }
 
 
-def _compare_row(predicted, direct, manifest):
-    """Return named H1–H4 verdicts, using species flux and field power scales.
+class _MagnitudeBudget:
+    """One query's explicit inventory, electron and field-energy budgets.
 
-    Resolved target fractions supply conservative individual flux budgets. Rates
-    below the dynamic-range floor use absolute tests. Declared flux groups
-    cannot increase an allowance.
-    No reactor flux or materiality budget is invented by this routine.
+    Count only error newly admitted beyond the original allowance, including
+    independent H3/consistency constraints on the same channel. No cancellation or duplicate discount.
+    Policy lives in fingerprinted row_inputs, never a mutable display field.
+    """
+
+    def __init__(self, predicted, direct, manifest):
+        from rmgpy.tools.eedf.constants import BOLTZMANN
+        from rmgpy.tools.eedf.schema import _validate_magnitude_tolerances
+        inputs = manifest['row_inputs']
+        self.policy = inputs['magnitude_tolerances']
+        _validate_magnitude_tolerances(self.policy)
+        p = self.policy
+        # Match the solver's state resolution: envelope defaults, then query
+        # coordinates. Table rows retain axes; direct rows also retain explicit
+        # envelope coordinates, so the latter take precedence.
+        state = {name: envelope['reference']
+                 for name, envelope in inputs.get('envelopes', {}).items()}
+        state.update(predicted.get('composition', {}))
+        state.update(direct.get('composition', {}))
+        pressure = state.get('P_Pa', inputs['P_Pa'])
+        temperature = state.get('Tg_K', inputs['Tg_K'])
+        drift = direct['swarm']['drift_velocity_m_s']
+        self.field = direct['power_groups']['field']
+        if (not np.isfinite(pressure) or pressure <= 0
+                or not np.isfinite(temperature) or temperature <= 0
+                or not np.isfinite(drift) or drift < 0
+                or not np.isfinite(self.field) or self.field < 0):
+            raise EEDFError('invalid magnitude tolerance reference scales')
+        density = pressure / (BOLTZMANN * temperature)
+        # ne_max * N * t / n_floor, with both densities defined against N.
+        self.inventory_scale = (p['electron_fraction_max'] * density *
+                                p['time_max_s'] / p['neutral_floor_fraction'])
+        self.electron_scale = drift * density * p['time_max_s']
+        if (not np.isfinite(self.inventory_scale) or self.inventory_scale <= 0
+                or not np.isfinite(self.electron_scale) or self.electron_scale < 0):
+            raise EEDFError('invalid magnitude tolerance reference scales')
+        self.targets = {}
+        for direction, name in (('k_ine', 'target_fractions'),
+                                ('k_sup', 'product_fractions')):
+            a, b = np.asarray(predicted[name]), np.asarray(direct[name])
+            if (a.shape != (len(manifest['channel_map']),) or a.shape != b.shape
+                    or not np.all(np.isfinite(a)) or not np.all(np.isfinite(b))
+                    or np.any(a < 0) or np.any(b < 0)):
+                raise EEDFError('invalid magnitude tolerance target fractions')
+            self.targets[direction] = np.maximum(np.maximum(a, b), p['target_fraction_floor'])
+        self.excess = {'species': [], 'electron': [], 'energy': []}
+
+    def allowance(self, kind, direction=None, channel=None):
+        if kind == 'species':
+            scale = self.inventory_scale * self.targets[direction][channel]
+            return self.policy['species_epsilon'] / scale, scale
+        if kind == 'electron':
+            return (self.policy['electron_epsilon'] / self.electron_scale
+                    if self.electron_scale else 0.), self.electron_scale
+        return self.policy['energy_epsilon'] * self.field, (1 / self.field if self.field else 0.)
+
+    def verdicts(self):
+        results = []
+        for kind, terms in self.excess.items():
+            total = math.fsum(terms)
+            limit = self.policy[kind + '_epsilon']
+            results.append({'rule': 'cumulative', 'quantity': kind + '_fraction',
+                            'index': [], 'absolute_error': total, 'relative_error': None,
+                            'allowed_error': limit,
+                            'passed': bool(np.isfinite(total) and total <= limit)})
+        return results
+
+
+def _compare_row(predicted, direct, manifest):
+    """Return row checks plus optional fingerprinted reactor-impact budgets.
+
+    Absent an explicit magnitude policy, preserve the original comparator.
+    Elastic, effective, aggregate, distribution and transport gates retain their
+    exact arithmetic. Underflow normalization applies only to the new allowance.
     """
     tol, floors = manifest['tolerances'], manifest['floors']
     for name in ('energy_eV', 'energy_edges_eV'):
         if not np.array_equal(predicted[name], direct[name]):
             raise EEDFError('held-out energy grid changes: ' + name)
     verdicts = []
+    budget = (_MagnitudeBudget(predicted, direct, manifest)
+              if 'magnitude_tolerances' in manifest.get('row_inputs', {}) else None)
+    # Reverse (superelastic) rates belong to the same inelastic channel kinds.
+    inelastic_kinds = {'excitation', 'vibrational', 'rotational', 'ionization', 'attachment'}
 
-    def record(rule, quantity, actual, reference, rtol, atol):
+    def record(rule, quantity, actual, reference, rtol, atol,
+               kind=None, direction=None, channel=None):
         actual, reference = np.asarray(actual), np.asarray(reference)
+        old_allowed = np.asarray(atol) + rtol * abs(reference)
         difference = abs(actual - reference)
-        allowed = np.asarray(atol) + rtol * abs(reference)
-        passed = difference <= allowed
+        old_passed = difference <= old_allowed
+        passed = old_passed
+        allowed = old_allowed
+        if budget is not None and kind is not None:
+            impact_atol, scale = budget.allowance(kind, direction, channel)
+            cutoff = budget.policy['underflow_absolute']
+            normalized_actual = np.where(abs(actual) < cutoff, 0., actual)
+            normalized_reference = np.where(abs(reference) < cutoff, 0., reference)
+            normalized_difference = abs(normalized_actual - normalized_reference)
+            old_allowed_normalized = np.asarray(atol) + rtol * abs(normalized_reference)
+            new_allowed = impact_atol + rtol * abs(normalized_reference)
+            normalized_allowed = np.maximum(old_allowed_normalized, new_allowed)
+            allowed = np.where(old_passed, np.maximum(old_allowed, new_allowed), normalized_allowed)
+            passed = old_passed | (normalized_difference <= normalized_allowed)
+            passed &= np.isfinite(actual) & np.isfinite(reference)
+            excess = np.maximum(0., normalized_difference - old_allowed_normalized)
+            budget.excess[kind].extend(
+                (excess[passed & ~old_passed & (excess > 0)] * scale).ravel().tolist())
+            # Report the raw comparison for every old pass, including
+            # values straddling the underflow cutoff. It costs no budget.
+            difference = np.where(old_passed, difference, normalized_difference)
+            reference = np.where(old_passed, reference, normalized_reference)
         for index in np.ndindex(difference.shape):
             ref, diff, allowance = float(reference[index]), float(difference[index]), float(allowed[index] if allowed.shape else allowed)
             verdicts.append({'rule': rule, 'quantity': quantity, 'index': list(index),
@@ -219,7 +316,8 @@ def _compare_row(predicted, direct, manifest):
     record('H1', 'mean_energy_eV', predicted['swarm']['mean_energy_eV'], direct['swarm']['mean_energy_eV'], **tol['H1'])
     for name, reference in direct['swarm'].items():
         if name != 'mean_energy_eV':
-            record('H2', name, predicted['swarm'][name], reference, **tol['H2'])
+            record('H2', name, predicted['swarm'][name], reference, **tol['H2'],
+                   kind='electron' if name == 'townsend_N' else None)
     channels = manifest['channel_map']
     for direction in ('k_ine', 'k_sup'):
         targets = np.asarray(direct['target_fractions'] if direction == 'k_ine' else direct.get('product_fractions', np.zeros(len(channels))))
@@ -236,13 +334,16 @@ def _compare_row(predicted, direct, manifest):
             absolute = max(tol['H3']['atol'], direct['rate_floors'][j],
                            floors['absolute_flux_fraction'] * total / targets[j] if targets[j] else 0)
             record('H3', direction + ':' + str(j), predicted[direction][j], direct[direction][j],
-                   tol['H3']['rtol'] if significant else 0, absolute)
+                   tol['H3']['rtol'] if significant else 0, absolute,
+                   kind='species' if channel['kind'] in inelastic_kinds else None,
+                   direction=direction, channel=j)
     field = abs(direct['power_groups']['field'])
     for j, reference in enumerate(direct['channel_power']):
         significant = abs(reference) >= floors['relative_power_share'] * field
         record('H4', 'channel_power:' + str(j), predicted['channel_power'][j], reference,
                tol['H4']['rtol'] if significant else 0,
-               max(tol['H4']['atol'], floors['absolute_power_share'] * field))
+               max(tol['H4']['atol'], floors['absolute_power_share'] * field),
+               kind='energy' if channels[j]['kind'] in inelastic_kinds else None)
     total_keys = ['elastic_gain', 'elastic_loss', 'car_gain', 'car_loss', 'excitation_loss', 'excitation_gain',
                   'vibrational_loss', 'vibrational_gain', 'rotational_loss', 'rotational_gain', 'ionization', 'attachment']
     for name in total_keys + ['field', 'growth']:
@@ -261,13 +362,25 @@ def _compare_row(predicted, direct, manifest):
     moments = _distribution_moments(physical, manifest['channel_map'])
     record('consistency', 'f0.mean_energy_eV', predicted['swarm']['mean_energy_eV'], moments['mean_energy_eV'], **tol['H1'])
     for direction in ('k_ine', 'k_sup'):
-        record('consistency', 'f0.' + direction, predicted[direction], moments[direction],
-               tol['H3']['rtol'], np.maximum(tol['H3']['atol'], predicted['rate_floors']))
+        # Keep vector records/indexes for compatibility with saved verdicts.
+        for j, channel in enumerate(channels):
+            before = len(verdicts)
+            record('consistency', 'f0.' + direction, predicted[direction][j], moments[direction][j],
+                   tol['H3']['rtol'], max(tol['H3']['atol'], predicted['rate_floors'][j]),
+                   kind='species' if channel['kind'] in inelastic_kinds else None,
+                   direction=direction, channel=j)
+            verdicts[before]['index'] = [j]
     field = abs(predicted['power_groups']['field'])
-    record('consistency', 'f0.channel_power', predicted['channel_power'], moments['channel_power'],
-           tol['H4']['rtol'], max(tol['H4']['atol'], floors['absolute_power_share'] * field))
+    for j, channel in enumerate(channels):
+        before = len(verdicts)
+        record('consistency', 'f0.channel_power', predicted['channel_power'][j], moments['channel_power'][j],
+               tol['H4']['rtol'], max(tol['H4']['atol'], floors['absolute_power_share'] * field),
+               kind='energy' if channel['kind'] in inelastic_kinds else None)
+        verdicts[before]['index'] = [j]
     verdicts.extend(_channel_power_checks(predicted, manifest))
     verdicts.extend(_channel_power_checks(direct, manifest))
+    if budget is not None:
+        verdicts.extend(budget.verdicts())
     return verdicts
 
 
