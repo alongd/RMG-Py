@@ -251,6 +251,7 @@ def test_generated_comparator_uses_shared_runtime_interpolation(tmp_path):
         row = table.row(point['u'], {})
         assert row.EN_Td is None
         assert row.reference_EN_Td == np.exp(point['u'])
+        assert row.power_groups['collision_loss'] == sum(row.channel_power)
         assert 'field' not in row.power_groups
         assert 'field' not in row.derivatives['u']['power_groups']
         assert row.a6b_runtime['status'] == row.a6b_source['status'] == 'NOT_APPLICABLE'

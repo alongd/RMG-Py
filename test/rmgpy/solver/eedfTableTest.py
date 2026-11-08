@@ -555,3 +555,72 @@ def test_argon_population_first_cell_floor_flag(tmp_path):
     table._data[branch][:, 0, start] = 1.
     assert table.row(.7, {'f_Ar4s': 1.e-8}).below_floor[0, 0]
     assert not table.row(.7, {'f_Ar4s': 1.e-5}).below_floor[0, 0]
+
+
+@pytest.mark.parametrize('kind', [
+    'elastic', 'excitation', 'vibrational', 'rotational', 'ionization', 'attachment',
+])
+def test_interpolated_group_power_is_channel_sum(tmp_path, monkeypatch, kind):
+    """Nonlinear columns must sum after interpolation, with native gross splits."""
+    from rmgpy.tools.eedf.validation import _channel_power_checks
+    names = {
+        'elastic': ('elastic_gain', 'elastic_loss'),
+        'excitation': ('excitation_gain', 'excitation_loss'),
+        'vibrational': ('vibrational_gain', 'vibrational_loss'),
+        'rotational': ('rotational_gain', 'rotational_loss'),
+        'ionization': ('ionization',), 'attachment': ('attachment',),
+    }[kind]
+    # Opposite signs, a zero crossing, and simultaneous gross gain/loss.
+    powers = np.array([[1., -2.], [2., -1.], [8., 1.], [9., 4.]]) * 1.e-20
+    if len(names) == 1:
+        powers = abs(powers)
+    exchange = np.array([.4, .7, .8, 1.3]) * 1.e-20
+    native = {}
+    original_writer = _write_artifact
+
+    def write_groups(directory, manifest, branches, held_out):
+        manifest['channel_map'] = [
+            dict(description=str(j), kind=kind, classification='B') for j in range(2)]
+        manifest['tolerances']['channel_power_sum'] = {'rtol': 1.e-9, 'atol': 0.}
+        manifest['floors'].update(relative_power_share=1.e-3, absolute_power_share=0.)
+        for rows in branches.values():
+            for index in np.ndindex(rows.shape):
+                row = rows[index]
+                for name in ('k_ine', 'k_sup', 'attachment_energy_eV',
+                             'target_fractions', 'product_fractions', 'rate_floors'):
+                    row[name] = np.repeat(row[name], 2)
+                row['below_floor'] = np.repeat(row['below_floor'], 2, axis=0)
+                row['channel_power'] = powers[index[0]].copy()
+                groups = row['power_groups']
+                groups.update(growth=.3e-20, car_gain=.2e-20, car_loss=-.4e-20)
+                if len(names) == 1:
+                    groups[names[0]] = -sum(row['channel_power'])
+                else:
+                    groups[names[0]] = -sum(np.minimum(row['channel_power'], 0)) + exchange[index[0]]
+                    groups[names[1]] = -sum(np.maximum(row['channel_power'], 0)) - exchange[index[0]]
+                native[index[0]] = dict(groups)
+        return original_writer(directory, manifest, branches, held_out)
+
+    monkeypatch.setitem(globals(), '_write_artifact', write_groups)
+    path, model = fixture_table(tmp_path)
+    table = EEDFTable.load(path, model, artifact_sha256=_file_hash(path / 'table.h5'))
+    for u in [0., .5, 1., 1.5, 2., 2.5, 3.]:
+        row = table.row(u, {})
+        expected_channels = PchipInterpolator(np.arange(4.), powers)(u)
+        assert row.channel_power == pytest.approx(expected_channels, rel=1.e-14, abs=0.)
+        assert -sum(row.power_groups[name] for name in names) == pytest.approx(
+            sum(row.channel_power), rel=1.e-14, abs=1.e-34)
+        checks = _channel_power_checks(row._as_dict(), table.manifest)
+        assert all(check['passed'] for check in checks)
+        for name in ('growth', 'car_gain', 'car_loss'):
+            assert row.power_groups[name] == native[0][name]
+        if u.is_integer():
+            for name in names:
+                assert row.power_groups[name] == pytest.approx(native[int(u)][name], rel=1.e-14, abs=1.e-34)
+    # Reconstruct the old path: independently interpolating native group totals.
+    row = table.row(.5, {})._as_dict()
+    for name in names:
+        row['power_groups'][name] = float(PchipInterpolator(
+            np.arange(4.), [native[i][name] for i in range(4)])(.5))
+    checks = _channel_power_checks(row, table.manifest)
+    assert not next(c for c in checks if c['quantity'] == 'power.sum.' + kind)['passed']

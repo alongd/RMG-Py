@@ -558,6 +558,16 @@ class EEDFTable:
                     if any(float(stored[key][index]).hex() != value.hex() for key, value in expected.items()):
                         raise FingerprintMismatch('row ' + name + ' differs from setup populations')
 
+    # LoKI groups use electron gain signs; channel_power uses loss signs.
+    _power_group_names = {
+        'elastic': ('elastic_gain', 'elastic_loss'),
+        'excitation': ('excitation_gain', 'excitation_loss'),
+        'vibrational': ('vibrational_gain', 'vibrational_loss'),
+        'rotational': ('rotational_gain', 'rotational_loss'),
+        'ionization': ('ionization',),
+        'attachment': ('attachment',),
+    }
+
     def _read_branch(self, branch_id, group):
         shape = tuple(len(axis) for axis in self._axes)
         rank = len(shape)
@@ -610,6 +620,19 @@ class EEDFTable:
                     raise FingerprintMismatch('native u state mapping')
             elif name != 'iteration_count':
                 append(name, value[...])
+        # Net channel powers cannot determine the gross gain/loss split:
+        # one reversible collision can cool and heat electrons simultaneously.
+        # Preserve that common exchange from the direct rows. At query time
+        # only the signed channel sums determine the net group power.
+        for kind, names in self._power_group_names.items():
+            columns = [i for i, channel in enumerate(self._manifest['channel_map'])
+                       if channel['kind'] == kind]
+            if (len(names) == 2 and columns and
+                    all(name in group['power_groups'] for name in names)):
+                powers = group['channel_power'][...][..., columns]
+                exchange = (group['power_groups'][names[0]][...] +
+                            np.minimum(powers, 0.).sum(axis=-1))
+                append('_power_exchange_' + kind, exchange)
         if self._provider_kind == 'loki-table' and branch_id not in self._native_field_power:
             raise FingerprintMismatch('missing required native field power')
         if branch_id not in self._native_mobility:
@@ -779,6 +802,21 @@ class EEDFTable:
             }
         result = {name: take(name) for name in ('k_ine', 'k_sup', 'channel_power',
                   'attachment_energy_eV', 'target_fractions', 'product_fractions', 'rate_floors', 'f0')}
+        groups = mappings['power_groups']
+        for kind, names in self._power_group_names.items():
+            powers = [result['channel_power'][i]
+                      for i, channel in enumerate(self._manifest['channel_map'])
+                      if channel['kind'] == kind]
+            if not powers or not all(name in groups for name in names):
+                continue
+            if len(names) == 1:
+                groups[names[0]] = -sum(powers)
+            else:
+                exchange = take('_power_exchange_' + kind)
+                groups[names[0]] = -sum(min(power, 0.) for power in powers) + exchange
+                groups[names[1]] = -sum(max(power, 0.) for power in powers) - exchange
+        if self._provider_kind == 'maxwellian-table':
+            groups['collision_loss'] = float(sum(result['channel_power']))
         for direction in ('k_ine', 'k_sup'):
             result[direction] = np.maximum(0., np.expm1(result[direction])) * result['rate_floors']
             result[direction][take(direction + '_positive') <= 0] = 0

@@ -188,7 +188,14 @@ Interpolation and qualification
 
 Tensor PCHIP reduces composition dimensions first and u last. Rate logarithms,
 mean energy, mobility and the other swarm and power quantities use the same
-interpolation call, except for field power. At a requested state, field power
+interpolation call. Collision group totals are assembled from the interpolated
+channel powers, with the opposite (electron gain) sign used by LoKI groups.
+For gain/loss pairs, the common heating/cooling contribution from direct rows
+is interpolated separately, preserving their gross split while the channel
+sum fixes the net power. Independent direct-reference group accuracy checks
+still apply. The Maxwellian comparator's collision loss is also the channel
+sum. Groups without channels retain their existing treatment. At a requested
+state, field power
 is derived from the interpolated reduced mobility as
 ``mobility_N * (EN_Td * 1e-21)**2``; the stored native field-power tensor is
 retained for source-identity checks, not used as a second runtime interpolant.
