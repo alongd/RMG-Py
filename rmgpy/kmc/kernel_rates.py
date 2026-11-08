@@ -2253,12 +2253,28 @@ def _one_override(engine, probes, t, ci, o, ov) -> dict:
 # --------------------------------------------------------------------------
 # the table
 # --------------------------------------------------------------------------
+def _architecture_refusal(spec) -> str:
+    """Why a declaration that is no linear homopolymer has no kernel rates,
+    naming its architecture: a network's gel has no chain-length
+    distribution, a branched molecule is no single linear chain, and a
+    copolymer's moments are not defined on one primitive period."""
+    from rmgpy.polymer_spec import BranchedPolymerSpec
+    head = "kernel rates need a linear homopolymer declaration"
+    if isinstance(spec, BranchedPolymerSpec):
+        kind = spec.architecture
+        why = ("a network's gel is one molecule, so it has no chain-length distribution whose moments the "
+               "kernels act on" if kind == "network" else
+               "a branched molecule is no single linear chain, so its moments are not those of one primitive "
+               "period")
+        return f"{head} (the deck declares a {kind} polymer ({type(spec).__name__}); {why})"
+    return f"{head} (copolymer moments are not defined on one primitive period)"
+
+
 def _load(doc, spec, temperature, allow_unbound):
     from rmgpy.kmc import run as kr
     from rmgpy.polymer_spec import LinearHomopolymerSpec
     if not isinstance(spec, LinearHomopolymerSpec):
-        raise KernelRatesError("kernel rates need a linear homopolymer declaration (copolymer moments are "
-                               "not defined on one primitive period)")
+        raise KernelRatesError(_architecture_refusal(spec))
     if doc.get("schema") != "kmc-template-catalog/1" or not isinstance(doc.get("payloads"), list):
         raise KernelRatesError("not a kmc-template-catalog/1 document")
     bound = (doc.get("provenance") or {}).get("chemistry_sha256")
