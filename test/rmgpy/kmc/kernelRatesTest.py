@@ -189,6 +189,31 @@ def test_a_copolymer_declaration_is_refused():
         kr_.kernel_rates({"schema": "kmc-template-catalog/1", "payloads": []}, object(), T)
 
 
+# I-320: the refusal names the declared architecture, not "copolymer" for every non-linear-homopolymer deck
+COPOLYMER_REFUSAL = ("kernel rates need a linear homopolymer declaration (copolymer moments are "
+                     "not defined on one primitive period)")
+
+
+@pytest.mark.parametrize("deck, spec_class, reason", [
+    ("phenolic_network_deck.py", "NetworkPolymerSpec", "gel"),
+    ("novolac_v2_deck.py", "BranchedPolymerSpec", "no single linear chain"),
+    ("ep_v2_deck.py", "PolymerSpec", "copolymer moments are not defined on one primitive period"),
+])
+def test_a_declaration_that_is_no_linear_homopolymer_is_refused_by_its_architecture(deck, spec_class, reason):
+    spec = kr.read_deck(FIXTURES / "decks" / deck).spec
+    assert type(spec).__name__ == spec_class
+    with pytest.raises(kr_.KernelRatesError) as error:
+        kr_.kernel_rates({"schema": "kmc-template-catalog/1", "payloads": []}, spec, T)
+    message = str(error.value)
+    assert message.startswith("kernel rates need a linear homopolymer declaration")
+    assert reason in message
+    if spec_class == "PolymerSpec":
+        assert message == COPOLYMER_REFUSAL                       # today's text, unchanged
+    else:
+        assert f"declares a {spec.architecture} polymer ({spec_class})" in message
+        assert "copolymer" not in message
+
+
 # --------------------------------------------------------------------------
 # I-214: product laws, families and depository overrides
 # --------------------------------------------------------------------------
