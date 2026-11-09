@@ -6,7 +6,7 @@ Two steps, both from the command line::
 
     python -m rmgpy.kmc.emit ARTIFACT ROSTER --database DB --out rows.jsonl
         [--chunk i/n] [--family F]... [--limit N] [--no-contexts] [--legacy-artifact]
-        [--prepared DIR]
+        [--prepared DIR] [--resume]
     python -m rmgpy.kmc.emit index ARTIFACT --out INDEX
     python -m rmgpy.kmc.emit prepare ARTIFACT ROSTER --database DB --shards N --out DIR
         [--family F]... [--index INDEX] [--legacy-artifact]
@@ -35,6 +35,15 @@ first line of a rows file is its header (artifact, database, code, roster and
 shard identity, and the partition: the artifact's ids and each assigned
 record's source id, from which assembly names every record no shard or two
 shards assign).
+
+**Resume (I-321).** A shard killed at any point (a cluster job's wall-time
+limit) and run again with ``--resume`` and the same inputs keeps the complete
+rows of its ``--out``, when that file's header is this run's own, and emits
+only the records after them; the result is the uninterrupted run's rows, the
+wall-clock fields aside.  Lines from the first incomplete or out-of-order one
+on are dropped (appended to ``<out>.resume-dropped``) and the kept prefix is
+rewritten atomically.  A file with another header, or no rows header, is
+refused by the keys that differ and left untouched.
 
 **Prepared shards (I-295).** Without ``--prepared`` every shard parses the
 whole artifact and certifies every record, so its memory and time are the
@@ -1507,6 +1516,128 @@ def is_partial_selection(only, limit, artifact_records, selected_records) -> boo
     return bool(only) and selected_records != artifact_records
 
 
+class ResumeRefusal(ValueError):
+    """A rows file ``--resume`` must not continue: written with another
+    header, not a rows file, or changed while it was being resumed."""
+
+
+@dataclass
+class ResumePrefix:
+    """What ``resume_prefix`` keeps of an existing rows file: the first
+    ``kept`` picked records' rows (``errors`` of them error rows), the bytes to
+    keep (``prefix``) and to drop (``dropped``), and the file's ``stat`` when
+    it was read (None: no file)."""
+
+    kept: int
+    errors: int
+    prefix: bytes
+    dropped: bytes
+    stat: Any
+
+
+def _is_row_of(line: bytes, record) -> Optional[dict]:
+    """The row ``line`` when it is a complete row of ``record``, else None."""
+    if not line.endswith(b"\n"):
+        return None
+    try:
+        row = json.loads(line)
+    except ValueError:
+        return None
+    if not isinstance(row, dict) or row.get("kind") != "row":
+        return None
+    if (row.get("event_id"), row.get("orientation")) != (record["event_id"][:24],
+                                                         record["orientation"]):
+        return None
+    return row
+
+
+def resume_prefix(out, fixed_lines, picked) -> ResumePrefix:
+    """The part of the rows file ``out`` a resumed run keeps: its header and
+    roster refusal lines (``fixed_lines``, as this run writes them) and then
+    the complete rows of ``picked`` in order, up to the first incomplete or
+    out-of-order line.  Refuses (``ResumeRefusal``) a file whose first line is
+    not this run's header, naming the header keys that differ.  An absent or
+    empty file, or one holding only the start of this run's header, keeps
+    nothing."""
+    path = Path(out)
+    fixed = [line.encode() for line in fixed_lines]
+    try:
+        stat = path.stat()
+    except FileNotFoundError:
+        return ResumePrefix(0, 0, b"".join(fixed), b"", None)
+    data = path.read_bytes()
+    if not data:
+        return ResumePrefix(0, 0, b"".join(fixed), b"", stat)
+    if not data.endswith(b"\n") and b"\n" not in data and fixed[0].startswith(data):
+        # this run's own header cut short: a long header is on disk before the
+        # first row flushes the rest
+        return ResumePrefix(0, 0, b"".join(fixed), data, stat)
+    lines = data.splitlines(keepends=True)
+    if lines[0] != fixed[0]:
+        try:
+            old = json.loads(lines[0]) if lines[0].endswith(b"\n") else None
+        except ValueError:
+            old = None
+        if not isinstance(old, dict) or old.get("kind") != "header":
+            raise ResumeRefusal(f"{out}: its first line is not a complete rows header")
+        new = json.loads(fixed[0])
+        keys = sorted(k for k in set(old) | set(new)
+                      if k not in old or k not in new or old[k] != new[k])
+        raise ResumeRefusal(f"{out} was written with another header; the keys that differ: "
+                            f"{', '.join(keys) or '(none: the same values, other bytes)'}")
+    kept, errors, at = 0, 0, len(fixed)
+    if lines[:len(fixed)] != fixed:
+        at = 1     # a roster refusal line cut short: no row is kept
+    else:
+        for line in lines[at:]:
+            row = kept < len(picked) and _is_row_of(line, picked[kept])
+            if not row:
+                break
+            kept += 1
+            errors += row.get("status") == "error"
+        at += kept
+    prefix = b"".join(fixed) + b"".join(lines[len(fixed):len(fixed) + kept])
+    return ResumePrefix(kept, errors, prefix, b"".join(lines[at:]), stat)
+
+
+def rewrite_prefix(out, resume: ResumePrefix) -> None:
+    """Make ``out`` hold exactly ``resume.prefix``: unchanged when it already
+    does; else, after checking the file is as ``resume_prefix`` read it, the
+    dropped bytes appended to ``<out>.resume-dropped`` and the prefix written
+    to a temporary file moved onto ``out`` (atomic)."""
+    import tempfile
+    path = Path(out)
+    if resume.stat is not None and not resume.dropped and \
+            resume.stat.st_size == len(resume.prefix):
+        return
+    try:
+        now = path.stat()
+    except FileNotFoundError:
+        now = None
+    same = (now is None and resume.stat is None) or (
+        now is not None and resume.stat is not None and
+        (now.st_ino, now.st_size, now.st_mtime_ns) ==
+        (resume.stat.st_ino, resume.stat.st_size, resume.stat.st_mtime_ns))
+    if not same:
+        raise ResumeRefusal(f"{out} changed while it was being resumed")
+    if resume.dropped:
+        with open(path.with_name(path.name + ".resume-dropped"), "ab") as dropped:
+            dropped.write(resume.dropped)
+            dropped.flush()
+            os.fsync(dropped.fileno())
+    fd, temp = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".", suffix=".resume-tmp")
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(resume.prefix)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp, path)
+    except BaseException:
+        if os.path.exists(temp):
+            os.unlink(temp)
+        raise
+
+
 def run_emit(args):
     roster = load_roster(args.roster)
     prepared_dir = getattr(args, "prepared", None)
@@ -1564,11 +1695,24 @@ def run_emit(args):
     errors = 0
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    with open(out, "w") as log:
-        log.write(json.dumps(header, default=str) + "\n")
-        for refusal in refusals:
-            log.write(json.dumps(refusal) + "\n")
-        for k, record in enumerate(picked):
+    start, mode = 0, "w"
+    if getattr(args, "resume", False):
+        fixed = [json.dumps(header, default=str) + "\n"] + \
+            [json.dumps(refusal) + "\n" for refusal in refusals]
+        try:
+            resume = resume_prefix(out, fixed, picked)
+            rewrite_prefix(out, resume)
+        except ResumeRefusal as error:
+            print("REFUSED resume:", error, flush=True)
+            return 1
+        print(f"RESUME kept={resume.kept} of {len(picked)}", flush=True)
+        start, mode, errors = resume.kept, "a", resume.errors
+    with open(out, mode) as log:
+        if mode == "w":
+            log.write(json.dumps(header, default=str) + "\n")
+            for refusal in refusals:
+                log.write(json.dumps(refusal) + "\n")
+        for k, record in enumerate(picked[start:], start):
             row = emitter.run_record(record)
             errors += row["status"] == "error"
             log.write(json.dumps(row, default=str) + "\n")
@@ -2086,6 +2230,10 @@ def main(argv=None):
     parser.add_argument("--prepared", default=None,
                         help="the directory emit prepare wrote: read this shard's certified "
                              "records from it instead of parsing and certifying the artifact")
+    parser.add_argument("--resume", action="store_true",
+                        help="keep the complete rows of an existing --out written with this "
+                             "run's header and emit only the records after them; refuse a "
+                             "file with another header")
     return run_emit(parser.parse_args(argv[1:] if argv and argv[0] == "run" else argv))
 
 
