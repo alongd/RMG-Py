@@ -289,7 +289,7 @@ def _validate_comparator(manifest, rows, held_out):
     table._manifest = copy.deepcopy(manifest)
     table._axis_names = tuple(manifest['axes'])
     table._axes = tuple(np.asarray(axis) for axis in manifest['axes'].values())
-    table._data, table._layout, table._symbolic = {}, {}, {}
+    table._data, table._layout, table._symbolic, table._rates = {}, {}, {}, {}
     table._native_field_power, table._native_mobility, table._native_EN_Td = {}, {}, {}
     table._a6b_source = manifest['A6b-source']
     table._t10_interpolation = manifest['T10 interpolation qualification']

@@ -169,8 +169,9 @@ JSON specs are also accepted. In YAML, write exponential numbers such as
 * ``floors``: ``rate_absolute``, ``eedf_dynamic_range``,
   ``rate_flux_fraction``, ``absolute_flux_fraction``,
   ``relative_power_share``, ``absolute_power_share``. Below-floor rates are
-  flagged and checked absolutely. Rate interpolation uses ln(1 + k/floor),
-  preserving identically zero channels with continuous below-floor behavior.
+  flagged and checked absolutely. Rates use a monotone cubic in rate space
+  along composition and ln(1 + k/floor) along u. Native zeros and
+  below-floor rates are preserved without clamping.
 * ``held_out``: ``{lhs_count, seed, cell_midpoints: true, off_centre: [...]}``.
   Independent points include each axis-cell midpoint at the other axes' nodes,
   joint cell midpoints, seeded Latin-hypercube points and the explicitly
@@ -186,9 +187,18 @@ JSON specs are also accepted. In YAML, write exponential numbers such as
 Interpolation and qualification
 -------------------------------
 
-Tensor PCHIP reduces composition dimensions first and u last. Rate logarithms,
-mean energy, mobility and the other swarm and power quantities use the same
-interpolation call. Collision group totals are assembled from the interpolated
+Tensor interpolation reduces composition dimensions first and u last. Mean
+energy, mobility and the other swarm and power quantities use PCHIP.
+Rate coefficients use a not-a-knot cubic in the physical composition
+coordinates (including the argon population fraction), with shared node
+slopes limited to preserve monotonicity and prevent interval overshoot. This
+avoids suppressing a threshold rise across a near-zero node. The rate curve
+and its first derivative are continuous at composition knots; exact native
+queries return the stored coefficients. The final u interpolation retains
+PCHIP in ln(1 + k/floor), appropriate to exponential field dependence.
+The returned mean-energy, mobility and field-power derivatives keep their
+existing interpolation path. Changed interpolation source identities invalidate
+older artifacts; regeneration and independent qualification are required. Collision group totals are assembled from the interpolated
 channel powers, with the opposite (electron gain) sign used by LoKI groups.
 For gain/loss pairs, the common heating/cooling contribution from direct rows
 is interpolated separately, preserving their gross split while the channel

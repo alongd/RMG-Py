@@ -43,7 +43,7 @@ from pathlib import Path
 
 import h5py
 import numpy as np
-from scipy.interpolate import PchipInterpolator
+from scipy.interpolate import PchipInterpolator, CubicSpline, CubicHermiteSpline
 
 from rmgpy.tools.eedf.artifact import _storage_items, _validate_storage
 from rmgpy.tools.eedf._ownership import _detached_copy
@@ -235,6 +235,54 @@ def _pchip_tangent(x, values, tangent, point):
             h11 * step * tangent_derivatives[interval + 1])
 
 
+def _monotone_rate_spline(x, values, axis=0):
+    """C1 cubic in rate space, limited to each interval's endpoint range.
+
+    A not-a-knot cubic estimates slopes without the harmonic-mean bias at a
+    threshold rise. Limit their signs and magnitudes so the three Bernstein
+    coefficients of each interval's derivative have the secant's sign:
+    m_left, 3*secant - m_left - m_right, m_right. Sharing each limited slope
+    between both adjacent intervals preserves C1 continuity.
+    """
+    values = np.moveaxis(np.asarray(values, dtype=float), axis, 0)
+    x = np.asarray(x, dtype=float)
+    slopes = CubicSpline(x, values, axis=0, extrapolate=False).derivative()(x)
+    steps = np.diff(x).reshape((-1,) + (1,) * (values.ndim - 1))
+    secants = np.diff(values, axis=0) / steps
+    slopes[0] = np.where(slopes[0] * np.sign(secants[0]) > 0, slopes[0], 0.)
+    slopes[-1] = np.where(slopes[-1] * np.sign(secants[-1]) > 0, slopes[-1], 0.)
+    slopes[1:-1] = np.where(
+        (slopes[1:-1] * np.sign(secants[:-1]) > 0) &
+        (slopes[1:-1] * np.sign(secants[1:]) > 0), slopes[1:-1], 0.)
+
+    # Normalize before summing/dividing: small rates must not square into
+    # underflow, and large secant/slope ratios need not overflow.
+    scale = np.maximum(abs(secants), np.maximum(abs(slopes[:-1]), abs(slopes[1:])))
+    scale = np.where(scale > 0., scale, 1.)
+    total = abs(slopes[:-1]) / scale + abs(slopes[1:]) / scale
+    bound = np.minimum(3. * (abs(secants) / scale), total)
+    factors = np.divide(bound, total, out=np.ones_like(total), where=total > 0.)
+    node_factors = np.ones_like(slopes)
+    node_factors[:-1] = np.minimum(node_factors[:-1], factors)
+    node_factors[1:] = np.minimum(node_factors[1:], factors)
+    return CubicHermiteSpline(x, values, slopes * node_factors,
+                             axis=0, extrapolate=False)
+
+
+def _rate_composition_value(x, values, point, axis):
+    """Preserve native values exactly, including zeros and sub-floor rates."""
+    native = np.flatnonzero(np.asarray(x) == point)
+    if len(native):
+        return np.take(values, native[0], axis=axis)
+    value = _monotone_rate_spline(x, values, axis=axis)(point)
+    interval = min(max(np.searchsorted(x, point, side='right') - 1, 0), len(x) - 2)
+    left = np.take(values, interval, axis=axis)
+    right = np.take(values, interval + 1, axis=axis)
+    # The analytic cubic is bounded already. Round-off near a zero knot can
+    # nevertheless be negative; restore the interval bounds, not a rate floor.
+    return np.clip(value, np.minimum(left, right), np.maximum(left, right))
+
+
 @dataclass(frozen=True)
 class EEDFRow:
     """All chemistry, transport and energy quantities from one interpolation.
@@ -402,7 +450,7 @@ class EEDFTable:
         table._axes = tuple(
             np.asarray(manifest['axes'][name], dtype=float).copy()
             for name in table._axis_names)
-        table._data, table._layout, table._symbolic = {}, {}, {}
+        table._data, table._layout, table._symbolic, table._rates = {}, {}, {}, {}
         table._native_field_power, table._native_mobility = {}, {}
         table._native_EN_Td = {}
         table._branch_certification = copy.deepcopy(
@@ -571,7 +619,7 @@ class EEDFTable:
     def _read_branch(self, branch_id, group):
         shape = tuple(len(axis) for axis in self._axes)
         rank = len(shape)
-        arrays, layout, symbolic = [], {}, {}
+        arrays, layout, symbolic, rates = [], {}, {}, {}
         offset = 0
 
         def append(name, values):
@@ -618,6 +666,12 @@ class EEDFTable:
                         (len(self._axes[0]),) + (1,) * (rank - 1)), shape)
                 if value.shape != shape or not np.array_equal(value[...], expected):
                     raise FingerprintMismatch('native u state mapping')
+            elif name in ('k_ine', 'k_sup'):
+                native = value[...]
+                if (native.shape != shape + (len(self._manifest['channel_map']),) or
+                        not np.all(np.isfinite(native)) or np.any(native < 0.)):
+                    raise FingerprintMismatch('invalid native rate ' + name)
+                rates[name] = native
             elif name != 'iteration_count':
                 append(name, value[...])
         # Net channel powers cannot determine the gross gain/loss split:
@@ -639,20 +693,11 @@ class EEDFTable:
             raise FingerprintMismatch('missing required native mobility_N')
         if branch_id not in self._native_EN_Td:
             raise FingerprintMismatch('missing required native EN_Td')
-        for direction in ('k_ine', 'k_sup'):
-            start, stop, _ = layout[direction]
-            original = np.concatenate(arrays, axis=-1)[..., start:stop]
-            if np.any(original < 0):
-                raise FingerprintMismatch('negative rate')
-            append(direction + '_positive', (original > 0).astype(float))
         packed = np.concatenate(arrays, axis=-1)
         floor_start, floor_stop, _ = layout['rate_floors']
-        floors = packed[..., floor_start:floor_stop]
-        if np.any(floors <= 0):
+        if np.any(packed[..., floor_start:floor_stop] <= 0.):
             raise FingerprintMismatch('nonpositive rate floor')
-        for direction in ('k_ine', 'k_sup'):
-            start, stop, _ = layout[direction]
-            packed[..., start:stop] = np.log1p(packed[..., start:stop] / floors)
+        self._rates[branch_id] = np.stack([rates['k_ine'], rates['k_sup']], axis=-2)
         self._data[branch_id], self._layout[branch_id], self._symbolic[branch_id] = packed, layout, symbolic
 
     def _domain_check(self, u, c):
@@ -682,7 +727,7 @@ class EEDFTable:
         return point
 
     def row(self, u, c, branch_id=None):
-        """Tensor PCHIP for every quantity; logarithmic for positive rates.
+        """Tensor interpolation with monotone cubic rates along composition.
 
         Composition dimensions are reduced first, in manifest axis order;
         u is reduced last. The returned derivative is exactly that of the
@@ -702,6 +747,7 @@ class EEDFTable:
             raise AmbiguousBranch('unknown branch ' + str(branch_id))
         source = self._data[branch_id]
         from rmgpy.tools.eedf.argon_population import AXIS, coordinate, coordinate_derivative
+        rate_point = list(point)
         interpolation_axes = list(self._axes)
         coordinate_scales = [1.] * len(point)
         for dimension, name in enumerate(self._axis_names):
@@ -800,7 +846,7 @@ class EEDFTable:
                     for name in self._axis_names[1:]
                 },
             }
-        result = {name: take(name) for name in ('k_ine', 'k_sup', 'channel_power',
+        result = {name: take(name) for name in ('channel_power',
                   'attachment_energy_eV', 'target_fractions', 'product_fractions', 'rate_floors', 'f0')}
         groups = mappings['power_groups']
         for kind, names in self._power_group_names.items():
@@ -817,9 +863,26 @@ class EEDFTable:
                 groups[names[1]] = -sum(max(power, 0.) for power in powers) - exchange
         if self._provider_kind == 'maxwellian-table':
             groups['collision_loss'] = float(sum(result['channel_power']))
-        for direction in ('k_ine', 'k_sup'):
-            result[direction] = np.maximum(0., np.expm1(result[direction])) * result['rate_floors']
-            result[direction][take(direction + '_positive') <= 0] = 0
+        # Use physical composition coordinates for the rate cubic: applying
+        # the argon population coordinate's curvature change here distorts
+        # smooth rates across its linear/log join.
+        # Along u, retain the logarithmic coordinate for exponential field
+        # dependence. Floors are diagnostics, never clamps on native rates.
+        rates = self._rates[branch_id]
+        for dimension in range(len(self._axes) - 1, 0, -1):
+            rates = _rate_composition_value(
+                self._axes[dimension], rates, rate_point[dimension], dimension)
+        native_u = np.flatnonzero(self._axes[0] == u)
+        if len(native_u):
+            rates = rates[native_u[0]].copy()
+        else:
+            start, stop, _ = layout['rate_floors']
+            floors = data[:, start:stop]
+            logarithms = np.log1p(rates / floors[:, None, :])
+            rates = (np.maximum(0., np.expm1(PchipInterpolator(
+                self._axes[0], logarithms, axis=0, extrapolate=False)(u))) *
+                result['rate_floors'][None, :])
+        result['k_ine'], result['k_sup'] = rates
         if np.any(result['f0'] < 0):
             raise EEDFError('negative interpolated EEDF')
         normalization = np.sum(result['f0'] * np.sqrt(self._manifest['energy_eV']) * np.diff(self._manifest['energy_edges_eV']))

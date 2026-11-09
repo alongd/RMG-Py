@@ -46,8 +46,9 @@ from rmgpy.tools.eedf.schema import _file_hash, _content_hash, _interpolant_iden
 def fixture_table(tmp_path, energies=(1., 2., 3., 4.), branches=1, composition=False,
                   transport_identity=True, corrupt_native_power=False,
                   include_field=True, composition_axis=(0., 1.),
-                  nonlinear_mobility=False, retained_held_out=(), composition_name="x"):
-    axes = {'u': [0., 1., 2., 3.]}
+                  nonlinear_mobility=False, retained_held_out=(), composition_name="x",
+                  u_axis=(0., 1., 2., 3.), rate_values=None):
+    axes = {'u': list(u_axis)}
     if composition:
         axes[composition_name] = list(composition_axis)
     shape = tuple(len(v) for v in axes.values())
@@ -56,6 +57,8 @@ def fixture_table(tmp_path, energies=(1., 2., 3., 4.), branches=1, composition=F
         for index in np.ndindex(shape):
             energy = energies[index[0]] + (index[1] if composition else 0)
             rate = (1., 2., 4., 8.)[index[0]] * 1e-15 * (1 + (index[1] if composition else 0))
+            if rate_values is not None:
+                rate = rate_values[index]
             if nonlinear_mobility:
                 mobility = (1. + 0.07 * index[0] ** 2 + 0.12 * index[1] ** 2 +
                             0.03 * index[0] * index[1]) * 1.e24
@@ -624,3 +627,116 @@ def test_interpolated_group_power_is_channel_sum(tmp_path, monkeypatch, kind):
             np.arange(4.), [native[i][name] for i in range(4)])(.5))
     checks = _channel_power_checks(row, table.manifest)
     assert not next(c for c in checks if c['quantity'] == 'power.sum.' + kind)['passed']
+
+
+def test_saved_threshold_rate_matches_independent_h3_reference(tmp_path):
+    saved = json.loads((Path(__file__).parent / 'data/eedf_threshold_rate.json').read_text())
+    path, model = fixture_table(
+        tmp_path, composition=True, composition_name='f_Ar4s',
+        composition_axis=saved['f_Ar4s'], u_axis=saved['u'],
+        rate_values=np.asarray(saved['k_ine']))
+    table = EEDFTable.load(path, model, artifact_sha256=_file_hash(path / 'table.h5'))
+    row = table.row(saved['query']['u'], {'f_Ar4s': saved['query']['f_Ar4s']})
+    assert abs(row.k_ine[0] - saved['reference']) <= saved['h3_allowance']
+
+
+@pytest.mark.parametrize('scale', [1.e-300, 1.e-40, 1.e-20])
+def test_rate_threshold_cubic_and_native_values(tmp_path, scale):
+    # An increasing cubic rising from zero has an independent analytic value.
+    x = np.array([0., .2, .6, 1.])
+    rates = np.asarray([(1. + i) * scale * (x + x**3) for i in range(4)])
+    path, model = fixture_table(tmp_path, composition=True, composition_axis=x,
+                                rate_values=rates)
+    table = EEDFTable.load(path, model, artifact_sha256=_file_hash(path / 'table.h5'))
+    for u in range(4):
+        for j, value in enumerate(x):
+            row = table.row(float(u), {'x': value})
+            assert row.k_ine[0] == rates[u, j]
+            assert row.k_sup[0] == 0.
+        for value in (.1, .4, .8):
+            row = table.row(float(u), {'x': value})
+            assert row.k_ine[0] == pytest.approx(
+                (1. + u) * scale * (value + value**3), rel=2.e-13, abs=0.)
+    # Zero and below-floor values are not promoted to the floor.
+    assert table.row(.5, {'x': 0.}).k_ine[0] == 0.
+
+
+@pytest.mark.parametrize('values', [
+    [0., 1., 1.01, 8., 8.],
+    [9., 8., 0.01, 0., 0.],
+    [0., 5., 1., 8., 0.],
+])
+def test_rate_limiter_preserves_interval_shape_and_c1(values):
+    from rmgpy.solver.eedf import _monotone_rate_spline
+    x = np.array([0., .01, .2, .7, 1.])
+    # Exercise scales that used to underflow in harmonic-slope arithmetic.
+    y = np.asarray(values)[:, None] * np.array([1.e-300, 1.e-40, 1.e-15])
+    spline = _monotone_rate_spline(x, y)
+    for i in range(len(x) - 1):
+        predicted = spline(np.linspace(x[i], x[i + 1], 101))
+        lower, upper = np.minimum(y[i], y[i + 1]), np.maximum(y[i], y[i + 1])
+        scale = np.maximum(upper, 1.e-300)
+        assert np.all((predicted - lower) / scale >= -1.e-14)
+        assert np.all((upper - predicted) / scale >= -1.e-14)
+        changes = np.diff(predicted, axis=0) * np.sign(y[i + 1] - y[i])
+        assert np.all(changes / scale >= -1.e-14)
+    # Polynomial endpoint derivatives agree from both sides at every knot.
+    for i in range(1, len(x) - 1):
+        h = x[i] - x[i - 1]
+        left = 3. * spline.c[0, i - 1] * h**2 + 2. * spline.c[1, i - 1] * h + spline.c[2, i - 1]
+        right = spline.c[2, i]
+        scale = np.max(y, axis=0)
+        assert np.all(abs(left - right) / scale <= 1.e-12)
+
+
+def test_threshold_rate_consumed_derivatives_across_knots(tmp_path):
+    x = (0., .2, .6, 1.)
+    rates = np.array([[1.e-41, 1.e-20, 3.e-20, 9.e-20]]) * np.arange(1., 5.)[:, None]
+    path, model = fixture_table(tmp_path, composition=True, composition_axis=x,
+                                nonlinear_mobility=True, rate_values=rates)
+    table = EEDFTable.load(path, model, artifact_sha256=_file_hash(path / 'table.h5'))
+    for u, f in [(1., .4), (.7, .2), (.7, .6)]:
+        row = table.row(u, {'x': f})
+        for dimension in ('u', 'x'):
+            step = 1.e-7
+            lo = table.row(u - step if dimension == 'u' else u,
+                           {'x': f - step if dimension == 'x' else f})
+            hi = table.row(u + step if dimension == 'u' else u,
+                           {'x': f + step if dimension == 'x' else f})
+            derivative = row.derivatives['u'] if dimension == 'u' else row.derivatives['composition']['x']
+            numerical = (hi.power_groups['field'] - lo.power_groups['field']) / (2. * step)
+            assert derivative['power_groups']['field'] == pytest.approx(numerical, rel=2.e-6)
+            if dimension == 'u':
+                assert row.denergy_du == pytest.approx(
+                    (hi.swarm['mean_energy_eV'] - lo.swarm['mean_energy_eV']) / (2. * step),
+                    rel=2.e-6)
+            assert np.isfinite(lo.k_ine[0]) and np.isfinite(hi.k_ine[0])
+            assert lo.k_ine[0] == pytest.approx(hi.k_ine[0], rel=2.e-5, abs=0.)
+
+
+def test_rate_threshold_adjacent_to_zero_knot_stays_nonnegative():
+    from rmgpy.solver.eedf import _rate_composition_value
+    x = np.array([0., .01, .2, .7, 1.])
+    rates = np.array([4.4238828260417605e-21, 0., 1.2694285241873238e-21,
+                      0., 4.885668021282973e-22])
+    for i in range(1, len(x) - 1):
+        for toward in (-np.inf, np.inf):
+            point = np.nextafter(x[i], toward)
+            interval = np.searchsorted(x, point) - 1
+            value = _rate_composition_value(x, rates, point, 0)
+            assert min(rates[interval:interval + 2]) <= value <= max(rates[interval:interval + 2])
+
+
+def test_rate_cubic_uses_physical_argon_fraction_across_coordinate_join(tmp_path):
+    from rmgpy.tools.eedf.argon_population import NODES
+    scaled = np.asarray(NODES) / NODES[-1]
+    rates = np.arange(1., 5.)[:, None] * 1.e-15 * (scaled + scaled**3)
+    path, model = fixture_table(
+        tmp_path, composition=True, composition_name='f_Ar4s',
+        composition_axis=NODES, rate_values=rates)
+    table = EEDFTable.load(path, model, artifact_sha256=_file_hash(path / 'table.h5'))
+    for fraction in (5.e-8, 1.5e-7, 5.5e-7, 5.5e-6, 5.5e-5):
+        scaled = fraction / NODES[-1]
+        row = table.row(0., {'f_Ar4s': fraction})
+        assert row.k_ine[0] == pytest.approx(
+            1.e-15 * (scaled + scaled**3), rel=1.e-12, abs=0.)
