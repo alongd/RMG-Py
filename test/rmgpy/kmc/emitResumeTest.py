@@ -321,8 +321,10 @@ def test_a_file_changed_while_resuming_is_refused(tmp_path, shard, clocked, caps
     assert "REFUSED resume:" in capsys.readouterr().out
     assert out.read_bytes() == data
     assert not (tmp_path / "rows.jsonl.resume-dropped").exists()
+    # nothing dropped or temporary is left; the reference-case sidecar (I-326)
+    # is saved before the rows file is read, is this run's own, and stays
     assert sorted(p.name for p in tmp_path.iterdir() if p.name.startswith("rows.jsonl")) == \
-        ["rows.jsonl"]
+        ["rows.jsonl", "rows.jsonl.cases.pickle"]
 
 
 def test_without_resume_the_file_is_overwritten(tmp_path, shard, clocked, capsys):
@@ -382,6 +384,291 @@ def test_real_emission_resumes_to_the_uninterrupted_rows(tmp_path, artifact, ros
     capsys.readouterr()
     assert _resume(artifact, roster, out, flags) == 0
     assert "RESUME kept=1 of 2" in capsys.readouterr().out
+    assert _stripped(out.read_bytes()) == _stripped(whole)
+
+
+# --- the reference-case sidecar (I-326) ------------------------------------
+#
+# Before its first row a shard builds its reference cases (``Emitter.init``:
+# ``reference_cases``, ``cases_s``), 13 h for one cluster shard.  With
+# ``--resume`` the script saves the cases, their stats and the species
+# registry that step filled to ``<out>.cases.pickle`` and a later ``--resume``
+# of the same shard loads them instead, only when the sidecar's identity is
+# this run's; anything else is rebuilt.
+
+INIT = emit.Emitter.init
+REFERENCE_CASES = emit.reference_cases
+
+
+def _witness(n):
+    """A real ``Witness`` with its memoised (mappingproxy) views populated."""
+    from rmgpy.kmc.boundaries import Witness
+    row = ("C", 0, 0, 0, 0, ())
+    witness = Witness(reactants=((1, row),), products=((1, row),), participants=(),
+                      id_base=n, label=f"w{n}")
+    witness.reactant_rows(), witness.product_rows(), witness.reactant_bonds()
+    assert "_reactant_rows" in vars(witness)
+    return witness
+
+
+def _species_state(species):
+    return dict(species._by_sig), {k: m.to_smiles() for k, m in species._first.items()}
+
+
+@pytest.fixture
+def built(monkeypatch, clocked):
+    """A counting ``reference_cases`` that returns cases holding a real
+    ``Witness`` and fills the species registry; and, per emitted record, the
+    cases and species state the emitter read."""
+    from rmgpy.molecule import Molecule
+    state = {"builds": 0, "made": [], "seen": [], "unpicklable": False}
+
+    def build(certifier, fam, systems, species, wanted=None):
+        state["builds"] += 1
+        species._by_sig["sig-CC"] = "CC"
+        species._first["CC"] = Molecule(smiles="CC")
+        cases = {("fam", ("CC",), "tmpl", ("C=C",)): [(_witness(1), {"n": 1})],
+                 ("fam", ("CC",), "tmpl2", ("C",)): [(_witness(2), {"n": 2}),
+                                                     (_witness(3), {"n": 3})]}
+        if state["unpicklable"]:
+            cases["bad"] = [(lambda: None, {})]
+        state["made"].append((cases, _species_state(species)))
+        return cases, {"fam|forward": 3}
+
+    monkeypatch.setattr(emit, "reference_cases", build)
+    run = emit.Emitter.run_record
+
+    def spy(self, record):
+        state["seen"].append((self.state["cases"], _species_state(self.state["species"]),
+                              dict(self.state["case_stats"])))
+        return run(self, record)
+
+    monkeypatch.setattr(emit.Emitter, "run_record", spy)
+    return state
+
+
+def _sidecar(out):
+    return out.with_name(out.name + ".cases.pickle")
+
+
+def _stopped_resume(clocked, artifact, roster, out, flags, k):
+    clocked["stop_after"], clocked["ran"] = k, []
+    with pytest.raises(Killed):
+        _resume(artifact, roster, out, flags)
+    clocked["stop_after"], clocked["ran"] = None, []
+    assert emit.Emitter.init is INIT
+
+
+def _cases_lines(text):
+    return [line for line in text.splitlines() if line.startswith("CASES")]
+
+
+def test_a_valid_sidecar_skips_the_case_build(tmp_path, shard, clocked, built, capsys):
+    artifact, roster, flags, whole = shard
+    out = tmp_path / "rows.jsonl"
+    _stopped_resume(clocked, artifact, roster, out, flags, 2)
+    assert built["builds"] == 1 and _sidecar(out).is_file()
+    text = capsys.readouterr().out
+    assert any(line.startswith("CASES saved") for line in _cases_lines(text)), text
+    made_cases, made_species = built["made"][0]
+    built["seen"].clear()
+    assert _resume(artifact, roster, out, flags) == 0
+    text = capsys.readouterr().out
+    assert built["builds"] == 1, "the resumed run rebuilt the reference cases"
+    assert _cases_lines(text) == [f"CASES loaded {_sidecar(out)}"], text
+    assert built["seen"], "no record was emitted"
+    for cases, species, stats in built["seen"]:
+        assert cases == made_cases and species == made_species
+        assert stats["fam|forward"] == 3
+    witness = built["seen"][0][0][("fam", ("CC",), "tmpl", ("C=C",))][0][0]
+    assert dict(witness.reactant_rows()) == dict(_witness(1).reactant_rows())
+    assert _stripped(out.read_bytes()) == _stripped(whole)
+    assert emit.Emitter.init is INIT
+
+
+def _edit_identity(path, key, value):
+    data = path.read_bytes()
+    end = data.index(b"\n") + 1
+    head = json.loads(data[:end])
+    assert key in head
+    head[key] = value
+    path.write_bytes((json.dumps(head) + "\n").encode() + data[end:])
+
+
+@pytest.mark.parametrize("foreign", ["chunk", "artifact_sha256", "code_sources_sha256", "format"])
+def test_a_foreign_sidecar_is_rebuilt(tmp_path, shard, clocked, built, capsys, foreign):
+    artifact, roster, flags, whole = shard
+    out = tmp_path / "rows.jsonl"
+    if foreign == "chunk":
+        other = tmp_path / "other.jsonl"
+        assert _resume(artifact, roster, other,
+                       [f if f != "0/2" else "1/2" for f in flags]) == 0
+        _sidecar(other).replace(_sidecar(out))
+    else:
+        _stopped_resume(clocked, artifact, roster, out, flags, 1)
+        _edit_identity(_sidecar(out), foreign, "another")
+    old = _sidecar(out).read_bytes()
+    builds = built["builds"]
+    capsys.readouterr()
+    assert _resume(artifact, roster, out, flags) == 0
+    lines = _cases_lines(capsys.readouterr().out)
+    assert built["builds"] == builds + 1
+    assert lines[0].startswith("CASES rebuilt:") and foreign in lines[0], lines
+    assert lines[1] == f"CASES saved {_sidecar(out)}"
+    assert _stripped(out.read_bytes()) == _stripped(whole)
+    assert out.with_name(out.name + ".cases.pickle.stale").read_bytes() == old
+    # the rebuilt sidecar is this run's: the next resume loads it
+    out.write_bytes(out.read_bytes()[:out.read_bytes().index(b"\n") + 1])
+    assert _resume(artifact, roster, out, flags) == 0
+    assert built["builds"] == builds + 1
+    assert _cases_lines(capsys.readouterr().out) == [f"CASES loaded {_sidecar(out)}"]
+
+
+@pytest.mark.parametrize("damage", ["empty", "cut_identity", "truncated", "flipped", "garbage"])
+def test_a_corrupt_sidecar_is_rebuilt(tmp_path, shard, clocked, built, capsys, damage):
+    artifact, roster, flags, whole = shard
+    out = tmp_path / "rows.jsonl"
+    _stopped_resume(clocked, artifact, roster, out, flags, 1)
+    path = _sidecar(out)
+    data = path.read_bytes()
+    end = data.index(b"\n") + 1
+    path.write_bytes({"empty": b"",
+                      "cut_identity": data[:end // 2],
+                      "truncated": data[:end + (len(data) - end) // 2],
+                      "flipped": data[:-5] + bytes([data[-5] ^ 0x01]) + data[-4:],
+                      "garbage": b"not json\n" + data[end:]}[damage])
+    builds = built["builds"]
+    capsys.readouterr()
+    assert _resume(artifact, roster, out, flags) == 0
+    lines = _cases_lines(capsys.readouterr().out)
+    assert built["builds"] == builds + 1
+    assert lines[0].startswith("CASES rebuilt:") and lines[1].startswith("CASES saved"), lines
+    assert _stripped(out.read_bytes()) == _stripped(whole)
+
+
+def test_without_resume_no_sidecar_is_read(tmp_path, shard, clocked, built, capsys):
+    artifact, roster, flags, whole = shard
+    out = tmp_path / "rows.jsonl"
+    _stopped_resume(clocked, artifact, roster, out, flags, 1)
+    path = _sidecar(out)
+    data, before = path.read_bytes(), os.stat(path)
+    builds = built["builds"]
+    capsys.readouterr()
+    assert resume_main(_args(artifact, roster, out, flags)) == 0
+    assert built["builds"] == builds + 1
+    assert _cases_lines(capsys.readouterr().out) == []
+    _untouched(path, data, before)
+    assert _stripped(out.read_bytes()) == _stripped(whole)
+    assert emit.Emitter.init is INIT
+
+
+def test_an_unsaveable_build_still_writes_rows(tmp_path, shard, clocked, built, capsys):
+    artifact, roster, flags, whole = shard
+    out = tmp_path / "rows.jsonl"
+    built["unpicklable"] = True
+    capsys.readouterr()
+    assert _resume(artifact, roster, out, flags) == 0
+    lines = _cases_lines(capsys.readouterr().out)
+    assert lines[0].startswith("CASES rebuilt:") and lines[1].startswith("CASES not saved:"), lines
+    assert _stripped(out.read_bytes()) == _stripped(whole)
+    assert sorted(p.name for p in tmp_path.iterdir() if p.name.startswith("rows.jsonl")) == \
+        ["rows.jsonl"]
+
+
+def test_an_unknown_identity_is_never_trusted(tmp_path, artifact, roster_and_doc, clocked, built,
+                                              capsys, monkeypatch):
+    """A run whose database digest cannot be read cannot tell its sidecar from
+    another run's: it neither saves nor loads one.  (The whole-artifact path:
+    a prepared directory refuses an unknown database digest before any case.)"""
+    roster = roster_and_doc[0]
+    flags = ["--chunk", "0/2"]
+    monkeypatch.setattr(emit, "database_content_sha256", lambda path: None)
+    whole = _reference(artifact, roster, tmp_path / "uninterrupted.jsonl", flags)
+    built["builds"] = 0
+    out = tmp_path / "rows.jsonl"
+    _stopped_resume(clocked, artifact, roster, out, flags, 1)
+    assert not _sidecar(out).exists()
+    capsys.readouterr()
+    assert _resume(artifact, roster, out, flags) == 0
+    lines = _cases_lines(capsys.readouterr().out)
+    assert len(lines) == 1 and lines[0].startswith("CASES not cached:") and \
+        "database_content_sha256" in lines[0], lines
+    assert built["builds"] == 2
+    assert not _sidecar(out).exists()
+    assert _stripped(out.read_bytes()) == _stripped(whole)
+
+
+def test_the_sidecar_identity_is_the_rows_header(tmp_path, shard, clocked, built):
+    """The identity reads the header's own functions: every key they share
+    holds the header's value (a copy that drifted would fail here)."""
+    artifact, roster, flags, whole = shard
+    out = tmp_path / "rows.jsonl"
+    assert _resume(artifact, roster, out, flags) == 0
+    data = _sidecar(out).read_bytes()
+    identity = json.loads(data[:data.index(b"\n")])
+    header = json.loads(out.read_bytes().split(b"\n")[0])
+    shared = set(identity) & set(header)
+    assert shared >= {"artifact_id", "artifact_sha256", "artifact_records", "families",
+                      "database_path", "database_head", "database_content_sha256", "code_sha",
+                      "code_sources_sha256", "code_extensions_sha256", "roster_sha256",
+                      "systems", "chunk"}
+    assert {k: identity[k] for k in shared} == {k: header[k] for k in shared}
+    prepared = "--prepared" in flags
+    assert (identity["prepared_manifest_sha256"] is not None) == prepared
+    assert (identity["wanted_sha256"] is not None) == prepared
+
+
+def test_a_witness_round_trips_without_its_views(tmp_path):
+    import dataclasses
+    from rmgpy.kmc.boundaries import Witness
+    witness = _witness(7)
+    path = tmp_path / "x.cases.pickle"
+    identity = {"format": "test"}
+    resumer.write_cases(path, identity, {"cases": {"k": [(witness, {})]}, "stats": {},
+                                         "species": {}})
+    payload, why = resumer.read_cases(path, identity)
+    assert why is None
+    loaded = payload["cases"]["k"][0][0]
+    assert type(loaded) is Witness and loaded == witness and loaded is not witness
+    assert set(vars(loaded)) == {f.name for f in dataclasses.fields(Witness)}
+    assert dict(loaded.reactant_rows()) == dict(witness.reactant_rows())
+    assert dict(loaded.reactant_bonds()) == dict(witness.reactant_bonds())
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["x.cases.pickle"]
+
+
+@needs_database
+def test_real_emission_resumes_from_the_saved_cases(tmp_path, artifact, roster_and_doc,
+                                                    monkeypatch, capsys):
+    """Real reference systems, cases and emission: a resumed run stopped after
+    one record saves its cases; the next resume loads them, builds nothing,
+    and writes the uninterrupted rows."""
+    roster = roster_and_doc[0]
+    flags = ["--chunk", "0/2", "--limit", "2"]
+    whole = _reference(artifact, roster, tmp_path / "uninterrupted.jsonl", flags)
+    builds, run, ran = [], emit.Emitter.run_record, []
+
+    def counting(*args, **kwargs):
+        builds.append(1)
+        return REFERENCE_CASES(*args, **kwargs)
+
+    def stop_after_one(self, record):
+        if ran:
+            raise Killed()
+        ran.append(record["event_id"])
+        return run(self, record)
+
+    monkeypatch.setattr(emit, "reference_cases", counting)
+    out = tmp_path / "rows.jsonl"
+    monkeypatch.setattr(emit.Emitter, "run_record", stop_after_one)
+    with pytest.raises(Killed):
+        _resume(artifact, roster, out, flags)
+    assert builds == [1] and _sidecar(out).is_file()
+    monkeypatch.setattr(emit.Emitter, "run_record", run)
+    capsys.readouterr()
+    assert _resume(artifact, roster, out, flags) == 0
+    text = capsys.readouterr().out
+    assert builds == [1], "the resumed run rebuilt the reference cases"
+    assert f"CASES loaded {_sidecar(out)}" in text and "RESUME kept=1 of 2" in text
     assert _stripped(out.read_bytes()) == _stripped(whole)
 
 
