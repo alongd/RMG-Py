@@ -23,13 +23,34 @@ through that commit's ``emit_prepare``.
     python scripts/emit_resume.py ARTIFACT ROSTER --database DB --out rows.jsonl
         [--chunk i/n] [--family F]... [--limit N] [--no-contexts] [--legacy-artifact]
         [--prepared DIR] [--resume]
+
+With ``--resume`` the reference cases (``Emitter.init``'s ``reference_cases``,
+``cases_s``: 13 h for one cluster shard) are saved, with their stats and the
+species registry they filled, to ``<out>.cases.pickle`` before the first row
+(I-326), and a later ``--resume`` of the same shard loads them instead of
+building them again.  The sidecar's first line is its identity: the rows
+header fields that bind the run (artifact, roster, database, code, chunk), the
+prepared manifest's digest and the shard's wanted case keys, then the payload's
+length and sha256.  A sidecar whose identity is not this run's, or whose
+payload does not match its digest, is moved to ``<out>.cases.pickle.stale``
+and the cases are built again; a run with an unknown identity field neither
+saves nor loads one.  Without ``--resume`` no sidecar is read or written.  The
+cache wraps ``Emitter.init`` from ``main`` and leaves ``run_emit_resume``
+statement for statement as it was.
 """
 from __future__ import annotations
 
 import argparse
+import contextlib
+import copyreg
+import dataclasses
+import hashlib
+import io
 import json
 import os
+import pickle
 import sys
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -246,6 +267,201 @@ def run_emit_resume(args):
     return 1 if errors else 0
 
 
+CASES_FORMAT = "emit-resume-cases/1"
+CASES_SUFFIX = ".cases.pickle"
+# identity fields without which a sidecar cannot be told from another run's
+CASES_REQUIRED = ("artifact_sha256", "roster_sha256", "database_content_sha256",
+                  "code_sources_sha256", "code_extensions_sha256")
+# the payload fields of the identity line, filled in after the payload
+PAYLOAD_KEYS = ("payload_bytes", "payload_sha256")
+
+
+def cases_path(out) -> Path:
+    out = Path(out)
+    return out.with_name(out.name + CASES_SUFFIX)
+
+
+def _digest(value) -> str:
+    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"),
+                                     default=str).encode()).hexdigest()
+
+
+def case_identity(emitter, args, roster_sha256, wanted) -> dict:
+    """What the reference cases of this run depend on, by the rows header's
+    own functions and values, read when the cases are built: the header
+    fields that bind the run, the prepared manifest's bytes and the shard's
+    wanted keys (``case_filter``; None on the whole-artifact path)."""
+    S = emitter.state
+    artifact = emitter.artifact
+    prepared = getattr(args, "prepared", None)
+    manifest = None
+    if prepared is not None:
+        from rmgpy.kmc import emit_prepare
+        manifest = hashlib.sha256((Path(prepared) / emit_prepare.MANIFEST)
+                                  .read_bytes()).hexdigest()
+    return {"format": CASES_FORMAT, "artifact_id": artifact.stem,
+            "artifact_sha256": S.get("artifact_sha256") or
+            emit.astream.artifact_digest(artifact)[0],
+            "artifact_records": S["artifact_records"], "families": S["families"],
+            "family": args.family,
+            "database_path": str(emitter.database),
+            "database_head": emit.git_head(emitter.database),
+            "database_content_sha256": emit.database_content_sha256(emitter.database),
+            "code_sha": emit.code_sha(), "code_sources_sha256": emit.code_sources_sha256(),
+            "code_extensions_sha256": emit.code_extensions_sha256(),
+            "roster_sha256": roster_sha256,
+            "systems": {n: [p.label for p in ps] for n, ps in emitter.systems.items()},
+            "chunk": args.chunk, "contexts": not args.no_contexts,
+            "prepared_manifest_sha256": manifest,
+            "wanted_sha256": None if wanted is None else _digest(
+                [sorted(wanted.keys, key=repr),
+                 sorted(([k, sorted(v, key=repr)] for k, v in wanted.sides.items()), key=repr)])}
+
+
+class _CasesPickler(pickle.Pickler):
+    """Writes a ``boundaries.Witness`` as its dataclass fields only: the views
+    it memoises on itself (``reactant_rows`` ..., mappingproxies that cannot be
+    pickled) are derived, and rebuilt on first use after loading."""
+
+    def reducer_override(self, obj):
+        from rmgpy.kmc.boundaries import Witness
+        if type(obj) is Witness:
+            return (copyreg.__newobj__, (Witness,),
+                    {f.name: obj.__dict__[f.name] for f in dataclasses.fields(Witness)})
+        return NotImplemented
+
+
+class _Hashing(io.RawIOBase):
+    def __init__(self, handle):
+        self.handle, self.sha, self.size = handle, hashlib.sha256(), 0
+
+    def writable(self):
+        return True
+
+    def write(self, data):
+        self.sha.update(data)
+        self.size += len(data)
+        return self.handle.write(data)
+
+
+def _identity_line(identity, size, sha) -> bytes:
+    return (json.dumps({**identity, "payload_bytes": f"{size:020d}", "payload_sha256": sha},
+                       sort_keys=True, default=str) + "\n").encode()
+
+
+def write_cases(path, identity, payload) -> None:
+    """Write the sidecar ``path`` atomically: its identity line and the
+    pickled ``payload``, through a temporary file moved onto ``path``; a
+    sidecar already there is moved to ``<path>.stale`` first."""
+    path = Path(path)
+    fd, temp = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w+b") as handle:
+            head = _identity_line(identity, 0, "0" * 64)
+            handle.write(head)
+            hashing = _Hashing(handle)
+            _CasesPickler(hashing, protocol=pickle.HIGHEST_PROTOCOL).dump(payload)
+            line = _identity_line(identity, hashing.size, hashing.sha.hexdigest())
+            assert len(line) == len(head)
+            handle.seek(0)
+            handle.write(line)
+            handle.flush()
+            os.fsync(handle.fileno())
+        if path.exists():
+            os.replace(path, path.with_name(path.name + ".stale"))
+        os.replace(temp, path)
+    except BaseException:
+        if os.path.exists(temp):
+            os.unlink(temp)
+        raise
+
+
+def read_cases(path, identity):
+    """(payload, None) when ``path`` is a sidecar of ``identity`` whose payload
+    matches its digest, else (None, why); never raises on a bad sidecar.  The
+    digest checked is of the bytes read from the same open file."""
+    try:
+        with open(path, "rb") as handle:
+            line = handle.readline()
+            try:
+                head = json.loads(line) if line.endswith(b"\n") else None
+            except ValueError:
+                head = None
+            if not isinstance(head, dict):
+                return None, "its first line is not an identity"
+            stored = {k: v for k, v in head.items() if k not in PAYLOAD_KEYS}
+            expected = json.loads(json.dumps(identity, default=str))
+            if stored != expected:
+                keys = sorted(k for k in set(stored) | set(expected)
+                              if stored.get(k, ...) != expected.get(k, ...))
+                return None, f"another identity; the keys that differ: {', '.join(keys)}"
+            try:
+                size, sha = int(head["payload_bytes"]), head["payload_sha256"]
+            except (KeyError, TypeError, ValueError):
+                return None, "no payload digest"
+            start, digest, read = handle.tell(), hashlib.sha256(), 0
+            for block in iter(lambda: handle.read(1 << 20), b""):
+                digest.update(block)
+                read += len(block)
+            if (read, digest.hexdigest()) != (size, sha):
+                return None, f"its payload ({read} bytes) does not match its digest"
+            handle.seek(start)
+            return pickle.load(handle), None
+    except FileNotFoundError:
+        return None, "no sidecar"
+    except Exception as error:   # a bad sidecar is rebuilt, never fatal
+        emit.reraise_resource(error)
+        return None, f"unreadable: {type(error).__name__}: {error}"
+
+
+@contextlib.contextmanager
+def cached_cases(args):
+    """For one ``run_emit_resume`` call: ``Emitter.init`` builds its reference
+    cases through the sidecar of ``args.out`` (load when it is this run's,
+    else build and save).  Both patched names are restored on exit."""
+    init, build = emit.Emitter.init, emit.reference_cases
+    path = cases_path(args.out)
+    roster_sha256 = emit.load_roster(args.roster).sha256
+
+    def cached_init(self, prepared=None):
+
+        def reference_cases(certifier, fam, systems, species, wanted=None):
+            identity = case_identity(self, args, roster_sha256, wanted)
+            unknown = [k for k in CASES_REQUIRED if not identity.get(k)]
+            if unknown:
+                print(f"CASES not cached: unknown {', '.join(unknown)}", flush=True)
+                return build(certifier, fam, systems, species, wanted=wanted)
+            payload, why = read_cases(path, identity)
+            if payload is not None:
+                species.__dict__.update(payload["species"])
+                print(f"CASES loaded {path}", flush=True)
+                return payload["cases"], payload["stats"]
+            print(f"CASES rebuilt: {why}", flush=True)
+            cases, stats = build(certifier, fam, systems, species, wanted=wanted)
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                write_cases(path, identity, {"cases": cases, "stats": stats,
+                                             "species": species.__dict__})
+            except Exception as error:   # the rows do not depend on the save
+                emit.reraise_resource(error)
+                print(f"CASES not saved: {type(error).__name__}: {error}", flush=True)
+            else:
+                print(f"CASES saved {path}", flush=True)
+            return cases, stats
+
+        emit.reference_cases = reference_cases
+        try:
+            return init(self, prepared)
+        finally:
+            emit.reference_cases = build
+
+    emit.Emitter.init = cached_init
+    try:
+        yield
+    finally:
+        emit.Emitter.init, emit.reference_cases = init, build
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="scripts/emit_resume.py")
     parser.add_argument("artifact")
@@ -268,7 +484,11 @@ def main(argv=None):
                         help="keep the complete rows of an existing --out written with this "
                              "run's header and emit only the records after them; refuse a "
                              "file with another header")
-    return run_emit_resume(parser.parse_args(argv))
+    args = parser.parse_args(argv)
+    if not args.resume:
+        return run_emit_resume(args)
+    with cached_cases(args):
+        return run_emit_resume(args)
 
 
 if __name__ == "__main__":
