@@ -49,6 +49,20 @@ later ``--resume`` with a checkpoint of its identity continues from its
 subset and ends with the uninterrupted build's cases; any other checkpoint is
 moved to ``<out>.cases.checkpoint.stale`` and the build starts from its first
 subset.  Once the sidecar is saved the checkpoint is removed.
+
+Nearly all of a shard's case build is ``win.member_cases`` (I-329), whose
+result depends on the family, the direction and the chosen participants, not
+on the shard.  ``scripts/emit_member_cases.py`` computes it once per subset of
+``emit.roster_subsets``, split over K jobs, and merges the parts into one
+member-case table; ``--resume --member-cases TABLE`` has the loop copy read each
+subset's result from it (``checkpoint.member_cases``, the one statement where
+the copy differs) and run everything else as before, so the shard's cases,
+stats, species registry and rows are the in-shard build's.  A table whose
+identity (``table_identity``: code, database, artifact, roster, systems and the
+subset enumeration) is not this build's, or that is damaged, is not used; an
+entry it lacks or whose bytes do not match their digest is computed in the
+shard.  The build prints ``CASES member-case table: r read, c computed of e
+enumerated``.
 """
 from __future__ import annotations
 
@@ -450,10 +464,20 @@ class CaseCheckpoint:
 
     clock = staticmethod(time.monotonic)
 
-    def __init__(self, path, identity, interval):
+    def __init__(self, path, identity, interval, source=None):
         self.path, self.identity, self.interval = Path(path), identity, interval
         self.start = self.total = 0
         self.began = self.last = None
+        # the member-case table the build reads (``MemberCaseSource``; None: none)
+        self.source = source
+
+    def member_cases(self, certifier, family, builds, direction, *, label, chosen):
+        """``win.member_cases`` of one subset, read from the member-case table
+        when there is one."""
+        if self.source is None:
+            return win.member_cases(certifier, family, builds, direction, label=label)
+        return self.source.member_cases(certifier, family, builds, direction, label=label,
+                                        chosen=chosen)
 
     def restore(self, fam, systems, out, stats, species) -> int:
         """The index of the first subset to build: a checkpoint of this
@@ -531,7 +555,8 @@ class CaseCheckpoint:
 def checkpointed_reference_cases(certifier, fam, systems, species, wanted=None, *, checkpoint):
     """``emit.reference_cases`` statement for statement (``emitResumeTest``
     pins it), with a ``CaseCheckpoint``: the build starts at the subset the
-    checkpoint restored and saves before each subset."""
+    checkpoint restored and saves before each subset, and reads each subset's
+    ``member_cases`` through the checkpoint (its member-case table, if any)."""
     out = defaultdict(list)
     stats = Counter()
     formulas = {}
@@ -551,8 +576,8 @@ def checkpointed_reference_cases(certifier, fam, systems, species, wanted=None, 
             stats["subsets_enumerated"] += 1
         builds = [p.build(f"p{k}") for k, p in enumerate(chosen)]
         specs = [p.spec for p in chosen]
-        cases = win.member_cases(certifier, family, builds, direction,
-                                 label=f"{name}|{direction}|{subset}")
+        cases = checkpoint.member_cases(certifier, family, builds, direction,
+                                        label=f"{name}|{direction}|{subset}", chosen=chosen)
         stats[f"{name}|{direction}"] += len(cases)
         for case in cases:
             mols = win.template_molecules(case.witness, case.direction)
@@ -565,6 +590,259 @@ def checkpointed_reference_cases(certifier, fam, systems, species, wanted=None, 
                 continue
             out[key].append((case, specs))
     return out, dict(stats)
+
+
+# ---------------------------------------------------------------------------
+# the member-case table (I-329)
+# ---------------------------------------------------------------------------
+TABLE_FORMAT = "emit-member-cases/1"
+# the case identity's fields that the table's identity shares
+TABLE_FIELDS = ("artifact_id", "artifact_sha256", "roster_sha256", "database_head",
+                "database_content_sha256", "code_sha", "code_sources_sha256",
+                "code_extensions_sha256")
+# fields without which a table cannot be told from another build's
+TABLE_REQUIRED = CASES_REQUIRED + ("subsets_sha256",)
+# the payload fields of a table's identity line, filled in after the payload
+TABLE_HEAD_KEYS = ("index_offset", "index_bytes", "payload_bytes", "payload_sha256")
+
+
+def system_names(systems) -> dict:
+    """``id`` of each participant object -> the name of its system."""
+    return {id(p): name for name, participants in systems.items() for p in participants}
+
+
+def subset_key(names, label, chosen) -> tuple:
+    """A subset's table key: (its system's name, its ``member_cases`` label).
+    The label alone (``family|direction|positions``) repeats across systems."""
+    return (names.get(id(chosen[0])) if chosen else None, label)
+
+
+def subset_keys(fam, systems) -> list:
+    """The table keys of ``emit.roster_subsets(fam, systems)``, in its order."""
+    names = system_names(systems)
+    return [subset_key(names, f"{name}|{direction}|{subset}", chosen)
+            for name, _family, direction, chosen, subset in emit.roster_subsets(fam, systems)]
+
+
+def table_identity(fields, fam, systems) -> dict:
+    """What every ``member_cases`` result of the build depends on: ``fields``
+    (``TABLE_FIELDS``, as the case identity has them), the systems and the
+    subset enumeration over ``fam`` (the families the build loads, before any
+    wanted filter).  The build step and the shard both call this."""
+    keys = subset_keys(fam, systems)
+    return {"format": TABLE_FORMAT, **{k: fields.get(k) for k in TABLE_FIELDS},
+            "systems": {n: [p.label for p in ps] for n, ps in systems.items()},
+            "subsets": len(keys), "subsets_sha256": _digest(keys)}
+
+
+def dump_cases(cases) -> bytes:
+    """One subset's ``member_cases`` list, pickled fields-only (``_CasesPickler``)."""
+    buffer = io.BytesIO()
+    _CasesPickler(buffer, protocol=pickle.HIGHEST_PROTOCOL).dump(cases)
+    return buffer.getvalue()
+
+
+def _table_line(identity, offset, index, size, sha) -> bytes:
+    return (json.dumps({**identity, "index_offset": f"{offset:020d}",
+                        "index_bytes": f"{index:020d}", "payload_bytes": f"{size:020d}",
+                        "payload_sha256": sha}, sort_keys=True, default=str) + "\n").encode()
+
+
+def write_table(path, identity, meta, items, stale=True) -> int:
+    """Write the table ``path`` atomically: its identity line, then each
+    (key, pickled result) of ``items`` and an index of their offsets, lengths
+    and digests with ``meta``; through a temporary file moved onto ``path``
+    (one already there moved to ``<path>.stale`` first, with ``stale``).
+    Returns the file's size."""
+    path = Path(path)
+    fd, temp = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w+b") as handle:
+            head = _table_line(identity, 0, 0, 0, "0" * 64)
+            handle.write(head)
+            hashing, entries = _Hashing(handle), {}
+            for key, blob in items:
+                if key in entries:
+                    raise ValueError(f"the key {key!r} is written twice")
+                entries[key] = (hashing.size, len(blob), hashlib.sha256(blob).hexdigest())
+                hashing.write(blob)
+            offset = hashing.size
+            index = pickle.dumps({"meta": dict(meta), "entries": entries},
+                                 protocol=pickle.HIGHEST_PROTOCOL)
+            hashing.write(index)
+            line = _table_line(identity, offset, len(index), hashing.size,
+                               hashing.sha.hexdigest())
+            assert len(line) == len(head)
+            handle.seek(0)
+            handle.write(line)
+            handle.flush()
+            os.fsync(handle.fileno())
+            size = len(line) + hashing.size
+        if stale and path.exists():
+            os.replace(path, path.with_name(path.name + ".stale"))
+        os.replace(temp, path)
+    except BaseException:
+        if os.path.exists(temp):
+            os.unlink(temp)
+        raise
+    return size
+
+
+def peek_identity(path) -> Optional[dict]:
+    """The identity a table's first line states (None: not a table line)."""
+    try:
+        with open(path, "rb") as handle:
+            line = handle.readline()
+        head = json.loads(line) if line.endswith(b"\n") else None
+    except (OSError, ValueError):
+        return None
+    if not isinstance(head, dict) or not all(k in head for k in TABLE_HEAD_KEYS):
+        return None
+    return {k: v for k, v in head.items() if k not in TABLE_HEAD_KEYS}
+
+
+class Table:
+    """An open member-case table whose identity, payload digest and index
+    were checked through ``handle``, which it keeps: a file replaced at the
+    path afterwards is not read.  Each entry is checked against its own
+    digest when it is read."""
+
+    def __init__(self, handle, start, meta, entries):
+        self.handle, self.start, self.meta, self.entries = handle, start, meta, entries
+
+    def blob(self, key) -> bytes:
+        offset, length, sha = self.entries[key]
+        self.handle.seek(self.start + offset)
+        data = self.handle.read(length)
+        if len(data) != length or hashlib.sha256(data).hexdigest() != sha:
+            raise ValueError("its bytes do not match its digest")
+        return data
+
+    def result(self, key):
+        """(the entry's ``member_cases`` list, None) or (None, why); never raises
+        on a bad entry."""
+        try:
+            cases = pickle.loads(self.blob(key))
+        except Exception as error:
+            emit.reraise_resource(error)
+            return None, f"{type(error).__name__}: {error}"
+        if not isinstance(cases, list):
+            return None, "not a member case list"
+        return cases, None
+
+    def close(self) -> None:
+        self.handle.close()
+
+
+def _valid_index(index, offset) -> Optional[str]:
+    if not isinstance(index, dict) or set(index) != {"meta", "entries"} or \
+            not isinstance(index["meta"], dict) or not isinstance(index["entries"], dict):
+        return "not a table index"
+    for key, entry in index["entries"].items():
+        if not (isinstance(key, tuple) and len(key) == 2 and isinstance(entry, tuple) and
+                len(entry) == 3 and all(type(n) is int for n in entry[:2]) and
+                0 <= entry[0] and 0 <= entry[1] and entry[0] + entry[1] <= offset):
+            return f"a bad index entry {key!r}"
+    return None
+
+
+def _open_table(handle, identity):
+    line = handle.readline()
+    try:
+        head = json.loads(line) if line.endswith(b"\n") else None
+    except ValueError:
+        head = None
+    if not isinstance(head, dict):
+        return None, "its first line is not an identity"
+    stored = {k: v for k, v in head.items() if k not in TABLE_HEAD_KEYS}
+    expected = json.loads(json.dumps(identity, default=str))
+    if stored != expected:
+        keys = sorted(k for k in set(stored) | set(expected)
+                      if stored.get(k, ...) != expected.get(k, ...))
+        return None, f"another identity; the keys that differ: {', '.join(keys)}"
+    try:
+        offset, length = int(head["index_offset"]), int(head["index_bytes"])
+        size, sha = int(head["payload_bytes"]), head["payload_sha256"]
+    except (KeyError, TypeError, ValueError):
+        return None, "no payload digest"
+    start, digest, read = handle.tell(), hashlib.sha256(), 0
+    for block in iter(lambda: handle.read(1 << 20), b""):
+        digest.update(block)
+        read += len(block)
+    if (read, digest.hexdigest()) != (size, sha):
+        return None, f"its payload ({read} bytes) does not match its digest"
+    if offset + length != size:
+        return None, "its index is not at the payload's end"
+    handle.seek(start + offset)
+    index = pickle.loads(handle.read(length))
+    why = _valid_index(index, offset)
+    if why is not None:
+        return None, why
+    return Table(handle, start, index["meta"], index["entries"]), None
+
+
+def open_table(path, identity):
+    """(``Table``, None) when ``path`` is a member-case table of ``identity``
+    whose payload matches its digest, else (None, why); never raises on a bad
+    table.  An ``identity`` with an unknown ``TABLE_REQUIRED`` field is never
+    matched."""
+    unknown = [k for k in TABLE_REQUIRED if not identity.get(k)]
+    if unknown:
+        return None, f"unknown {', '.join(unknown)}"
+    try:
+        handle = open(path, "rb")
+    except FileNotFoundError:
+        return None, "no table"
+    except OSError as error:
+        return None, f"unreadable: {error}"
+    try:
+        table, why = _open_table(handle, identity)
+    except Exception as error:   # a bad table is not used, never fatal
+        emit.reraise_resource(error)
+        table, why = None, f"unreadable: {type(error).__name__}: {error}"
+    if table is None:
+        handle.close()
+    return table, why
+
+
+class MemberCaseSource:
+    """The ``member_cases`` results of one case build: from the table when it
+    has a valid entry for the subset, else computed (``read``, ``computed``:
+    the subsets of each)."""
+
+    def __init__(self, table, systems):
+        self.table, self.names = table, system_names(systems)
+        self.read = self.computed = 0
+
+    @classmethod
+    def open(cls, path, case_identity, fam, systems) -> "MemberCaseSource":
+        """The source of a build on ``fam`` and ``systems`` whose case identity
+        is ``case_identity``: the table at ``path`` when it is this build's
+        (else none, and why is printed)."""
+        identity = table_identity(case_identity, fam, systems)
+        table, why = open_table(path, identity)
+        if table is None:
+            print(f"CASES member-case table not used: {why}", flush=True)
+        else:
+            print(f"CASES member-case table {path}: {len(table.entries)} of "
+                  f"{identity['subsets']} subsets", flush=True)
+        return cls(table, systems)
+
+    def member_cases(self, certifier, family, builds, direction, *, label, chosen):
+        key = subset_key(self.names, label, chosen)
+        if self.table is not None and key in self.table.entries:
+            cases, why = self.table.result(key)
+            if why is None:
+                self.read += 1
+                return cases
+            print(f"CASES member-case table entry {key[0]} {key[1]} not used: {why}",
+                  flush=True)
+        self.computed += 1
+        return win.member_cases(certifier, family, builds, direction, label=label)
+
+    def close(self) -> None:
+        if self.table is not None:
+            self.table.close()
 
 
 # this tree's own function: the copy above stands in for it, and only for it
@@ -580,6 +858,7 @@ def cached_cases(args):
     path = cases_path(args.out)
     roster_sha256 = emit.load_roster(args.roster).sha256
     interval = getattr(args, "case_checkpoint_seconds", CHECKPOINT_SECONDS)
+    table = getattr(args, "member_cases", None)
 
     def cached_init(self, prepared=None):
 
@@ -588,6 +867,9 @@ def cached_cases(args):
             unknown = [k for k in CASES_REQUIRED if not identity.get(k)]
             if unknown:
                 print(f"CASES not cached: unknown {', '.join(unknown)}", flush=True)
+                if table is not None:
+                    print(f"CASES member-case table not used: unknown {', '.join(unknown)}",
+                          flush=True)
                 return build(certifier, fam, systems, species, wanted=wanted)
             payload, why = read_cases(path, identity)
             if payload is not None:
@@ -598,10 +880,25 @@ def cached_cases(args):
             checkpoint = None
             if build is _REFERENCE_CASES:
                 path.parent.mkdir(parents=True, exist_ok=True)
-                checkpoint = CaseCheckpoint(checkpoint_path(args.out), identity, interval)
-                cases, stats = checkpointed_reference_cases(certifier, fam, systems, species,
-                                                            wanted=wanted, checkpoint=checkpoint)
+                # the table is opened on the family set this build enumerates
+                # (``fam`` before the wanted filter), as the table's build did
+                source = None if table is None else \
+                    MemberCaseSource.open(table, identity, fam, systems)
+                checkpoint = CaseCheckpoint(checkpoint_path(args.out), identity, interval,
+                                            source)
+                try:
+                    cases, stats = checkpointed_reference_cases(
+                        certifier, fam, systems, species, wanted=wanted, checkpoint=checkpoint)
+                finally:
+                    if source is not None:
+                        source.close()
+                if source is not None:
+                    print(f"CASES member-case table: {source.read} read, {source.computed} "
+                          f"computed of {source.read + source.computed} enumerated", flush=True)
             else:   # a replaced reference_cases (a test's): no checkpoint
+                if table is not None:
+                    print("CASES member-case table not used: reference_cases is replaced",
+                          flush=True)
                 cases, stats = build(certifier, fam, systems, species, wanted=wanted)
             try:
                 path.parent.mkdir(parents=True, exist_ok=True)
@@ -665,7 +962,13 @@ def main(argv=None):
                         help="with --resume: save the reference-case build's progress to "
                              "<out>.cases.checkpoint every this many seconds of build time "
                              "(0: after every subset); a later --resume continues from it")
+    parser.add_argument("--member-cases", default=None, metavar="TABLE",
+                        help="with --resume: read each subset's member cases from this table "
+                             "(scripts/emit_member_cases.py) instead of computing them; a "
+                             "subset it lacks, or a table of another identity, is computed")
     args = parser.parse_args(argv)
+    if args.member_cases is not None and not args.resume:
+        parser.error("--member-cases needs --resume")
     if not args.resume:
         return run_emit_resume(args)
     with cached_cases(args):
