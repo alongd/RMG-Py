@@ -59,17 +59,36 @@ def _loaded(out):
             for p in out for t in p.get("templates", []) if t.get("status") == "emitted"}
 
 
-@needs_database
-def test_the_fixture_is_the_held_copy_case(payloads, services):
-    """The pair's reverse templates load from the holder, whose own reverse
-    record is not in the catalog; the pair's forward templates load from the
-    pair itself."""
+def _held_copy_cases(out):
+    """(holder, key, records) of every loaded template whose holder's
+    ``reverse_of`` record is not in the catalog while another record holding a
+    copy of it (``records``) has a reverse record that is in the catalog and
+    loads: the case the I-263 fix exists for, found from the assembly itself
+    and not from record ids that an identity change can move."""
+    by_record = {p["record_event_id"]: p for p in out}
+    cases = []
+    for p in out:
+        if p.get("reverse_of") in by_record:
+            continue
+        for t in p.get("templates", []):
+            if t.get("status") != "emitted":
+                continue
+            others = [r for r in (t.get("collision") or {}).get("records", [])
+                      if r != p["record_event_id"]
+                      and by_record.get(by_record.get(r, {}).get("reverse_of")) is not None
+                      and te._loads(by_record[by_record[r]["reverse_of"]])]
+            if others:
+                cases.append((p["record_event_id"], t["key"], others))
+    return cases
+
+
+def test_the_fixture_is_the_held_copy_case(payloads):
+    """Some loaded template is held by a record whose own reverse record is
+    not in the catalog, while another copy of it sits on a record whose
+    reverse loads.  Without such a template the derivation tests below pass
+    whatever ``derive_weights`` does with the holders."""
     out, _table = te.resolve_collisions(payloads)
-    loaded = _loaded(out)
-    holder = next(p for p in out if p["record_event_id"].startswith(HOLDER))
-    assert {k for r, k in loaded if r == HOLDER} == {"1fc6e3998bf0", "f27b25aca594"}
-    assert {k for r, k in loaded if r == FORWARD} == {"3ab8efd07f72", "f33f5cd2eccc"}
-    assert not any(p["record_event_id"] == holder["reverse_of"] for p in out)
+    assert _held_copy_cases(out)
 
 
 @needs_database
