@@ -37,6 +37,18 @@ and the cases are built again; a run with an unknown identity field neither
 saves nor loads one.  Without ``--resume`` no sidecar is read or written.  The
 cache wraps ``Emitter.init`` from ``main`` and leaves ``run_emit_resume``
 statement for statement as it was.
+
+A shard whose case build is cut before it ends (all of one day's job) keeps
+its progress (I-327): with ``--resume`` the cases are built by
+``checkpointed_reference_cases``, ``emit.reference_cases`` statement for
+statement (``emitResumeTest`` pins it), which saves the subsets done so far,
+their cases and stats and the species registry to ``<out>.cases.checkpoint``
+every ``--case-checkpoint-seconds`` (600) of build time, under the sidecar's
+identity, and prints one ``CASES checkpoint i/n subsets`` line per save.  A
+later ``--resume`` with a checkpoint of its identity continues from its
+subset and ends with the uninterrupted build's cases; any other checkpoint is
+moved to ``<out>.cases.checkpoint.stale`` and the build starts from its first
+subset.  Once the sidecar is saved the checkpoint is removed.
 """
 from __future__ import annotations
 
@@ -47,16 +59,19 @@ import dataclasses
 import hashlib
 import io
 import json
+import math
 import os
 import pickle
 import sys
 import tempfile
 import time
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
 from rmgpy.kmc import emit
+from rmgpy.kmc import windows as win
 
 
 class ResumeRefusal(ValueError):
@@ -349,10 +364,11 @@ def _identity_line(identity, size, sha) -> bytes:
                        sort_keys=True, default=str) + "\n").encode()
 
 
-def write_cases(path, identity, payload) -> None:
+def write_cases(path, identity, payload, stale=True) -> None:
     """Write the sidecar ``path`` atomically: its identity line and the
     pickled ``payload``, through a temporary file moved onto ``path``; a
-    sidecar already there is moved to ``<path>.stale`` first."""
+    sidecar already there is moved to ``<path>.stale`` first (``stale``; else
+    it is replaced: a checkpoint by its own successor)."""
     path = Path(path)
     fd, temp = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".", suffix=".tmp")
     try:
@@ -367,7 +383,7 @@ def write_cases(path, identity, payload) -> None:
             handle.write(line)
             handle.flush()
             os.fsync(handle.fileno())
-        if path.exists():
+        if stale and path.exists():
             os.replace(path, path.with_name(path.name + ".stale"))
         os.replace(temp, path)
     except BaseException:
@@ -414,6 +430,147 @@ def read_cases(path, identity):
         return None, f"unreadable: {type(error).__name__}: {error}"
 
 
+CHECKPOINT_SUFFIX = ".cases.checkpoint"
+CHECKPOINT_SECONDS = 600.0
+
+
+def checkpoint_path(out) -> Path:
+    out = Path(out)
+    return out.with_name(out.name + CHECKPOINT_SUFFIX)
+
+
+class CaseCheckpoint:
+    """The reference-case build's progress, saved to ``path`` under the
+    sidecar's ``identity`` (``write_cases``: atomic, digested) after each
+    subset once ``interval`` seconds of build time have passed since the last
+    save: the index of the next subset, the cases and stats so far and the
+    species registry.  The ``formulas`` memo is not saved: it is keyed by
+    ``id`` of this process's participants (another process's ids could name
+    other participants) and is recomputed on demand."""
+
+    clock = staticmethod(time.monotonic)
+
+    def __init__(self, path, identity, interval):
+        self.path, self.identity, self.interval = Path(path), identity, interval
+        self.start = self.total = 0
+        self.began = self.last = None
+
+    def restore(self, fam, systems, out, stats, species) -> int:
+        """The index of the first subset to build: a checkpoint of this
+        identity, whose digest and subset count match, fills ``out``,
+        ``stats`` and ``species``; any other file is moved to ``<path>.stale``
+        and the build starts from 0."""
+        self.total = sum(1 for _ in emit.roster_subsets(fam, systems))
+        start = 0
+        if self.path.exists():
+            payload, why = read_cases(self.path, self.identity)
+            if payload is not None:
+                why = self._invalid(payload)
+            if why is None:
+                out.update(payload["out"])
+                stats.update(payload["stats"])
+                species.__dict__.update(payload["species"])
+                start = payload["next"]
+                print(f"CASES checkpoint resumed at {start}/{self.total} subsets", flush=True)
+            else:
+                try:
+                    os.replace(self.path, self.path.with_name(self.path.name + ".stale"))
+                except OSError as error:
+                    why += f" (not moved: {error})"
+                print(f"CASES checkpoint ignored: {why}", flush=True)
+        self.start = start
+        print(f"CASES build start {start}/{self.total} subsets", flush=True)
+        self.began = self.last = self.clock()
+        return start
+
+    def _invalid(self, payload) -> Optional[str]:
+        if not isinstance(payload, dict) or set(payload) != {"next", "subsets", "out", "stats",
+                                                               "species"}:
+            return "not a checkpoint payload"
+        if payload["subsets"] != self.total:
+            return f"subsets: {payload['subsets']!r}, this build has {self.total}"
+        index = payload["next"]
+        if type(index) is not int or not 0 <= index <= self.total:
+            return f"next: {index!r} is not a subset index of {self.total}"
+        if not (isinstance(payload["out"], dict) and isinstance(payload["stats"], dict) and
+                isinstance(payload["species"], dict)):
+            return "not a checkpoint payload"
+        return None
+
+    def save(self, index, out, stats, species) -> None:
+        """Save before subset ``index`` (``index`` subsets done) when the
+        interval has passed and something was built since the start."""
+        now = self.clock()
+        if index <= self.start or now - self.last < self.interval:
+            return
+        payload = {"next": index, "subsets": self.total, "out": dict(out), "stats": dict(stats),
+                   "species": species.__dict__}
+        try:
+            write_cases(self.path, self.identity, payload, stale=False)
+        except Exception as error:   # the build does not depend on the save
+            emit.reraise_resource(error)
+            print(f"CASES checkpoint not saved at {index}/{self.total}: "
+                  f"{type(error).__name__}: {error}", flush=True)
+        else:
+            done = self.clock()
+            print(f"CASES checkpoint {index}/{self.total} subsets, build {now - self.began:.0f}s, "
+                  f"{self.path.stat().st_size} bytes, write {done - now:.2f}s", flush=True)
+        self.last = self.clock()
+
+    def finish(self) -> None:
+        """Remove the checkpoint: the saved sidecar holds the whole build (a
+        checkpoint left behind is never read while the sidecar loads)."""
+        try:
+            self.path.unlink()
+        except FileNotFoundError:
+            pass
+        except OSError as error:
+            print(f"CASES checkpoint not removed: {error}", flush=True)
+
+
+def checkpointed_reference_cases(certifier, fam, systems, species, wanted=None, *, checkpoint):
+    """``emit.reference_cases`` statement for statement (``emitResumeTest``
+    pins it), with a ``CaseCheckpoint``: the build starts at the subset the
+    checkpoint restored and saves before each subset."""
+    out = defaultdict(list)
+    stats = Counter()
+    formulas = {}
+    if wanted is not None:
+        names = {key[0] for key in wanted.keys}
+        fam = {name: family for name, family in fam.items() if name in names}
+    start = checkpoint.restore(fam, systems, out, stats, species)
+    for index, (name, family, direction, chosen, subset) in enumerate(
+            emit.roster_subsets(fam, systems)):
+        if index < start:
+            continue
+        checkpoint.save(index, out, stats, species)
+        if wanted is not None:
+            if not wanted.admits(name, direction, emit.subset_formulas(chosen, formulas)):
+                stats["subsets_skipped"] += 1
+                continue
+            stats["subsets_enumerated"] += 1
+        builds = [p.build(f"p{k}") for k, p in enumerate(chosen)]
+        specs = [p.spec for p in chosen]
+        cases = win.member_cases(certifier, family, builds, direction,
+                                 label=f"{name}|{direction}|{subset}")
+        stats[f"{name}|{direction}"] += len(cases)
+        for case in cases:
+            mols = win.template_molecules(case.witness, case.direction)
+            other = win.template_molecules(
+                case.witness, "reverse" if case.direction == "forward" else "forward")
+            key = (name, tuple(sorted(species(m) for m in mols)),
+                   ";".join(case.pathway), tuple(sorted(species(m) for m in other)))
+            if wanted is not None and key not in wanted.keys:
+                stats["cases_dropped"] += 1
+                continue
+            out[key].append((case, specs))
+    return out, dict(stats)
+
+
+# this tree's own function: the copy above stands in for it, and only for it
+_REFERENCE_CASES = emit.reference_cases
+
+
 @contextlib.contextmanager
 def cached_cases(args):
     """For one ``run_emit_resume`` call: ``Emitter.init`` builds its reference
@@ -422,6 +579,7 @@ def cached_cases(args):
     init, build = emit.Emitter.init, emit.reference_cases
     path = cases_path(args.out)
     roster_sha256 = emit.load_roster(args.roster).sha256
+    interval = getattr(args, "case_checkpoint_seconds", CHECKPOINT_SECONDS)
 
     def cached_init(self, prepared=None):
 
@@ -437,7 +595,14 @@ def cached_cases(args):
                 print(f"CASES loaded {path}", flush=True)
                 return payload["cases"], payload["stats"]
             print(f"CASES rebuilt: {why}", flush=True)
-            cases, stats = build(certifier, fam, systems, species, wanted=wanted)
+            checkpoint = None
+            if build is _REFERENCE_CASES:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                checkpoint = CaseCheckpoint(checkpoint_path(args.out), identity, interval)
+                cases, stats = checkpointed_reference_cases(certifier, fam, systems, species,
+                                                            wanted=wanted, checkpoint=checkpoint)
+            else:   # a replaced reference_cases (a test's): no checkpoint
+                cases, stats = build(certifier, fam, systems, species, wanted=wanted)
             try:
                 path.parent.mkdir(parents=True, exist_ok=True)
                 write_cases(path, identity, {"cases": cases, "stats": stats,
@@ -447,6 +612,8 @@ def cached_cases(args):
                 print(f"CASES not saved: {type(error).__name__}: {error}", flush=True)
             else:
                 print(f"CASES saved {path}", flush=True)
+                if checkpoint is not None:
+                    checkpoint.finish()
             return cases, stats
 
         emit.reference_cases = reference_cases
@@ -460,6 +627,16 @@ def cached_cases(args):
         yield
     finally:
         emit.Emitter.init, emit.reference_cases = init, build
+
+
+def _seconds(text) -> float:
+    try:
+        value = float(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{text!r} is not a number of seconds")
+    if not math.isfinite(value) or value < 0:
+        raise argparse.ArgumentTypeError(f"{text!r} is not a finite number of seconds >= 0")
+    return value
 
 
 def main(argv=None):
@@ -484,6 +661,10 @@ def main(argv=None):
                         help="keep the complete rows of an existing --out written with this "
                              "run's header and emit only the records after them; refuse a "
                              "file with another header")
+    parser.add_argument("--case-checkpoint-seconds", type=_seconds, default=CHECKPOINT_SECONDS,
+                        help="with --resume: save the reference-case build's progress to "
+                             "<out>.cases.checkpoint every this many seconds of build time "
+                             "(0: after every subset); a later --resume continues from it")
     args = parser.parse_args(argv)
     if not args.resume:
         return run_emit_resume(args)
