@@ -390,7 +390,7 @@ def species_to_dict(species, species_list):
 
         dipole = 0.0
         if td.dipoleMoment is not None:
-            dipole = td.dipoleMoment.value_si * 1e21 / constants.c  # Debye
+            dipole = td.dipoleMoment.value_si * constants.c * 1e21  # Debye
 
         polarizability = 0.0
         if hasattr(td, 'polarizability') and td.polarizability is not None:
@@ -404,8 +404,9 @@ def species_to_dict(species, species_list):
             'model': 'gas',
             'geometry': 'atom' if td.shapeIndex == 0 else 'linear' if td.shapeIndex == 1 else 'nonlinear',
             'well-depth': td.epsilon.value_si / constants.R,
-            'diameter': td.sigma.value_si,
+            'diameter': td.sigma.value_si * 1e10,  # Angstrom
             'dipole': dipole,
+            'polarizability': polarizability,
             'rotational-relaxation': rot_relax
         }
 
