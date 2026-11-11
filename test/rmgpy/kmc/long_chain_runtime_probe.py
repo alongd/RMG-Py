@@ -855,11 +855,61 @@ def trace_many_in_subprocess(mode, seed, repeats):
     return _subprocess_json("trace-many", mode, seed, repeats)
 
 
+def candidate_orders(records, mode, builds):
+    """t=0 candidate order of ``builds`` fresh DP3 control melts, with the atom ids left out.
+
+    One dict per build: event_id -> one entry per candidate tuple, in ``SiteIndex`` order,
+    each site rendered as [strand_id, position, atom, number of id-carrying atoms].  The
+    order is what a seeded draw indexes into; the ids that decide it are not in the payload.
+    mode: named | uuid4.
+    """
+    from rmgpy.kmc.ssa import SiteIndex
+    from rmgpy.kmc.state import AtomRef
+
+    def render(site):
+        width = sum(isinstance(node.get("atom_ref"), AtomRef) for node in site.graph.values())
+        return [site.strand_id, site.position, site.atom, width]
+
+    out = []
+    for _ in range(builds):
+        state = _melt_for_trajectory(new_atom_path=(mode == "uuid4"))
+        index = SiteIndex(state, records)
+        out.append({str(r.event_id): [[render(site) for site in candidate]
+                                      for candidate in index.candidates(r.event_id)]
+                    for r in records})
+    return out
+
+
+def permuted_width(order):
+    """Largest record whose candidates are uniformly permuted under uuid4 ids.
+
+    Counts records whose candidates are each one site, on distinct strands, all carrying
+    the same number of ids.  ``SiteIndex`` orders a candidate by the sorted tuple of its
+    ids, so these compare by each strand's smallest id; distinct strands share no ids,
+    and equal counts of independent uuid4s make those minima exchangeable.  Width w thus
+    gives two builds the same order with probability 1/w!.
+    """
+    best = 0
+    for candidates in order.values():
+        if not candidates or any(len(candidate) != 1 for candidate in candidates):
+            continue
+        sites = [candidate[0] for candidate in candidates]
+        if len({site[0] for site in sites}) == len(sites) and len({site[3] for site in sites}) == 1:
+            best = max(best, len(sites))
+    return best
+
+
+def candidate_orders_in_subprocess(mode, builds):
+    return _subprocess_json("order", mode, builds)
+
+
 def c7_report(records, seed=1):
     first = trace_in_subprocess("uuid4", seed)
     second = trace_in_subprocess("uuid4", seed)
     named_a = trace_in_subprocess("named", seed)
     named_b = trace_in_subprocess("named", seed)
+    order_a = candidate_orders_in_subprocess("uuid4", 5)
+    order_b = candidate_orders_in_subprocess("uuid4", 5)
     relabel = [run_trajectory(records, "seeded", seed, label_seed=k) for k in range(1, 6)]
     base = relabel[0]
 
@@ -872,6 +922,10 @@ def c7_report(records, seed=1):
         "uuid4_same_times": first["events"] == second["events"],
         "uuid4_same_final_signature": first["signature"] == second["signature"],
         "uuid4_same_applied_sites": first["applied"] == second["applied"],
+        "uuid4_same_candidate_order": order_a == order_b,
+        "uuid4_permuted_width": [permuted_width(o) for o in order_a + order_b],
+        "named_same_candidate_order": (candidate_orders_in_subprocess("named", 1)
+                                       == candidate_orders_in_subprocess("named", 1)),
         "named_same_trace": named_a == named_b,
         "relabel_same_event_ids": [ids(r) == ids(base) for r in relabel[1:]],
         "relabel_same_times": [r["events"] == base["events"] for r in relabel[1:]],
@@ -947,6 +1001,8 @@ def main(argv):
         records = load_records()
         print(json.dumps([run_trajectory(records, argv[2], int(argv[3]))
                           for _ in range(int(argv[4]))]))
+    elif command == "order":
+        print(json.dumps(candidate_orders(load_records(), argv[2], int(argv[3]))))
     elif command == "report":
         report(set(argv[2:]) or {"C1", "C2", "C3", "C4", "C5", "C6", "C7"})
     else:

@@ -116,16 +116,51 @@ def test_c6_trajectory_is_independent_of_the_snapshot_schedule(records):
     assert [e[1] for e in single["events"]] == [e[1] for e in piecewise["events"]]
 
 
+C7_BUILDS = 5
+C7_MIN_PERMUTED_WIDTH = 4
+
+
+def _require_permuted_width(orders, label):
+    """Precondition of the C7 bound; fails as pytest.fail (not AssertionError), so never xfails."""
+    widths = [probe.permuted_width(order) for order in orders]
+    if len(widths) != C7_BUILDS or min(widths) < C7_MIN_PERMUTED_WIDTH:
+        pytest.fail(f"C7 premise broken in {label}: permuted widths {widths}, need "
+                    f"{C7_BUILDS} builds of width >= {C7_MIN_PERMUTED_WIDTH}; the 24^-5 bound no longer holds")
+
+
 @pytest.mark.xfail(
     strict=True,
     raises=AssertionError,
     reason="C7: atom ids come from uuid4 and candidates are ordered by uuid, so the "
-    "same seed in two fresh processes picks different sites",
+    "same seed in two fresh processes indexes a different candidate order",
 )
-def test_c7_same_seed_in_two_fresh_processes_picks_the_same_sites():
-    first = probe.trace_in_subprocess("uuid4", 1)
-    second = probe.trace_in_subprocess("uuid4", 1)
-    assert first["applied"] == second["applied"]
+def test_c7_same_seed_in_two_fresh_processes_sees_the_same_candidate_order():
+    """The list a seeded draw indexes into must not depend on the process.
+
+    Each of two fresh processes builds the DP3 control melt 5 times through the uuid4
+    path and records the t=0 candidate order of every record, ids left out.  The four
+    closed chains c0..c3 each give one candidate (a site carrying the strand's 50 ids)
+    to the same records; SiteIndex orders them by each strand's smallest id, the minimum
+    of 50 independent uuid4s per strand, so their order is a uniform permutation of 4:
+    two builds agree with probability 1/4! = 1/24 (id collisions, 2^-122, ignored).  Builds draw fresh ids, so
+    all 5 pairs agree by chance with probability 24^-5 = 1.3e-7: the verdict is fixed.
+    The width (>= 4) is checked first and fails loudly, outside the xfail, if the melt
+    stops providing it.  The single trajectory pair this test used to compare agrees
+    about half the time (test_c7_single_pair_verdict_is_a_coin_flip).
+    """
+    first = probe.candidate_orders_in_subprocess("uuid4", C7_BUILDS)
+    second = probe.candidate_orders_in_subprocess("uuid4", C7_BUILDS)
+    _require_permuted_width(first, "process 1")
+    _require_permuted_width(second, "process 2")
+    assert first == second
+
+
+def test_c7_named_candidate_order_is_reproducible_across_processes():
+    """Control (must pass): with deterministic ids the same order comes back in a fresh process."""
+    first = probe.candidate_orders_in_subprocess("named", 2)
+    second = probe.candidate_orders_in_subprocess("named", 2)
+    assert first == second
+    assert min(probe.permuted_width(order) for order in first) >= C7_MIN_PERMUTED_WIDTH
 
 
 SLOW_RATE_CHECKS = "RMG_KMC_SLOW_RATE_CHECKS"
