@@ -31,6 +31,17 @@
 This is the rmg module.
 """
 
+# CoolProp's extension must load before any openbabel format plugin. Both embed rapidjson, whose
+# STB_GNU_UNIQUE static tables bind process-wide to the first copy loaded, and the two layouts
+# differ: if openbabel's JSON plugins load first, CoolProp's static initialiser spins forever
+# inside `import CoolProp`. Every rmgpy.* import runs this file first, so this covers every path
+# through RMG-Py. Out of reach: a program that loads openbabel plugins (e.g. pybel) before it
+# first imports rmgpy, since the tables are already bound to openbabel's copy.
+try:
+    import CoolProp  # noqa: F401  (imported for load order only)
+except ImportError:
+    pass
+
 import os
 import os.path
 
