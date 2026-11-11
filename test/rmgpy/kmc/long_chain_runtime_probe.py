@@ -835,14 +835,24 @@ def c6_report(records, seeds=(1, 2, 3)):
     return out
 
 
-def trace_in_subprocess(mode, seed, extra=()):
+def _subprocess_json(*arguments):
+    """Run this file as a fresh interpreter with ``arguments``; parse its last stdout line."""
     environment = dict(os.environ)
     environment.update(PYTHONHASHSEED="0", PYTHONPATH=str(REPO_ROOT),
                        MPLCONFIGDIR=environment.get("MPLCONFIGDIR", "/tmp/i125-mpl"))
     completed = subprocess.run(
-        [sys.executable, str(Path(__file__).resolve()), "trace", mode, str(seed), *extra],
+        [sys.executable, str(Path(__file__).resolve()), *map(str, arguments)],
         cwd=REPO_ROOT, env=environment, capture_output=True, text=True, check=True, timeout=600)
     return json.loads(completed.stdout.strip().splitlines()[-1])
+
+
+def trace_in_subprocess(mode, seed, extra=()):
+    return _subprocess_json("trace", mode, seed, *extra)
+
+
+def trace_many_in_subprocess(mode, seed, repeats):
+    """``repeats`` trajectories of one fresh process; each builds its own melt (fresh ids)."""
+    return _subprocess_json("trace-many", mode, seed, repeats)
 
 
 def c7_report(records, seed=1):
@@ -933,6 +943,10 @@ def main(argv):
         result = run_trajectory(records, argv[2], int(argv[3]),
                                 label_seed=int(argv[4]) if len(argv) > 4 else None)
         print(json.dumps(result))
+    elif command == "trace-many":
+        records = load_records()
+        print(json.dumps([run_trajectory(records, argv[2], int(argv[3]))
+                          for _ in range(int(argv[4]))]))
     elif command == "report":
         report(set(argv[2:]) or {"C1", "C2", "C3", "C4", "C5", "C6", "C7"})
     else:

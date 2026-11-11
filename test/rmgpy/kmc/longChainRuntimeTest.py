@@ -9,6 +9,8 @@ module (about 3 minutes cold) into I125_ARTIFACT_DIR.
 """
 
 
+import os
+
 import numpy as np
 import pytest
 
@@ -124,3 +126,25 @@ def test_c7_same_seed_in_two_fresh_processes_picks_the_same_sites():
     first = probe.trace_in_subprocess("uuid4", 1)
     second = probe.trace_in_subprocess("uuid4", 1)
     assert first["applied"] == second["applied"]
+
+
+SLOW_RATE_CHECKS = "RMG_KMC_SLOW_RATE_CHECKS"
+SINGLE_PAIR_RATE_PAIRS = 20
+
+
+@pytest.mark.skipif(not os.environ.get(SLOW_RATE_CHECKS),
+                    reason=f"slow (about 3 min): set {SLOW_RATE_CHECKS}=1 to run")
+def test_c7_single_pair_verdict_is_a_coin_flip():
+    """One pair of uuid4 trajectories decides the old C7 verdict, and that verdict is chance.
+
+    Two fresh processes each run 20 seed-1 uuid4 trajectories (every one builds its own
+    melt, so its ids are fresh draws); trajectory i of one is compared with trajectory i
+    of the other, exactly as the single-pair C7 assertion compares its two.  Measured
+    same-pick rate p = 40/81 (about 0.49), so both outcomes occur; this check misses one
+    with probability p^20 + (1 - p)^20, about 2e-6 at p = 0.5 and 3.7e-5 at p = 0.6.
+    """
+    first = probe.trace_many_in_subprocess("uuid4", 1, SINGLE_PAIR_RATE_PAIRS)
+    second = probe.trace_many_in_subprocess("uuid4", 1, SINGLE_PAIR_RATE_PAIRS)
+    same = [a["applied"] == b["applied"] for a, b in zip(first, second)]
+    assert len(same) == SINGLE_PAIR_RATE_PAIRS
+    assert True in same and False in same, f"single-pair verdicts {same}"
