@@ -116,8 +116,47 @@ class TestCanteraWriter:
         assert 'transport' in d
         assert d['transport']['model'] == 'gas'
         assert d['transport']['geometry'] == 'linear'
-        # Diameter should be in meters (SI)
-        assert np.isclose(d['transport']['diameter'], 3.0e-10)
+        # Cantera's YAML 'diameter' is in Angstrom, not SI metres
+        assert np.isclose(d['transport']['diameter'], 3.0)
+
+    def _transport_probe_species(self):
+        """CH4 with non-zero transport values in every field, so no field round-trips as 0 == 0."""
+        sp = self._create_dummy_species("CH4", "C", index=1)
+        sp.transport_data = TransportData(
+            shapeIndex=2,
+            sigma=(3.758, 'angstrom'),
+            epsilon=(148.6, 'K'),
+            dipoleMoment=(1.5, 'De'),
+            polarizability=(2.6, 'angstrom^3'),
+            rotrelaxcollnum=13.0,
+        )
+        return sp
+
+    def test_species_to_dict_transport_in_cantera_yaml_units(self):
+        """The YAML transport entry carries Cantera's fixed units: K, Angstrom, Debye, Angstrom^3."""
+        sp = self._transport_probe_species()
+        tr = species_to_dict(sp, [sp])['transport']
+        assert np.isclose(tr['well-depth'], 148.6, rtol=1e-9)
+        assert np.isclose(tr['diameter'], 3.758, rtol=1e-9)
+        assert np.isclose(tr['dipole'], 1.5, rtol=1e-9)
+        assert np.isclose(tr['polarizability'], 2.6, rtol=1e-9)
+        assert np.isclose(tr['rotational-relaxation'], 13.0, rtol=1e-9)
+
+    def test_transport_round_trips_through_cantera_yaml(self):
+        """Write a species through save_cantera_model, load it with Cantera, and read back SI transport."""
+        from types import SimpleNamespace
+        from rmgpy.cantera import save_cantera_model
+        sp = self._transport_probe_species()
+        path = os.path.join(self.tmp_dir, 'transport_roundtrip.yaml')
+        save_cantera_model(SimpleNamespace(species=[sp], reactions=[]), path)
+        gas = ct.Solution(path)
+        tr = gas.species(gas.species_index('CH4(1)')).transport
+        assert np.isclose(tr.diameter, 3.758e-10, rtol=1e-9, atol=0)
+        assert np.isclose(tr.well_depth, 148.6 * ct.boltzmann, rtol=1e-9, atol=0)
+        assert np.isclose(tr.dipole, sp.transport_data.dipoleMoment.value_si, rtol=1e-9, atol=0)
+        assert np.isclose(tr.dipole, 1.5 * 3.33564095198152e-30, rtol=1e-6, atol=0)
+        assert np.isclose(tr.polarizability, 2.6e-30, rtol=1e-9, atol=0)
+        assert np.isclose(tr.rotational_relaxation, 13.0, rtol=1e-9, atol=0)
 
     def test_species_to_dict_neutral_has_no_e_entry(self):
         """Neutral species must not carry an 'E' pseudo-element in composition.
