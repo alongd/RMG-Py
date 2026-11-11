@@ -1110,6 +1110,14 @@ CASES_CHECKPOINT = [
     "            continue",
     "        checkpoint.save(index, out, stats, species)",
 ]
+# ... and (I-329) the one ``member_cases`` call, which reads the subset's
+# result from a member-case table (``--member-cases``) when it has it
+CASES_MEMBER = (
+    "        cases = win.member_cases(certifier, family, builds, direction, "
+    "label=f'{name}|{direction}|{subset}')",
+    "        cases = checkpoint.member_cases(certifier, family, builds, direction, "
+    "label=f'{name}|{direction}|{subset}', chosen=chosen)",
+)
 
 
 def test_the_copy_is_this_trees_reference_cases_plus_the_checkpoint_lines():
@@ -1125,9 +1133,13 @@ def test_the_copy_is_this_trees_reference_cases_plus_the_checkpoint_lines():
         if op != "equal":
             removed += ours[a0:a1]
             added += theirs[b0:b1]
-    assert (removed, added) == (CASES_REPLACED, CASES_CHECKPOINT)
-    # the loop body after the checkpoint lines is the original's, whole
+    assert (removed, added) == ([*CASES_REPLACED, CASES_MEMBER[0]],
+                                [*CASES_CHECKPOINT, CASES_MEMBER[1]])
+    # the loop body after the checkpoint lines is the original's, whole, but
+    # for the one member_cases statement
     body = ours[ours.index(CASES_REPLACED[1]) + 1:]
+    assert body.count(CASES_MEMBER[0]) == 1
+    body[body.index(CASES_MEMBER[0])] = CASES_MEMBER[1]
     assert theirs[theirs.index(CASES_CHECKPOINT[-1]) + 1:] == body
 
 
@@ -1229,3 +1241,465 @@ def test_a_checkpoint_that_cannot_be_removed_does_not_fail_the_job(tmp_path, mon
     assert not path.exists()
     resumer.CaseCheckpoint(path, {}, 0).finish()     # already gone: nothing to say
     assert capsys.readouterr().out == ""
+
+
+# ---------------------------------------------------------------------------
+# the member-case table (I-329)
+# ---------------------------------------------------------------------------
+# Nearly all of a shard's case build is ``win.member_cases``, whose result
+# depends on the family, the direction and the chosen participants, not on the
+# shard.  ``scripts/emit_member_cases.py build --subsets k/K`` computes it for
+# subsets i % K == k of ``emit.roster_subsets`` (K independent jobs), ``merge``
+# joins the parts into one table, and ``emit_resume.py --resume --member-cases
+# TABLE`` has its loop copy read each subset's result from the table instead of
+# calling it.  The rest of the loop is the shard's own, so its cases, stats,
+# species registry and rows are those of the in-shard build; a subset the
+# table lacks, or a table of another identity, is computed in the shard.
+
+import pickle  # noqa: E402
+import time  # noqa: E402
+
+BUILDER = SCRIPT.with_name("emit_member_cases.py")
+TABLE_LINE = re.compile(r"CASES member-case table: (\d+) read, (\d+) computed of (\d+) enumerated")
+# every field of the table identity: a table with another value of any is not used
+TABLE_KEYS = ["format", "artifact_id", "artifact_sha256", "roster_sha256", "database_head",
+              "database_content_sha256", "code_sha", "code_sources_sha256",
+              "code_extensions_sha256", "systems", "subsets", "subsets_sha256"]
+
+
+def _builder():
+    """The build and merge script (it imports ``emit_resume``: the module above)."""
+    spec = importlib.util.spec_from_file_location("emit_member_cases", BUILDER)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _system_of(i):
+    return "sysA" if i < 4 else "sysB"
+
+
+@pytest.fixture
+def tabled(monkeypatch, subsetted):
+    """``subsetted`` with real systems: subset i is participant i % 4 of
+    ``sysA`` (i < 4) or ``sysB``, so subsets 0 and 4 share the label
+    ``famA|forward|(0,)`` and only the system tells them apart."""
+    parts = [SimpleNamespace(spec={"participant": i}, label=f"part{i}",
+                             build=lambda label, i=i: ("build", i, label)) for i in range(8)]
+    systems = {"sysA": parts[:4], "sysB": parts[4:]}
+
+    def roster_subsets(fam, systems):
+        for name, direction, i in SUBSETS:
+            yield name, name, direction, [systems[_system_of(i)][i % 4]], (i % 4,)
+
+    monkeypatch.setattr(emit, "build_reference_systems", lambda roster: (systems, []))
+    monkeypatch.setattr(emit, "roster_subsets", roster_subsets)
+    subsetted["builder"] = _builder()
+    return subsetted
+
+
+def _build(tabled, artifact, roster, out, k, K, *flags, code=0):
+    assert tabled["builder"].main(["build", str(artifact), str(roster), "--database",
+                                   str(DATABASE), "--subsets", f"{k}/{K}", "--out", str(out),
+                                   *flags]) == code
+    return out
+
+
+def _merge(tabled, parts, out, *flags):
+    return tabled["builder"].main(["merge", *map(str, parts), "--out", str(out), *flags])
+
+
+def _table(tabled, shard, tmp_path, K, parts=None, *flags):
+    """The table of the ``parts`` (default all) of K, each built in turn."""
+    artifact, roster, _flags, _whole = shard
+    built = [_build(tabled, artifact, roster, tmp_path / f"part{k}of{K}.table", k, K)
+             for k in (range(K) if parts is None else parts)]
+    out = tmp_path / f"table{K}.table"
+    assert _merge(tabled, built, out, *flags) == 0
+    tabled["calls"] = 0
+    return out
+
+
+def _tabled_resume(tabled, shard, out, table, *flags):
+    """A resumed run with ``table``: its rows, printed text and table line."""
+    artifact, roster, shard_flags, _whole = shard
+    tabled["calls"], tabled["seen"] = 0, []
+    assert _resume(artifact, roster, out, [*shard_flags, *flags, "--member-cases",
+                                           str(table)]) == 0
+    return out.read_bytes()
+
+
+def _same(tabled, rows, fresh, seen):
+    assert tabled["seen"] and all(view == seen for view in tabled["seen"])
+    assert _stripped(rows) == _stripped(fresh)
+
+
+def _table_line(text):
+    found = TABLE_LINE.findall(text)
+    assert len(found) == 1, text
+    return tuple(int(n) for n in found[0])
+
+
+@pytest.mark.parametrize("K", [1, 2, 3])
+def test_a_merged_table_is_the_in_shard_build(tmp_path, shard, tabled, capsys, K):
+    fresh, seen = _fresh(tmp_path, shard, tabled, capsys)
+    table = _table(tabled, shard, tmp_path, K)
+    capsys.readouterr()
+    rows = _tabled_resume(tabled, shard, tmp_path / "rows.jsonl", table)
+    text = capsys.readouterr().out
+    _same(tabled, rows, fresh, seen)
+    n = len(_enumerated(shard[2]))
+    assert _table_line(text) == (n, 0, n) and tabled["calls"] == 0, text
+
+
+def test_without_member_cases_nothing_changes(tmp_path, shard, tabled, capsys):
+    artifact, roster, flags, _whole = shard
+    tabled["calls"], tabled["seen"] = 0, []
+    assert _resume(artifact, roster, tmp_path / "rows.jsonl", flags) == 0
+    text = capsys.readouterr().out
+    assert "member-case table" not in text
+    assert tabled["calls"] == len(_enumerated(flags))
+
+
+def _edit_table_identity(path, key, value):
+    data = path.read_bytes()
+    cut = data.index(b"\n") + 1
+    head = json.loads(data[:cut])
+    head[key] = value
+    path.write_bytes(json.dumps(head, sort_keys=True).encode() + b"\n" + data[cut:])
+
+
+def _computes_all(tabled, shard, tmp_path, capsys, table, fresh, seen, why):
+    rows = _tabled_resume(tabled, shard, tmp_path / "rows.jsonl", table)
+    text = capsys.readouterr().out
+    _same(tabled, rows, fresh, seen)
+    n = len(_enumerated(shard[2]))
+    assert tabled["calls"] == n
+    assert any(line.startswith("CASES member-case table not used: ") and why in line
+               for line in text.splitlines()), text
+    assert _table_line(text) == (0, n, n), text
+
+
+@pytest.mark.parametrize("key", TABLE_KEYS)
+def test_a_foreign_table_is_not_used(tmp_path, shard, tabled, capsys, key):
+    fresh, seen = _fresh(tmp_path, shard, tabled, capsys)
+    table = _table(tabled, shard, tmp_path, 2)
+    _edit_table_identity(table, key, "another")
+    capsys.readouterr()
+    _computes_all(tabled, shard, tmp_path, capsys, table, fresh, seen, key)
+
+
+@pytest.mark.parametrize("damage", ["truncated", "flipped", "not a table", "empty", "missing"])
+def test_a_damaged_table_is_not_used(tmp_path, shard, tabled, capsys, damage):
+    fresh, seen = _fresh(tmp_path, shard, tabled, capsys)
+    table = _table(tabled, shard, tmp_path, 2)
+    data = table.read_bytes()
+    if damage == "truncated":
+        table.write_bytes(data[:-10])
+    elif damage == "flipped":
+        middle = (data.index(b"\n") + len(data)) // 2
+        table.write_bytes(data[:middle] + bytes([data[middle] ^ 0xFF]) + data[middle + 1:])
+    elif damage == "not a table":
+        table.write_bytes(b'{"kind": "row"}\n')
+    elif damage == "empty":
+        table.write_bytes(b"")
+    else:
+        table.unlink()
+    capsys.readouterr()
+    _computes_all(tabled, shard, tmp_path, capsys, table, fresh, seen, "")
+
+
+def test_an_unknown_identity_never_uses_a_table(tmp_path, shard, tabled, capsys, monkeypatch):
+    fresh, seen = _fresh(tmp_path, shard, tabled, capsys)
+    table = _table(tabled, shard, tmp_path, 2)
+    identity = resumer.case_identity
+    monkeypatch.setattr(resumer, "case_identity", lambda *a: {
+        **identity(*a), "code_extensions_sha256": None})
+    capsys.readouterr()
+    rows = _tabled_resume(tabled, shard, tmp_path / "rows.jsonl", table)
+    text = capsys.readouterr().out
+    _same(tabled, rows, fresh, seen)
+    assert tabled["calls"] == len(_enumerated(shard[2]))
+    assert "CASES member-case table not used: unknown code_extensions_sha256" in text, text
+
+
+def test_a_change_under_rmgpy_refuses_the_table(tmp_path, shard, tabled, capsys, monkeypatch):
+    """The table identity carries ``code_sources_sha256``: a source change under
+    ``rmgpy/`` (which could change ``roster_subsets`` or ``member_cases``)
+    makes every table built before it unused."""
+    fresh, seen = _fresh(tmp_path, shard, tabled, capsys)
+    with monkeypatch.context() as before:
+        before.setattr(emit, "code_sources_sha256", lambda: "c" * 64)
+        table = _table(tabled, shard, tmp_path, 2)
+    capsys.readouterr()
+    _computes_all(tabled, shard, tmp_path, capsys, table, fresh, seen, "code_sources_sha256")
+
+
+def _entries(path):
+    data = path.read_bytes()
+    cut = data.index(b"\n") + 1
+    head = json.loads(data[:cut])
+    body = data[cut:]
+    index = pickle.loads(body[int(head["index_offset"]):])
+    return head, cut, index
+
+
+def test_a_bad_entry_is_computed(tmp_path, shard, tabled, capsys):
+    """An entry whose bytes do not match its own digest (the file's digest
+    made to match) is computed; every other entry is read."""
+    fresh, seen = _fresh(tmp_path, shard, tabled, capsys)
+    table = _table(tabled, shard, tmp_path, 2)
+    head, cut, index = _entries(table)
+    key = ("sysA", "famA|reverse|(1,)")      # subset 1: one case, enumerated on every path
+    off, length, _sha = index["entries"][key]
+    body = bytearray(table.read_bytes()[cut:])
+    body[off + length // 2] ^= 0xFF
+    head["payload_sha256"] = hashlib.sha256(bytes(body)).hexdigest()
+    table.write_bytes(json.dumps(head, sort_keys=True).encode() + b"\n" + bytes(body))
+    capsys.readouterr()
+    rows = _tabled_resume(tabled, shard, tmp_path / "rows.jsonl", table)
+    text = capsys.readouterr().out
+    _same(tabled, rows, fresh, seen)
+    n = len(_enumerated(shard[2]))
+    assert tabled["calls"] == 1 and _table_line(text) == (n - 1, 1, n), text
+    assert "CASES member-case table entry sysA famA|reverse|(1,) not used" in text, text
+
+
+def test_a_partial_table_computes_the_missing_subsets(tmp_path, shard, tabled, capsys):
+    fresh, seen = _fresh(tmp_path, shard, tabled, capsys)
+    table = _table(tabled, shard, tmp_path, 3, [0, 1], "--partial")
+    assert "TABLE missing 2 of 8 subsets" in capsys.readouterr().out
+    rows = _tabled_resume(tabled, shard, tmp_path / "rows.jsonl", table)
+    text = capsys.readouterr().out
+    _same(tabled, rows, fresh, seen)
+    enumerated = _enumerated(shard[2])
+    missing = [i for i in enumerated if i % 3 == 2]
+    assert tabled["calls"] == len(missing)
+    assert _table_line(text) == (len(enumerated) - len(missing), len(missing), len(enumerated))
+
+
+def test_a_table_build_stopped_in_the_shard_resumes(tmp_path, shard, tabled, capsys):
+    """A shard killed in its case build with a partial table (it computes the
+    subsets the table lacks) resumes from its checkpoint to the in-shard cases."""
+    artifact, roster, flags, whole = shard
+    fresh, seen = _fresh(tmp_path, shard, tabled, capsys)
+    table = _table(tabled, shard, tmp_path, 3, [0, 1], "--partial")
+    out = tmp_path / "rows.jsonl"
+    extra = ["--case-checkpoint-seconds", "0", "--member-cases", str(table)]
+    _killed_resume(tabled, artifact, roster, out, [*flags, *extra], 5)
+    assert tabled["calls"] == 1 and _checkpoint(out).is_file()     # subset 2, then killed at 5
+    capsys.readouterr()
+    rows = _tabled_resume(tabled, shard, out, table, "--case-checkpoint-seconds", "0")
+    text = capsys.readouterr().out
+    _same(tabled, rows, fresh, seen)
+    assert tabled["calls"] == 1, "a subset was computed twice"
+    assert "CASES checkpoint resumed at 5/8 subsets" in text, text
+    assert _sidecar(out).is_file() and not _checkpoint(out).exists()
+
+
+def test_member_cases_needs_resume(tmp_path, shard, tabled, capsys):
+    artifact, roster, flags, _whole = shard
+    with pytest.raises(SystemExit):
+        resume_main(_args(artifact, roster, tmp_path / "rows.jsonl",
+                          [*flags, "--member-cases", str(tmp_path / "t.table")]))
+    assert not (tmp_path / "rows.jsonl").exists()
+
+
+@pytest.mark.parametrize("value", ["1/1", "2", "a/b", "-1/2", "0/0", "3/2"])
+def test_the_subsets_option_refuses_bad_values(tmp_path, shard, tabled, value):
+    artifact, roster, _flags, _whole = shard
+    with pytest.raises(SystemExit):
+        tabled["builder"].main(["build", str(artifact), str(roster), "--database",
+                                str(DATABASE), "--subsets", value, "--out",
+                                str(tmp_path / "p.table")])
+    assert not (tmp_path / "p.table").exists()
+
+
+def _member_lines(text):
+    return [line for line in text.splitlines() if line.startswith("MEMBER ")]
+
+
+@pytest.mark.parametrize("K", [1, 3])
+def test_the_build_enumerates_roster_subsets(tmp_path, shard, tabled, capsys, K):
+    """Part k of K builds subsets i % K == k of ``emit.roster_subsets`` (here
+    the fixture's), in its order, one progress line each after its share."""
+    artifact, roster, _flags, _whole = shard
+    expected = [(i, _system_of(i), f"{name}|{direction}|({i % 4},)")
+                for name, direction, i in SUBSETS]
+    for k in range(K):
+        capsys.readouterr()
+        _build(tabled, artifact, roster, tmp_path / f"p{k}.table", k, K)
+        lines = _member_lines(capsys.readouterr().out)
+        mine = [e for e in expected if e[0] % K == k]
+        assert lines[0] == f"MEMBER part {k}/{K}: {len(mine)} of 8 subsets", lines
+        done = [re.match(rf"MEMBER (\d+)/8 part {k}/{K} [\d.]+s cases=\d+ (\S+) (.+)$", line)
+                for line in lines[1:1 + len(mine)]]
+        assert all(done), lines
+        assert [(int(m.group(1)), m.group(2), m.group(3)) for m in done] == mine
+
+
+def test_the_build_calls_member_cases_as_the_loop_does():
+    """The build step's builds and ``member_cases`` call are the statements of
+    ``emit.reference_cases`` itself: a change to them under ``rmgpy/`` fails
+    here (and the label of a table entry is the shard's)."""
+    ours = [line.strip() for line in _statements(inspect.getsource(emit), "reference_cases",
+                                                 "reference_cases", docstring=False)]
+    theirs = [line.strip() for line in _statements(BUILDER.read_text(), "build_part",
+                                                   "build_part", docstring=False)]
+    calls = [CASES_MEMBER[0].strip(),
+             "builds = [p.build(f'p{k}') for (k, p) in enumerate(chosen)]"]
+    for line in calls:
+        assert ours.count(line) == 1 and theirs.count(line) == 1, line
+    # and the build enumerates through the module attribute, never a copy
+    assert "def roster_subsets" not in BUILDER.read_text()
+    assert any("roster_subsets(fam, systems)" in line for line in theirs)
+
+
+def _table_blobs(path):
+    head, cut, index = _entries(path)
+    data = path.read_bytes()[cut:]
+    return {key: data[off:off + n] for key, (off, n, _sha) in index["entries"].items()}, \
+        index["meta"]
+
+
+def test_a_part_rerun_keeps_its_done_subsets(tmp_path, shard, tabled, capsys):
+    artifact, roster, _flags, _whole = shard
+    whole = _build(tabled, artifact, roster, tmp_path / "whole.table", 0, 1)
+    tabled["calls"], tabled["kill_at"] = 0, 4
+    out = tmp_path / "part.table"
+    with pytest.raises(Killed):
+        _build(tabled, artifact, roster, out, 0, 1, "--save-seconds", "0")
+    tabled["kill_at"] = None
+    blobs, meta = _table_blobs(out)
+    assert len(blobs) == 4 and meta == {"part": [0, 1], "complete": False}
+    tabled["calls"] = 0
+    capsys.readouterr()
+    _build(tabled, artifact, roster, out, 0, 1)
+    assert tabled["calls"] == 4, "a done subset was built again"
+    assert "MEMBER part resumed: 4 done" in capsys.readouterr().out
+    assert _table_blobs(out) == _table_blobs(whole)
+
+
+@pytest.mark.parametrize("case", ["identity", "duplicate", "K", "missing", "incomplete", "out"])
+def test_merge_refuses(tmp_path, shard, tabled, capsys, case):
+    artifact, roster, _flags, _whole = shard
+    parts = [_build(tabled, artifact, roster, tmp_path / f"p{k}.table", k, 2) for k in (0, 1)]
+    out = tmp_path / "table.table"
+    partial_ok = False
+    if case == "identity":
+        _edit_table_identity(parts[1], "code_sha", "another")
+        why = "code_sha"
+    elif case == "duplicate":
+        parts = [parts[0], parts[0]]
+        why = "part 0/2"
+    elif case == "K":
+        parts[1] = _build(tabled, artifact, roster, tmp_path / "q.table", 1, 3)
+        why = "K"
+    elif case == "missing":
+        parts, why, partial_ok = parts[:1], "missing parts: 1", True
+    elif case == "incomplete":
+        parts[1].unlink()
+        tabled["kill_at"] = 3
+        with pytest.raises(Killed):
+            _build(tabled, artifact, roster, parts[1], 1, 2, "--save-seconds", "0")
+        tabled["kill_at"] = None
+        why, partial_ok = "incomplete", True
+    else:
+        out, why = parts[0], "is one of the parts"
+    before = {p: p.read_bytes() for p in parts}
+    capsys.readouterr()
+    assert _merge(tabled, parts, out) == 1
+    text = capsys.readouterr().out
+    assert text.startswith("REFUSED") and why in text, text
+    assert {p: p.read_bytes() for p in parts} == before
+    if out not in parts:
+        assert not out.exists()
+    if partial_ok:
+        assert _merge(tabled, parts, out, "--partial") == 0 and out.is_file()
+
+
+def _script(cwd, argv):
+    root = str(SCRIPT.parents[1])
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join(
+        [root, *filter(None, [os.environ.get("PYTHONPATH")])])}
+    done = subprocess.run([sys.executable, *map(str, argv)], cwd=cwd, env=env,
+                          capture_output=True, text=True, timeout=3600)
+    return done.returncode, done.stdout, done.stderr
+
+
+@pytest.fixture(scope="module")
+def real_tables(tmp_path_factory, roster_and_doc):
+    """The PE toy's member-case table built in 1, 2 and 3 parts, each part a
+    job in its own process, and merged; with each K's build seconds (summed
+    over its parts) and table bytes."""
+    if not (DATABASE / "input/kinetics/families").is_dir():
+        pytest.skip("RMG_DATABASE_PATH is not a database checkout")
+    roster, doc = roster_and_doc
+    work = tmp_path_factory.mktemp("tables")
+    raw = json.dumps(doc, sort_keys=True, separators=(",", ":")).encode()
+    art = work / "art" / f"{hashlib.sha256(raw).hexdigest()}.json"
+    art.parent.mkdir()
+    art.write_bytes(raw)
+    builder = _builder()
+    tables, info = {}, {}
+    for K in (1, 2, 3):
+        parts, seconds = [], 0.0
+        for k in range(K):
+            part = work / f"part{k}of{K}.table"
+            t = time.time()
+            code, text, err = _script(work, [BUILDER, "build", art, roster, "--database",
+                                             DATABASE, "--subsets", f"{k}/{K}", "--out", part])
+            seconds += time.time() - t
+            assert code == 0, err[-4000:]
+            assert re.search(rf"^MEMBER part {k}/{K}: \d+ of \d+ subsets$", text, re.M), text
+            parts.append(part)
+        tables[K] = work / f"table{K}.table"
+        assert builder.main(["merge", *map(str, parts), "--out", str(tables[K])]) == 0
+        info[K] = (round(seconds, 1), tables[K].stat().st_size)
+    return tables, info
+
+
+@needs_database
+@pytest.mark.parametrize("path", ["whole", "prepared", "blocks"])
+def test_a_table_built_in_parts_gives_every_shard_the_in_shard_cases(
+        tmp_path, artifact, roster_and_doc, real_tables, monkeypatch, capsys, path):
+    """Real reference systems, database and member cases (emission is the
+    digest of the record; the cases, stats and species it reads are compared): a
+    table built in 1, 2 or 3 jobs, each in its own process, and merged gives
+    the shard the in-shard build's cases, stats, species registry and rows,
+    with no subset computed in the shard."""
+    roster = roster_and_doc[0]
+    flags = ["--chunk", "0/2", "--limit", "2"]
+    if path == "prepared":
+        flags += ["--prepared", str(_prepare(artifact, roster, tmp_path, 2))]
+    elif path == "blocks":
+        flags += ["--prepared", str(_blocks(artifact, roster, tmp_path, 2, shards=2) / "current")]
+    seen = []
+
+    def spy(self, record):
+        S = self.state
+        view = _case_view(S["cases"], S["case_stats"], S["species"].__dict__)
+        seen.append(view)
+        # (no digest of the view in the row: real objects' reprs name their ids)
+        return digest_row(self, record)
+
+    monkeypatch.setattr(emit.Emitter, "run_record", spy)
+    capsys.readouterr()
+    base = tmp_path / "in-shard.jsonl"
+    assert _resume(artifact, roster, base, flags) == 0
+    assert "member-case table" not in capsys.readouterr().out
+    assert seen and seen[0][0], "the in-shard build kept no case"
+    expected, rows = seen[0], _stripped(base.read_bytes())
+    tables, info = real_tables
+    for K, table in tables.items():
+        seen.clear()
+        out = tmp_path / f"with-table{K}.jsonl"
+        assert _resume(artifact, roster, out, [*flags, "--member-cases", str(table)]) == 0
+        text = capsys.readouterr().out
+        read, computed, enumerated = _table_line(text)
+        assert computed == 0 and read == enumerated > 0, text
+        assert seen and all(view == expected for view in seen), K
+        assert _stripped(out.read_bytes()) == rows, K
+    with capsys.disabled():
+        print(f"\nI-329 toy table ({path}): " + ", ".join(
+            f"K={K}: {s}s build, {b} bytes" for K, (s, b) in info.items()))
