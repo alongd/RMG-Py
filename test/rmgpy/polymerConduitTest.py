@@ -2512,52 +2512,144 @@ class TestAdmissionTally:
         assert sum("conduit-census/1 summary" in m for m in msgs) == 1
 
 
-class TestOptInOffOutputsByteIdentical:
-    """I-102: with ``polymerConduitAdmission`` off, the census/tally change is
-    logging only -- a short real run (examples/rmg/polyethylene, ~30 s) writes
-    byte-identical chemkin/YAML outputs to a baseline run of the base commit.
+class TestAdmissionOffMatchesAbsent:
+    """An explicit ``admission_enabled=False`` (``polymerConduitAdmission=False``)
+    must behave exactly like the key being absent (``None``).
 
-    Opt-in: set ``I102_BASELINE_DIR`` to the output directory of a baseline
-    run (the directory holding ``chemkin/`` and ``cantera/``); optionally
-    ``I102_DATABASE_DIR`` (the RMG-database ``input`` directory). Skipped
-    otherwise. ``generated_at`` / ``rmg_commit`` in polymer_pools.json are
-    run provenance stamps and are excluded."""
+    Part (a) drives ``readjudicate_conduit_admission`` in process on a row
+    that the gates admit, so both resolutions of the opt-in are exercised.
+    Part (b) runs the polyethylene example twice and compares its outputs."""
 
-    def test_off_outputs_match_baseline(self, tmp_path):
+    _WRITTEN_FIELDS = (
+        "polymer_conduit_admission_pending",
+        "polymer_conduit_admission_readjudicated",
+        "polymer_refused",
+        "polymer_refused_accumulating",
+        "polymer_flux_archetype",
+        "polymer_conduit_dst_pool",
+        "polymer_conduit_params",
+        "reversible",
+    )
+
+    def _readjudicated_snapshot(self, caplog, admission_enabled):
+        """Build a fresh would-admit row, mark it pending, give it final
+        kinetics, re-adjudicate it with ``admission_enabled``, and return the
+        written attributes, the kinetics repr and the log lines it emitted."""
+        import logging as _logging
+
+        from rmgpy.kinetics import Arrhenius
+        from rmgpy.polymer import (_general_chain_scale_pool_warned,
+                                   readjudicate_conduit_admission,
+                                   stamp_gas_association_refusal)
+
+        reset_census_registry()
+        _general_chain_scale_pool_warned.clear()
+        rxn, _ = _admissible_fixture(kinetics=False)
+        stamp_gas_association_refusal(rxn)
+        assert rxn.polymer_conduit_admission_pending is True
+        rxn.kinetics = Arrhenius(A=(1.0, "s^-1"), n=0.0, Ea=(0.0, "J/mol"))
+        caplog.clear()
+        with caplog.at_level(_logging.WARNING):
+            readjudicate_conduit_admission(
+                rxn, admission_enabled=admission_enabled)
+        snapshot = {name: copy.deepcopy(getattr(rxn, name, None))
+                    for name in self._WRITTEN_FIELDS}
+        snapshot["kinetics"] = repr(rxn.kinetics)
+        snapshot["comment"] = getattr(rxn, "comment", None)
+        snapshot["log"] = [r.getMessage() for r in caplog.records]
+        reset_census_registry()
+        return snapshot
+
+    def test_off_matches_absent_on_an_admissible_row(self, caplog,
+                                                      clean_registry):
+        """With a row the gates admit, ``admission_enabled=False`` leaves the
+        same row state and log as ``None``, and ``True`` leaves a different
+        one, so the comparison runs on the branch that decides admission."""
+        import rmgpy.polymer_conduit as pc
+
+        assert pc.CONDUIT_ADMISSION_ENABLED is False
+        absent = self._readjudicated_snapshot(caplog, None)
+        off = self._readjudicated_snapshot(caplog, False)
+        on = self._readjudicated_snapshot(caplog, True)
+
+        differing = sorted(k for k in absent if absent[k] != off[k])
+        assert not differing, f"False differs from absent in: {differing}"
+        assert absent["polymer_conduit_admission_readjudicated"] is True
+        assert on["polymer_conduit_params"] is not None
+        assert on != absent
+        assert any("would_admit=1" in m for m in absent["log"])
+
+    def test_off_outputs_match_absent_on_polyethylene(self, tmp_path):
+        """Run ``examples/rmg/polyethylene`` with the
+        ``polymerConduitAdmission`` key absent and with it set to False, and
+        compare every file under ``chemkin/`` and ``cantera/`` byte for byte.
+        ``polymer_pools.json`` drops only its run stamps ``generated_at`` and
+        ``rmg_commit``.
+
+        This covers only the input plumbing: the key is inert through parsing
+        and ``load_input`` threading. No shipped deck reaches the admission
+        gate (no row is ever marked pending), so this run cannot see a change
+        on the admission path; the in-process test above covers that path."""
         import json
         import os
         import subprocess
         import sys
 
-        baseline = os.environ.get("I102_BASELINE_DIR")
-        if not baseline:
-            pytest.skip("I102_BASELINE_DIR not set")
+        from rmgpy import settings
+
+        db = settings["database.directory"]
+        if not os.path.isdir(db):
+            pytest.skip(f"RMG-database not found at {db}")
         repo = os.path.dirname(os.path.dirname(os.path.dirname(
             os.path.abspath(__file__))))
-        deck = os.path.join(repo, "examples", "rmg", "polyethylene",
-                            "input.py")
-        (tmp_path / "input.py").write_text(open(deck).read())
-        db = os.environ.get("I102_DATABASE_DIR")
-        if db:
-            (tmp_path / "rmgrc").write_text(f"database.directory : {db}\n")
+        with open(os.path.join(repo, "examples", "rmg", "polyethylene",
+                               "input.py")) as f:
+            text = f.read()
+        assert "polymerConduitAdmission" not in text
+        assert text.count("options(\n") == 1
+        off_text = text.replace(
+            "options(\n", "options(\n    polymerConduitAdmission=False,\n", 1)
+        assert off_text.count("polymerConduitAdmission=False,") == 1
+
         env = dict(os.environ, PYTHONHASHSEED="0")
-        subprocess.run([sys.executable, os.path.join(repo, "rmg.py"),
-                        "input.py"], cwd=tmp_path, env=env, check=True,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        runs = {}
+        for name, deck in (("absent", text), ("off", off_text)):
+            run_dir = tmp_path / name
+            run_dir.mkdir()
+            (run_dir / "input.py").write_text(deck)
+            with open(run_dir / "stdout.log", "wb") as out, \
+                    open(run_dir / "stderr.log", "wb") as err:
+                subprocess.run([sys.executable, os.path.join(repo, "rmg.py"),
+                                "input.py"], cwd=run_dir, env=env,
+                               check=True, stdout=out, stderr=err)
+            runs[name] = run_dir
+
+        def listing(root):
+            """Relative paths of every file under chemkin/ and cantera/."""
+            return sorted(
+                os.path.relpath(os.path.join(d, f), root)
+                for sub in ("chemkin", "cantera")
+                for d, _, files in os.walk(os.path.join(root, sub))
+                for f in files)
 
         def read(root, rel):
-            data = open(os.path.join(root, rel), "rb").read()
-            if rel.endswith("polymer_pools.json"):
+            """File content, with run stamps dropped from polymer_pools.json."""
+            with open(os.path.join(root, rel), "rb") as f:
+                data = f.read()
+            if os.path.basename(rel) == "polymer_pools.json":
                 d = json.loads(data)
                 d.pop("generated_at", None)
                 d.pop("rmg_commit", None)
-                return json.dumps(d, sort_keys=True)
+                return json.dumps(d, sort_keys=True).encode()
             return data
 
-        compared = 0
-        for sub in ("chemkin", "cantera"):
-            for name in sorted(os.listdir(os.path.join(baseline, sub))):
-                rel = os.path.join(sub, name)
-                assert read(baseline, rel) == read(str(tmp_path), rel), rel
-                compared += 1
-        assert compared >= 10
+        absent_files = listing(str(runs["absent"]))
+        off_files = listing(str(runs["off"]))
+        assert absent_files == off_files, (
+            sorted(set(absent_files) ^ set(off_files)))
+        assert "chemkin/polymer_pools.json" in absent_files
+        diffs = [rel for rel in absent_files
+                 if read(str(runs["absent"]), rel)
+                 != read(str(runs["off"]), rel)]
+        assert not diffs, f"{len(diffs)} differing files; first: {diffs[0]}"
+        assert len(absent_files) >= 10
